@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expense Tracker Bot — Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface2: #1a2236;
+    --border: #1e293b;
+    --accent: #22d3ee;
+    --accent2: #a78bfa;
+    --accent3: #34d399;
+    --accent4: #f472b6;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --text-bright: #f8fafc;
+    --warning: #fbbf24;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.7;
+    padding: 40px 20px;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .hero {
+    text-align: center;
+    padding: 60px 0 40px;
+    position: relative;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(34,211,238,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    margin-bottom: 16px;
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 12px;
+    letter-spacing: -1px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero p {
+    color: var(--text-dim);
+    font-size: 17px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  /* Section */
+  .section {
+    margin: 48px 0;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    background: rgba(34,211,238,0.1);
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+  }
+  .section h2 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-bright);
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: rgba(34,211,238,0.3); }
+  .card h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card h3 .icon {
+    font-size: 20px;
+  }
+  .card p, .card li {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.8;
+  }
+  .card ul {
+    list-style: none;
+    padding: 0;
+  }
+  .card ul li {
+    padding: 4px 0;
+    padding-left: 20px;
+    position: relative;
+  }
+  .card ul li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 20px 0;
+  }
+  .flow-step {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .flow-line {
+    width: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .flow-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: var(--bg);
+    flex-shrink: 0;
+    margin-top: 18px;
+  }
+  .flow-dot.filled { background: var(--accent); }
+  .flow-connector {
+    width: 2px;
+    flex: 1;
+    background: linear-gradient(to bottom, var(--accent), rgba(34,211,238,0.2));
+  }
+  .flow-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    flex: 1;
+    margin: 6px 0;
+  }
+  .flow-content h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .flow-content p {
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .flow-content .tech {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: rgba(167,139,250,0.15);
+    color: var(--accent2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 8px;
+    margin-right: 4px;
+  }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    margin: 24px 0;
+    overflow-x: auto;
+  }
+  .arch-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+    flex-wrap: wrap;
+  }
+  .arch-box {
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+    min-width: 140px;
+    position: relative;
+  }
+  .arch-box.client {
+    background: rgba(34,211,238,0.12);
+    border: 1px solid rgba(34,211,238,0.3);
+    color: var(--accent);
+  }
+  .arch-box.service {
+    background: rgba(167,139,250,0.12);
+    border: 1px solid rgba(167,139,250,0.3);
+    color: var(--accent2);
+  }
+  .arch-box.storage {
+    background: rgba(52,211,153,0.12);
+    border: 1px solid rgba(52,211,153,0.3);
+    color: var(--accent3);
+  }
+  .arch-box.external {
+    background: rgba(244,114,182,0.12);
+    border: 1px solid rgba(244,114,182,0.3);
+    color: var(--accent4);
+  }
+  .arch-arrow {
+    color: var(--text-dim);
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .arch-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: center;
+    margin: 4px 0;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .arch-vline {
+    width: 2px;
+    height: 24px;
+    background: rgba(148,163,184,0.3);
+    margin: 0 auto;
+  }
+
+  /* Code block */
+  .code-block {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+  .code-block pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #c9d1d9;
+  }
+  .code-block .comment { color: #8b949e; }
+  .code-block .keyword { color: #ff7b72; }
+  .code-block .string { color: #a5d6ff; }
+  .code-block .func { color: #d2a8ff; }
+  .code-block .type { color: #79c0ff; }
+
+  /* Grid */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 700px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 28px; }
+    .arch-row { flex-direction: column; }
+    .arch-arrow { transform: rotate(90deg); }
+  }
+
+  /* Tags */
+  .tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin: 2px;
+  }
+  .tag.green { background: rgba(52,211,153,0.15); color: var(--accent3); }
+  .tag.blue { background: rgba(34,211,238,0.15); color: var(--accent); }
+  .tag.purple { background: rgba(167,139,250,0.15); color: var(--accent2); }
+  .tag.pink { background: rgba(244,114,182,0.15); color: var(--accent4); }
+  .tag.yellow { background: rgba(251,191,36,0.15); color: var(--warning); }
+
+  /* Table */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 16px;
+    color: var(--text-dim);
+    border-bottom: 1px solid rgba(30,41,59,0.5);
+  }
+  tr:hover td { color: var(--text); }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--border), transparent);
+    margin: 48px 0;
+  }
+
+  /* Phase */
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0 12px;
+  }
+  .phase-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+  }
+  .phase-badge.mvp { background: rgba(52,211,153,0.15); color: var(--accent3); }
+  .phase-badge.v2 { background: rgba(167,139,250,0.15); color: var(--accent2); }
+  .phase-badge.v3 { background: rgba(244,114,182,0.15); color: var(--accent4); }
+
+  .note-box {
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+    color: var(--warning);
+  }
+  .note-box strong { color: #fde68a; }
+
+  .footer {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-label">Architecture Document v4.0</div>
+    <h1>Expense Tracker <span>Telegram Bot</span></h1>
+    <p>Голосовой учёт расходов через Gemini 3.1 Flash Lite — аудио → JSON за один вызов, мультивалютность с базой в USD, аналитика в Google Sheets</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 01. Overview -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2>Обзор системы</h2>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🎯</span> Задача</h3>
+      <p>Многопользовательский Telegram-бот для учёта расходов голосом и текстом. Gemini 3.1 Flash Lite парсит аудио в structured JSON за один вызов. Каждый пользователь получает персональный Google Spreadsheet с аналитикой. Валютно-агностичная модель: локальная валюта + USD база.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="icon">⚡</span> Ключевые фичи</h3>
+        <ul>
+          <li>Голосовой ввод на русском/английском</li>
+          <li>Один API-вызов: аудио → structured JSON (Gemini)</li>
+          <li>Multi-user: персональный Spreadsheet на юзера</li>
+          <li>Автоматический онбординг через /start</li>
+          <li>Мультивалютность — локальная валюта + USD база</li>
+          <li>Google Sheets как хранилище + аналитика</li>
+          <li>Inline-команды для статистики</li>
+          <li>Фото чеков с Vision-парсингом</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🧰</span> Стек технологий</h3>
+        <ul>
+          <li>Python 3.12 + asyncio</li>
+          <li>python-telegram-bot (async)</li>
+          <li>Google Gemini 3.1 Flash Lite (STT + парсинг)</li>
+          <li>google-genai SDK</li>
+          <li>Google Sheets API (gspread)</li>
+          <li>Google Drive API (создание Spreadsheets)</li>
+          <li>Google Cloud Functions (хостинг)</li>
+          <li>ExchangeRate API (USD конвертация)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 02. Architecture -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2>Архитектура</h2>
+    </div>
+
+    <div class="arch-diagram">
+      <div class="arch-label">Input Layer</div>
+      <div class="arch-row">
+        <div class="arch-box client">📱 Telegram<br><small>Voice / Text / Photo</small></div>
+      </div>
+
+      <div class="arch-vline"></div>
+      <div class="arch-label">Bot Server</div>
+
+      <div class="arch-row">
+        <div class="arch-box service">🤖 Telegram Bot<br><small>python-telegram-bot</small></div>
+      </div>
+
+      <div class="arch-vline"></div>
+      <div class="arch-label">Processing — Single API Call</div>
+
+      <div class="arch-row">
+        <div class="arch-box external" style="min-width:280px;">🧠 Gemini 3.1 Flash Lite<br><small>Audio → JSON (STT + Parse + Categorize)</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box service">💱 FX Convert<br><small>Local → USD</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box service">✅ Confirm<br><small>Inline Buttons</small></div>
+      </div>
+
+      <div class="arch-vline"></div>
+      <div class="arch-label">Storage — Per-User Isolation</div>
+
+      <div class="arch-row">
+        <div class="arch-box storage">📋 Master Registry<br><small>Users + Sheet IDs</small></div>
+        <div class="arch-box storage">📊 User Spreadsheets<br><small>1 per user (from template)</small></div>
+        <div class="arch-box storage">💱 Exchange Rates<br><small>Cache / API</small></div>
+      </div>
+    </div>
+
+    <!-- Component Details -->
+    <div class="card">
+      <h3><span class="icon">🔄</span> Data Flow — Голосовой ввод</h3>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot filled"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>1. Telegram Voice Message</h4>
+            <p>Пользователь отправляет голосовое: "Обед в кафе триста пятьдесят бат"</p>
+            <span class="tech">Telegram Bot API</span>
+            <span class="tech">OGG/OPUS</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>2. Gemini 3.1 Flash Lite — Audio → JSON</h4>
+            <p>OGG файл отправляется напрямую в Gemini 3.1 Flash Lite. Один вызов: транскрипция + извлечение amount, currency, category, description. Ответ — structured JSON через response_schema. Нет промежуточного шага.</p>
+            <span class="tech">Gemini 3.1 Flash Lite</span>
+            <span class="tech">~200ms</span>
+            <span class="tech">~$0.001/запрос</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>3. Currency Conversion</h4>
+            <p>amount_local сохраняется как есть. amount_base рассчитывается через Exchange Rate API в base_currency юзера. Курс кешируется на 24 часа.</p>
+            <span class="tech">ExchangeRate API</span>
+            <span class="tech">per-user base_currency</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>4. Confirmation</h4>
+            <p>Бот отправляет inline-кнопки: "✅ Еда: 350 THB (10.15 USD) — обед в кафе". Суммы показываются в local_currency и base_currency юзера. Кнопки: [Ок] [Изменить категорию] [Изменить сумму] [Отмена]</p>
+            <span class="tech">InlineKeyboard</span>
+            <span class="tech">CallbackQuery</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot filled"></div></div>
+          <div class="flow-content">
+            <h4>5. Save to Sheets</h4>
+            <p>После подтверждения — строка добавляется в персональный Google Sheets юзера. Timestamp, amount_local, local_currency, amount_base, fx_rate, категория, описание, источник.</p>
+            <span class="tech">gspread</span>
+            <span class="tech">Google Sheets API</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 03. Multi-User -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2>Multi-User архитектура</h2>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">👥</span> Принцип</h3>
+      <p>Каждый пользователь получает персональный Google Spreadsheet, автоматически созданный из шаблона при первом /start. Данные полностью изолированы. Master-реестр (отдельный Spreadsheet) хранит маппинг telegram_id → spreadsheet_id.</p>
+    </div>
+
+    <!-- Onboarding Flow -->
+    <div class="card">
+      <h3><span class="icon">🚀</span> Onboarding Flow — путь нового пользователя</h3>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot filled"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>1. /start</h4>
+            <p>Вася нажимает /start. Бот проверяет master-реестр — telegram_id не найден, значит новый пользователь.</p>
+            <span class="tech">User Registry</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>2. Выбор валют</h4>
+            <p>Бот спрашивает базовую валюту (для аналитики и бюджетов) и дефолтную валюту (подставляется когда валюта не указана). Inline-кнопки с популярными вариантами + ручной ввод. Валидация по ISO 4217 — бот принимает только реальные коды валют.</p>
+            <span class="tech">InlineKeyboard</span>
+            <span class="tech">ISO 4217 validation</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>3. Создание Spreadsheet</h4>
+            <p>Бот копирует template через Drive API. Копия именуется "Expenses — Вася". Ownership передаётся admin-аккаунту. Service Account остаётся editor'ом.</p>
+            <span class="tech">Drive API</span>
+            <span class="tech">files().copy()</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>4. Регистрация в реестре</h4>
+            <p>В master-реестр записывается: telegram_id, имя, spreadsheet_id, base_currency, default_currency, дата создания. Кеш обновляется.</p>
+            <span class="tech">Master Registry</span>
+            <span class="tech">gspread</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot"></div><div class="flow-connector"></div></div>
+          <div class="flow-content">
+            <h4>5. Приветствие</h4>
+            <p>"Готово! Базовая валюта: USD, дефолтная: THB. Отправляй голосовые или текстом. Для доступа к таблице — /email your@gmail.com"</p>
+            <span class="tech">Telegram Bot API</span>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-line"><div class="flow-dot filled"></div></div>
+          <div class="flow-content">
+            <h4>6. (Опционально) /email</h4>
+            <p>Вася пишет: /email vasya@gmail.com. Бот расшаривает Spreadsheet и передаёт ownership Васе. Теперь файл живёт в Васином Google Drive. Вася — полный хозяин данных.</p>
+            <span class="tech">Drive API</span>
+            <span class="tech">permissions().create()</span>
+            <span class="tech">transferOwnership</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ownership model -->
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="icon">📧</span> Юзер дал email</h3>
+        <ul>
+          <li>Ownership → юзеру (vasya@gmail.com)</li>
+          <li>Файл живёт в Васином Google Drive</li>
+          <li>Вася — полный хозяин данных</li>
+          <li>Service Account — editor (бот пишет)</li>
+          <li>Вася видит Dashboard в браузере</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🤖</span> Юзер НЕ дал email</h3>
+        <ul>
+          <li>Ownership → admin (you@gmail.com)</li>
+          <li>Файл живёт в папке admin-аккаунта</li>
+          <li>Service Account — editor (бот пишет)</li>
+          <li>Юзер работает только через бот-команды</li>
+          <li>Может добавить email позже: /email</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Master Registry -->
+    <div class="card">
+      <h3><span class="icon">📋</span> Master Registry — модель данных</h3>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Колонка</th><th>Тип</th><th>Пример</th><th>Описание</th></tr>
+          <tr>
+            <td><code>telegram_id</code></td>
+            <td><span class="tag blue">INT</span></td>
+            <td>123456789</td>
+            <td>Telegram user ID (уникальный ключ)</td>
+          </tr>
+          <tr>
+            <td><code>username</code></td>
+            <td><span class="tag blue">STRING</span></td>
+            <td>@vasya</td>
+            <td>Telegram username</td>
+          </tr>
+          <tr>
+            <td><code>display_name</code></td>
+            <td><span class="tag blue">STRING</span></td>
+            <td>Вася</td>
+            <td>Имя из Telegram профиля</td>
+          </tr>
+          <tr>
+            <td><code>email</code></td>
+            <td><span class="tag purple">STRING</span></td>
+            <td>vasya@gmail.com</td>
+            <td>Google email (опционально)</td>
+          </tr>
+          <tr>
+            <td><code>spreadsheet_id</code></td>
+            <td><span class="tag green">STRING</span></td>
+            <td>1aBcDeF...</td>
+            <td>ID персонального Spreadsheet</td>
+          </tr>
+          <tr>
+            <td><code>owner</code></td>
+            <td><span class="tag pink">ENUM</span></td>
+            <td>user / admin</td>
+            <td>Кто владеет Spreadsheet</td>
+          </tr>
+          <tr>
+            <td><code>base_currency</code></td>
+            <td><span class="tag green">STRING</span></td>
+            <td>USD</td>
+            <td>Базовая валюта для аналитики и бюджетов</td>
+          </tr>
+          <tr>
+            <td><code>default_currency</code></td>
+            <td><span class="tag green">STRING</span></td>
+            <td>THB</td>
+            <td>Подставляется когда валюта не указана</td>
+          </tr>
+          <tr>
+            <td><code>created_at</code></td>
+            <td><span class="tag blue">ISO 8601</span></td>
+            <td>2026-03-07T12:00:00+07:00</td>
+            <td>Дата регистрации</td>
+          </tr>
+          <tr>
+            <td><code>status</code></td>
+            <td><span class="tag pink">ENUM</span></td>
+            <td>active</td>
+            <td>active / suspended</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- User Registry Service -->
+    <div class="card">
+      <h3><span class="icon">⚙️</span> User Registry Service</h3>
+      <div class="code-block"><pre><span class="keyword">from</span> googleapiclient.discovery <span class="keyword">import</span> build
+
+<span class="keyword">class</span> <span class="type">UserRegistry</span>:
+    <span class="keyword">def</span> <span class="func">__init__</span>(self, drive, sheets, config):
+        self.drive = drive
+        self.sheets = sheets
+        self.cache = {}  <span class="comment"># telegram_id → spreadsheet_id</span>
+
+    <span class="keyword">async def</span> <span class="func">get_or_create</span>(self, telegram_id, name):
+        <span class="comment"># Проверяем кеш → реестр → создаём</span>
+        <span class="keyword">if</span> telegram_id <span class="keyword">in</span> self.cache:
+            <span class="keyword">return</span> self.cache[telegram_id]
+
+        user = self.<span class="func">find_in_registry</span>(telegram_id)
+        <span class="keyword">if</span> user:
+            self.cache[telegram_id] = user.spreadsheet_id
+            <span class="keyword">return</span> user.spreadsheet_id
+
+        <span class="keyword">return await</span> self.<span class="func">create_user</span>(telegram_id, name)
+
+    <span class="keyword">async def</span> <span class="func">create_user</span>(self, telegram_id, name,
+                          base_cur, default_cur):
+        <span class="comment"># 0. Валидация валют</span>
+        <span class="keyword">if not</span> self.<span class="func">validate_currency</span>(base_cur):
+            <span class="keyword">raise</span> ValueError(<span class="string">f"Invalid: {base_cur}"</span>)
+        <span class="keyword">if not</span> self.<span class="func">validate_currency</span>(default_cur):
+            <span class="keyword">raise</span> ValueError(<span class="string">f"Invalid: {default_cur}"</span>)
+
+        <span class="comment"># 1. Копируем template</span>
+        copy = self.drive.files().<span class="func">copy</span>(
+            fileId=TEMPLATE_ID,
+            body={<span class="string">"name"</span>: <span class="string">f"Expenses — {name}"</span>,
+                  <span class="string">"parents"</span>: [FOLDER_ID]}
+        ).execute()
+
+        <span class="comment"># 2. Ownership → admin</span>
+        self.drive.permissions().<span class="func">create</span>(
+            fileId=copy[<span class="string">'id'</span>],
+            transferOwnership=<span class="type">True</span>,
+            body={<span class="string">"type"</span>: <span class="string">"user"</span>,
+                  <span class="string">"role"</span>: <span class="string">"owner"</span>,
+                  <span class="string">"emailAddress"</span>: ADMIN_EMAIL}
+        ).execute()
+
+        <span class="comment"># 3. Записываем в реестр</span>
+        self.sheets.<span class="func">append_row</span>(REGISTRY_ID, [
+            telegram_id, name, copy[<span class="string">'id'</span>],
+            <span class="string">"admin"</span>, <span class="string">""</span>,
+            base_cur, default_cur,
+            datetime.now()
+        ])
+
+        self.cache[telegram_id] = copy[<span class="string">'id'</span>]
+        <span class="keyword">return</span> copy[<span class="string">'id'</span>]
+
+    <span class="keyword">async def</span> <span class="func">transfer_to_user</span>(self, telegram_id, email):
+        <span class="comment"># /email command → transfer ownership</span>
+        sheet_id = self.cache[telegram_id]
+        self.drive.permissions().<span class="func">create</span>(
+            fileId=sheet_id,
+            transferOwnership=<span class="type">True</span>,
+            body={<span class="string">"type"</span>: <span class="string">"user"</span>,
+                  <span class="string">"role"</span>: <span class="string">"owner"</span>,
+                  <span class="string">"emailAddress"</span>: email}
+        ).execute()
+
+    <span class="comment"># ISO 4217 валидация</span>
+    VALID_CURRENCIES = {
+        <span class="string">"USD"</span>, <span class="string">"EUR"</span>, <span class="string">"GBP"</span>, <span class="string">"THB"</span>,
+        <span class="string">"ILS"</span>, <span class="string">"GEL"</span>, <span class="string">"JPY"</span>, <span class="string">"CNY"</span>,
+        <span class="string">"RUB"</span>, <span class="string">"TRY"</span>, <span class="string">"BRL"</span>, <span class="string">"INR"</span>,
+        <span class="comment"># ... все ISO 4217 коды</span>
+    }
+
+    <span class="keyword">def</span> <span class="func">validate_currency</span>(self, code: str) -> bool:
+        <span class="keyword">return</span> (
+            code.upper() <span class="keyword">in</span> self.VALID_CURRENCIES
+            <span class="keyword">and</span> len(code) == 3
+            <span class="keyword">and</span> code.isalpha()
+        )</pre>
+      </div>
+    </div>
+
+    <div class="note-box">
+      <strong>📐 Масштаб:</strong> Template Spreadsheet ~50KB. При 100 пользователях — ~5MB из 15GB лимита Service Account (до transfer ownership). API quota: 300 req/min на проект — при 100 юзерах по 30 транзакций/день = ~3000 req/день, далеко от лимита. Регистрация нового юзера — 3 API-вызова (copy + permission + registry write), занимает ~2 секунды.
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 04. Data Model -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2>Модель данных</h2>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">📋</span> Transactions Sheet</h3>
+      <div class="table-wrap">
+        <table>
+          <tr>
+            <th>Колонка</th>
+            <th>Тип</th>
+            <th>Пример</th>
+            <th>Описание</th>
+          </tr>
+          <tr>
+            <td><code>id</code></td>
+            <td><span class="tag blue">UUID</span></td>
+            <td>a1b2c3d4</td>
+            <td>Уникальный ID транзакции</td>
+          </tr>
+          <tr>
+            <td><code>timestamp</code></td>
+            <td><span class="tag blue">ISO 8601</span></td>
+            <td>2026-03-07T14:30:00+07:00</td>
+            <td>Время транзакции (TZ: Asia/Bangkok)</td>
+          </tr>
+          <tr>
+            <td><code>amount_local</code></td>
+            <td><span class="tag green">FLOAT</span></td>
+            <td>350.00</td>
+            <td>Сумма в оригинальной валюте</td>
+          </tr>
+          <tr>
+            <td><code>local_currency</code></td>
+            <td><span class="tag green">STRING</span></td>
+            <td>THB</td>
+            <td>ISO 4217 код локальной валюты</td>
+          </tr>
+          <tr>
+            <td><code>amount_base</code></td>
+            <td><span class="tag green">FLOAT</span></td>
+            <td>10.15</td>
+            <td>Сумма в базовой валюте юзера</td>
+          </tr>
+          <tr>
+            <td><code>fx_rate</code></td>
+            <td><span class="tag green">FLOAT</span></td>
+            <td>0.029</td>
+            <td>Курс local_currency → base_currency на момент записи</td>
+          </tr>
+          <tr>
+            <td><code>category</code></td>
+            <td><span class="tag purple">STRING</span></td>
+            <td>food</td>
+            <td>Категория расхода</td>
+          </tr>
+          <tr>
+            <td><code>subcategory</code></td>
+            <td><span class="tag purple">STRING</span></td>
+            <td>restaurant</td>
+            <td>Подкатегория (опционально)</td>
+          </tr>
+          <tr>
+            <td><code>description</code></td>
+            <td><span class="tag purple">STRING</span></td>
+            <td>обед в кафе</td>
+            <td>Описание из голосового/текста</td>
+          </tr>
+          <tr>
+            <td><code>source</code></td>
+            <td><span class="tag pink">ENUM</span></td>
+            <td>voice</td>
+            <td>voice | text | photo</td>
+          </tr>
+          <tr>
+            <td><code>raw_input</code></td>
+            <td><span class="tag pink">STRING</span></td>
+            <td>Обед в кафе 350 бат</td>
+            <td>Оригинальный текст/транскрипт</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🏷</span> Categories (настраиваемые)</h3>
+      <div class="grid-2" style="margin-top:12px;">
+        <div>
+          <p style="margin-bottom:8px;"><span class="tag green">food</span> Еда и напитки</p>
+          <ul>
+            <li>restaurant — Кафе, рестораны</li>
+            <li>grocery — Продукты (Makro, Lotus)</li>
+            <li>delivery — Grab Food, LINE MAN</li>
+            <li>coffee — Кофе, напитки</li>
+          </ul>
+        </div>
+        <div>
+          <p style="margin-bottom:8px;"><span class="tag blue">transport</span> Транспорт</p>
+          <ul>
+            <li>fuel — Бензин, зарядка</li>
+            <li>taxi — Grab, Bolt</li>
+            <li>rental — Аренда байка/авто</li>
+            <li>flights — Перелёты</li>
+          </ul>
+        </div>
+        <div>
+          <p style="margin-bottom:8px;"><span class="tag purple">housing</span> Жильё</p>
+          <ul>
+            <li>rent — Аренда</li>
+            <li>utilities — Вода, свет, интернет</li>
+            <li>maintenance — Ремонт, уборка</li>
+          </ul>
+        </div>
+        <div>
+          <p style="margin-bottom:8px;"><span class="tag pink">health</span> Здоровье</p>
+          <ul>
+            <li>pharmacy — Аптека</li>
+            <li>gym — Зал, фитнес</li>
+            <li>medical — Врачи, анализы</li>
+            <li>insurance — Страховка</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:12px; font-size:13px; color:var(--text-dim);">Также: <span class="tag yellow">entertainment</span> <span class="tag green">shopping</span> <span class="tag blue">education</span> <span class="tag purple">services</span> <span class="tag pink">subscriptions</span> <span class="tag yellow">travel</span> <span class="tag green">other</span></p>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 05. LLM Prompt Design -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2>Gemini Prompt Design</h2>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🧠</span> Gemini 3.1 Flash Lite — System Instruction + Schema</h3>
+      <div class="code-block"><pre><span class="comment"># Gemini 3.1 Flash Lite: аудио → structured JSON за один вызов</span>
+
+<span class="keyword">import</span> google.generativeai <span class="keyword">as</span> genai
+<span class="keyword">from</span> pydantic <span class="keyword">import</span> BaseModel
+
+<span class="keyword">class</span> <span class="type">Expense</span>(BaseModel):
+    amount: <span class="type">float</span>        <span class="comment"># сумма</span>
+    currency: <span class="type">str</span>       <span class="comment"># ISO 4217 (THB, USD, EUR...)</span>
+    category: <span class="type">str</span>       <span class="comment"># food, transport, housing...</span>
+    subcategory: <span class="type">str</span>    <span class="comment"># restaurant, grocery, fuel...</span>
+    description: <span class="type">str</span>    <span class="comment"># краткое описание 2-5 слов</span>
+
+model = genai.GenerativeModel(
+    <span class="string">"gemini-3.1-flash-lite-preview"</span>,
+    system_instruction=<span class="string">"""
+Ты — парсер расходов. Прослушай аудио и извлеки:
+- amount: число
+- currency: ISO 4217 ("бат/baht" → THB,
+  "долларов/$" → USD, "евро/€" → EUR)
+- Если валюта не указана → {user_default_currency}
+- category: food|transport|housing|health|
+  entertainment|shopping|education|services|
+  subscriptions|travel|other
+- subcategory: уточнение
+- description: краткое описание на русском
+"""</span>.format(user_default_currency=user.default_currency),
+    generation_config=genai.GenerationConfig(
+        response_mime_type=<span class="string">"application/json"</span>,
+        response_schema=<span class="type">Expense</span>
+    )
+)
+
+<span class="comment"># Один вызов — аудио на входе, типизированный JSON на выходе</span>
+audio = genai.<span class="func">upload_file</span>(<span class="string">"voice.ogg"</span>)
+response = model.<span class="func">generate_content</span>(audio)
+expense = Expense.<span class="func">model_validate_json</span>(response.text)
+
+<span class="comment"># expense.amount=350, expense.currency="THB", ...</span></pre>
+      </div>
+      <div class="note-box">
+        <strong>💡 Почему Gemini 3.1 Flash Lite:</strong> Принимает аудио нативно + возвращает guaranteed JSON через response_schema. Один вызов вместо двух (Whisper + LLM). $0.25/M input, $1.50/M output (~$0.001/запрос). 2.5x быстрее 2.5 Flash. Free tier: 500 RPD. Улучшенное качество ASR.
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 06. Key Components -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2>Ключевые компоненты</h2>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">📁</span> Структура проекта</h3>
+      <div class="code-block"><pre><span class="type">expense-bot/</span>
+├── <span class="func">main.py</span>            <span class="comment"># Entry point (Cloud Function)</span>
+├── <span class="func">handlers/</span>
+│   ├── voice.py       <span class="comment"># Voice → Gemini 3.1 FL</span>
+│   ├── text.py        <span class="comment"># Text → Gemini 3.1 FL</span>
+│   ├── photo.py       <span class="comment"># Photo → Gemini 3.1 FL Vision</span>
+│   ├── commands.py    <span class="comment"># /start, /week, /month...</span>
+│   └── callbacks.py   <span class="comment"># Inline button callbacks</span>
+├── <span class="func">services/</span>
+│   ├── gemini.py      <span class="comment"># Gemini 3.1 Flash Lite client (audio+text+vision)</span>
+│   ├── sheets.py      <span class="comment"># Google Sheets client</span>
+│   ├── user_registry.py <span class="comment"># User registry + Spreadsheet creation</span>
+│   ├── currency.py    <span class="comment"># Exchange rate service (→ USD)</span>
+│   └── analytics.py   <span class="comment"># Stats aggregation</span>
+├── <span class="func">models/</span>
+│   ├── expense.py     <span class="comment"># Pydantic models</span>
+│   └── category.py    <span class="comment"># Category definitions</span>
+├── <span class="string">requirements.txt</span>
+└── <span class="string">.env.yaml</span>           <span class="comment"># GCF env vars config</span></pre>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="icon">🎙</span> Voice Handler</h3>
+        <div class="code-block"><pre><span class="keyword">async def</span> <span class="func">handle_voice</span>(update, context):
+    <span class="comment"># 0. Получить настройки юзера</span>
+    user = registry.get(update.user.id)
+
+    <span class="comment"># 1. Скачать OGG файл</span>
+    voice = update.message.voice
+    file = <span class="keyword">await</span> voice.get_file()
+    buf = <span class="keyword">await</span> file.download_as_bytearray()
+
+    <span class="comment"># 2. Gemini: аудио → JSON (один вызов)</span>
+    expense = <span class="keyword">await</span> gemini.parse_audio(
+      buf, default_currency=user.default_currency
+    )
+
+    <span class="comment"># 3. Конвертировать в base_currency</span>
+    fx = <span class="keyword">await</span> currency.get_rate(
+      expense.currency, user.base_currency
+    )
+    expense.amount_base = expense.amount * fx
+    expense.fx_rate = fx
+
+    <span class="comment"># 4. Показать подтверждение</span>
+    <span class="keyword">await</span> send_confirmation(
+      update, expense, user
+    )</pre>
+        </div>
+      </div>
+      <div class="card">
+        <h3><span class="icon">📊</span> Analytics Service</h3>
+        <div class="code-block"><pre><span class="keyword">async def</span> <span class="func">get_weekly_summary</span>(user):
+    rows = sheets.get_week_data(
+      user.spreadsheet_id
+    )
+
+    <span class="keyword">return</span> {
+      <span class="string">"total_base"</span>: sum(r.amount_base),
+      <span class="string">"base_currency"</span>: user.base_currency,
+      <span class="string">"by_currency"</span>: group_by(
+        rows, <span class="string">"local_currency"</span>,
+        agg=<span class="string">"amount_local"</span>
+      ),
+      <span class="string">"by_category"</span>: group_by(
+        rows, <span class="string">"category"</span>,
+        agg=<span class="string">"amount_base"</span>
+      ),
+      <span class="string">"daily_avg"</span>: total / days,
+      <span class="string">"top_expenses"</span>: sorted(
+        rows, key=<span class="string">"amount_base"</span>
+      )[:5],
+      <span class="string">"vs_last_week"</span>: diff_pct(
+        this_week, last_week
+      )
+    }</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">💬</span> Команды бота</h3>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Команда</th><th>Описание</th><th>Пример ответа</th></tr>
+          <tr>
+            <td><code>/start</code></td>
+            <td>Регистрация + создание Spreadsheet</td>
+            <td>"Готово! Отправляй голосовые или текст с расходами"</td>
+          </tr>
+          <tr>
+            <td><code>/email</code></td>
+            <td>Привязать Google аккаунт</td>
+            <td>"/email vasya@gmail.com → Таблица расшарена и передана тебе"</td>
+          </tr>
+          <tr>
+            <td><code>/settings</code></td>
+            <td>Изменить валюты</td>
+            <td>"/settings base EUR → Базовая валюта: EUR"</td>
+          </tr>
+          <tr>
+            <td><code>/today</code></td>
+            <td>Расходы за сегодня</td>
+            <td>"Сегодня: $36.20 (3 транзакции)"</td>
+          </tr>
+          <tr>
+            <td><code>/week</code></td>
+            <td>Недельная сводка</td>
+            <td>Топ категорий + график + сравнение</td>
+          </tr>
+          <tr>
+            <td><code>/month</code></td>
+            <td>Месячный отчёт</td>
+            <td>Полный breakdown по категориям</td>
+          </tr>
+          <tr>
+            <td><code>/cat</code></td>
+            <td>Расходы по категории</td>
+            <td>"/cat food → Еда: $360 за месяц"</td>
+          </tr>
+          <tr>
+            <td><code>/last</code></td>
+            <td>Последние N транзакций</td>
+            <td>Список последних 10 расходов</td>
+          </tr>
+          <tr>
+            <td><code>/undo</code></td>
+            <td>Удалить последнюю запись</td>
+            <td>"Удалено: Еда 350 THB ($10.15)"</td>
+          </tr>
+          <tr>
+            <td><code>/budget</code></td>
+            <td>Статус бюджета</td>
+            <td>"Еда: $243/$435 (56%)"</td>
+          </tr>
+          <tr>
+            <td><code>/export</code></td>
+            <td>Экспорт CSV за период</td>
+            <td>Отправляет CSV файл</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 07. Google Sheets Structure -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">07</span>
+      <h2>Google Sheets — структура</h2>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">📑</span> Листы (Sheets)</h3>
+      <div class="grid-2" style="margin-top: 12px;">
+        <div>
+          <p><span class="tag green">Transactions</span></p>
+          <p style="font-size:14px; color:var(--text-dim);">Основной лист. Каждая строка — одна транзакция. Все колонки из модели данных выше. Сортировка по timestamp desc.</p>
+        </div>
+        <div>
+          <p><span class="tag blue">Dashboard</span></p>
+          <p style="font-size:14px; color:var(--text-dim);">Сводные формулы: SUMIFS по категориям и периодам, pivot tables, графики. Обновляется автоматически при добавлении строк.</p>
+        </div>
+        <div>
+          <p><span class="tag purple">Categories</span></p>
+          <p style="font-size:14px; color:var(--text-dim);">Справочник категорий и подкатегорий. Редактируется руками — бот читает при старте. Бюджеты по категориям.</p>
+        </div>
+        <div>
+          <p><span class="tag pink">Exchange Rates</span></p>
+          <p style="font-size:14px; color:var(--text-dim);">Кеш курсов валют. Обновляется раз в день. GOOGLEFINANCE формулы для real-time курсов.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">📈</span> Dashboard формулы</h3>
+      <div class="code-block"><pre><span class="comment">// Расходы за текущий месяц по категории (в base_currency)</span>
+=SUMIFS(Transactions!F:F,
+  Transactions!B:B, ">="&DATE(YEAR(TODAY()),MONTH(TODAY()),1),
+  Transactions!H:H, <span class="string">"food"</span>)
+
+<span class="comment">// Средний дневной расход за последние 30 дней (base_currency)</span>
+=SUMIFS(Transactions!F:F,
+  Transactions!B:B, ">="&TODAY()-30) / 30
+
+<span class="comment">// Топ-5 категорий по amount_base</span>
+=QUERY(Transactions!A:L,
+  <span class="string">"SELECT H, SUM(F) WHERE B >= date '"
+  &TEXT(EOMONTH(TODAY(),-1)+1,"yyyy-MM-dd")
+  &"' GROUP BY H ORDER BY SUM(F) DESC LIMIT 5"</span>)
+
+<span class="comment">// Расходы по валютам (локальные суммы)</span>
+=QUERY(Transactions!A:L,
+  <span class="string">"SELECT E, SUM(D) WHERE B >= date '"
+  &TEXT(EOMONTH(TODAY(),-1)+1,"yyyy-MM-dd")
+  &"' GROUP BY E ORDER BY SUM(F) DESC"</span>)</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 08. Infrastructure -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">08</span>
+      <h2>Инфраструктура и деплой</h2>
+    </div>
+
+    <div class="arch-diagram">
+      <div class="arch-label">Deployment — 100% Google Cloud</div>
+      <div class="arch-row">
+        <div class="arch-box client">📱 Telegram<br><small>Bot API (webhook)</small></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-box service" style="min-width:220px;">⚡ Cloud Functions<br><small>Python 3.12 (2nd gen)</small></div>
+      </div>
+
+      <div class="arch-vline"></div>
+      <div class="arch-label">Один GCP Project · Один Service Account</div>
+
+      <div class="arch-row">
+        <div class="arch-box external">🧠 Gemini 3.1 FL<br><small>Audio → JSON</small></div>
+        <div class="arch-box storage">📊 Google Sheets<br><small>Per-user Spreadsheets</small></div>
+        <div class="arch-box storage">📁 Google Drive<br><small>Create + Share files</small></div>
+        <div class="arch-box storage">💱 ExchangeRate<br><small>Free API</small></div>
+      </div>
+    </div>
+
+    <div class="note-box">
+      <strong>☁️ Почему Cloud Functions, а не Railway/Render/Cloud Run:</strong> Всё в одном GCP-проекте — Gemini, Sheets, хостинг. Один Service Account на всё. Не нужен Docker. Не нужен сервер. Деплой — одна команда. Free tier: 2M вызовов/мес, 400K GB-сек/мес. При 30 транзакциях/день — бесплатно навсегда.
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="icon">📁</span> Структура деплоя</h3>
+        <div class="code-block"><pre><span class="type">expense-bot/</span>
+├── <span class="func">main.py</span>           <span class="comment"># Entry point (HTTP function)</span>
+├── <span class="func">handlers/</span>
+│   ├── voice.py      <span class="comment"># Voice → Gemini 3.1 FL → Sheets</span>
+│   ├── text.py       <span class="comment"># Text → Gemini 3.1 FL → Sheets</span>
+│   ├── commands.py   <span class="comment"># /start, /email, /week...</span>
+│   └── callbacks.py  <span class="comment"># Inline button handlers</span>
+├── <span class="func">services/</span>
+│   ├── gemini.py     <span class="comment"># Gemini 3.1 Flash Lite</span>
+│   ├── sheets.py     <span class="comment"># Google Sheets client</span>
+│   ├── user_registry.py <span class="comment"># User mgmt + Drive API</span>
+│   ├── currency.py   <span class="comment"># FX rates (→ USD)</span>
+│   └── analytics.py  <span class="comment"># Stats aggregation</span>
+├── <span class="func">models/</span>
+│   └── expense.py    <span class="comment"># Pydantic models</span>
+├── <span class="string">requirements.txt</span>
+└── <span class="string">.env.yaml</span>          <span class="comment"># GCF env vars config</span></pre>
+        </div>
+        <p style="font-size:13px; margin-top:8px; color:var(--text-dim);">Без Docker, без pyproject.toml — Cloud Functions читает requirements.txt напрямую.</p>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🚀</span> Деплой — одна команда</h3>
+        <div class="code-block"><pre><span class="comment"># Деплой Cloud Function</span>
+gcloud functions deploy expense-bot \
+  --gen2 \
+  --runtime=python312 \
+  --region=asia-southeast1 \
+  --source=. \
+  --entry-point=webhook \
+  --trigger-http \
+  --allow-unauthenticated \
+  --env-vars-file=.env.yaml \
+  --memory=256MB \
+  --timeout=60s
+
+<span class="comment"># Установить webhook в Telegram</span>
+curl <span class="string">"https://api.telegram.org/bot{TOKEN}/setWebhook?url={FUNCTION_URL}"</span></pre>
+        </div>
+        <p style="font-size:13px; margin-top:8px; color:var(--text-dim);">Регион <code>asia-southeast1</code> (Сингапур) — минимальный latency из Таиланда. При переезде — меняется одной строкой.</p>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="icon">⚡</span> Entry Point (main.py)</h3>
+        <div class="code-block"><pre><span class="keyword">import</span> functions_framework
+<span class="keyword">from</span> telegram <span class="keyword">import</span> Update, Bot
+
+<span class="func">@functions_framework.http</span>
+<span class="keyword">def</span> <span class="func">webhook</span>(request):
+    <span class="string">"""Telegram webhook → Cloud Function"""</span>
+    bot = Bot(token=TELEGRAM_TOKEN)
+    update = Update.de_json(
+        request.get_json(), bot
+    )
+
+    <span class="comment"># Route by message type</span>
+    <span class="keyword">if</span> update.message.voice:
+        <span class="keyword">return</span> handle_voice(update)
+    <span class="keyword">elif</span> update.message.text:
+        <span class="keyword">return</span> handle_text(update)
+    <span class="keyword">elif</span> update.message.photo:
+        <span class="keyword">return</span> handle_photo(update)
+
+    <span class="keyword">return</span> <span class="string">"ok"</span>, 200</pre>
+        </div>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🔐</span> Environment (.env.yaml)</h3>
+        <div class="code-block"><pre><span class="type">TELEGRAM_BOT_TOKEN</span>: <span class="string">"xxx"</span>
+<span class="type">GOOGLE_API_KEY</span>: <span class="string">"AIza..."</span>
+<span class="type">ADMIN_EMAIL</span>: <span class="string">"you@gmail.com"</span>
+<span class="type">TEMPLATE_SHEET_ID</span>: <span class="string">"1tpl..."</span>
+<span class="type">REGISTRY_SHEET_ID</span>: <span class="string">"1reg..."</span>
+<span class="type">USERS_FOLDER_ID</span>: <span class="string">"1fld..."</span>
+<span class="type">EXCHANGE_RATE_API_KEY</span>: <span class="string">"xxx"</span>
+<span class="type">TIMEZONE</span>: <span class="string">"Asia/Bangkok"</span></pre>
+        </div>
+        <div class="note-box" style="margin-top:12px;">
+          <strong>💱 Валюты:</strong> base_currency и default_currency — теперь per-user настройки в Master Registry, не env vars. Каждый юзер выбирает свои валюты при регистрации и может изменить через /settings.
+        </div>
+        </div>
+        <div class="note-box" style="margin-top:12px;">
+          <strong>🔒 Service Account:</strong> Не нужен отдельный JSON-ключ. Cloud Functions автоматически использует Default Service Account проекта. Достаточно дать ему доступ к нужному Spreadsheet.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">💰</span> Стоимость (оценка при 20-30 транзакций/день)</h3>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Сервис</th><th>Расход</th><th>Комментарий</th></tr>
+          <tr>
+            <td>Cloud Functions</td>
+            <td><span class="tag green">$0</span></td>
+            <td>Free tier: 2M вызовов + 400K GB-сек/мес. ~900 вызовов/мес — даже не заметит.</td>
+          </tr>
+          <tr>
+            <td>Gemini 3.1 Flash Lite</td>
+            <td><span class="tag green">~$0.90/мес</span></td>
+            <td>~$0.001/запрос × 30/день × 30 дней</td>
+          </tr>
+          <tr>
+            <td>Google Sheets API</td>
+            <td><span class="tag green">$0</span></td>
+            <td>Бесплатно (лимит 300 req/min)</td>
+          </tr>
+          <tr>
+            <td>Exchange Rate API</td>
+            <td><span class="tag green">$0</span></td>
+            <td>exchangerate-api.com free tier</td>
+          </tr>
+          <tr>
+            <td><strong>Итого</strong></td>
+            <td><span class="tag blue"><strong>~$0.90/мес</strong></span></td>
+            <td>Free tier (500 RPD) или ~$0.90/мес на paid tier</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">⏱</span> Cold Start и Latency</h3>
+      <p style="margin-bottom: 12px;">Cloud Functions 2nd gen имеет холодный старт ~1-2 сек после простоя. Для бота это некритично — пользователь и так ожидает ответ. Типичный flow:</p>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Этап</th><th>Время</th><th>Примечание</th></tr>
+          <tr>
+            <td>Cold start (если был простой)</td>
+            <td>~1-2 сек</td>
+            <td>Только первый запрос после ~15 мин простоя</td>
+          </tr>
+          <tr>
+            <td>Telegram → Cloud Function</td>
+            <td>~50ms</td>
+            <td>Webhook, Сингапур → Сингапур</td>
+          </tr>
+          <tr>
+            <td>Скачать аудио из Telegram</td>
+            <td>~100ms</td>
+            <td>OGG файл, обычно 10-50KB</td>
+          </tr>
+          <tr>
+            <td>Gemini 3.1 Flash Lite (audio → JSON)</td>
+            <td>~150-300ms</td>
+            <td>Один вызов, structured output</td>
+          </tr>
+          <tr>
+            <td>Exchange Rate (из кеша)</td>
+            <td>~5ms</td>
+            <td>In-memory кеш, обновление раз в 24ч</td>
+          </tr>
+          <tr>
+            <td>Google Sheets (запись)</td>
+            <td>~200ms</td>
+            <td>Append одной строки</td>
+          </tr>
+          <tr>
+            <td>Ответ в Telegram</td>
+            <td>~50ms</td>
+            <td>Inline keyboard с подтверждением</td>
+          </tr>
+          <tr>
+            <td><strong>Итого (warm)</strong></td>
+            <td><strong>~550ms</strong></td>
+            <td>От голосового до подтверждения</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 09. Roadmap -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">09</span>
+      <h2>Roadmap</h2>
+    </div>
+
+    <div class="phase-header">
+      <span class="phase-badge mvp">MVP — 1-2 дня</span>
+      <span style="color:var(--accent3); font-size:15px; font-weight:600;">Phase 1: Базовый трекер</span>
+    </div>
+    <div class="card">
+      <ul>
+        <li>Multi-user: автоматическая регистрация и создание Spreadsheet</li>
+        <li>Голосовой и текстовый ввод расходов</li>
+        <li>Gemini 3.1 Flash Lite: аудио/текст → structured JSON</li>
+        <li>Автоконвертация local → base_currency (per-user)</li>
+        <li>Inline-кнопки подтверждения</li>
+        <li>Команды /today, /week, /last, /email, /settings</li>
+      </ul>
+    </div>
+
+    <div class="phase-header">
+      <span class="phase-badge v2">V2 — +2-3 дня</span>
+      <span style="color:var(--accent2); font-size:15px; font-weight:600;">Phase 2: Аналитика и мультивалютность</span>
+    </div>
+    <div class="card">
+      <ul>
+        <li>Расширенная аналитика: /month, /cat, /budget</li>
+        <li>Dashboard в Google Sheets с графиками (base_currency)</li>
+        <li>Настраиваемые бюджеты по категориям (в base_currency)</li>
+        <li>Уведомления при превышении бюджета</li>
+        <li>Команда /export для CSV</li>
+        <li>Отчёты с разбивкой по валютам и по категориям</li>
+      </ul>
+    </div>
+
+    <div class="phase-header">
+      <span class="phase-badge v3">V3 — +3-5 дней</span>
+      <span style="color:var(--accent4); font-size:15px; font-weight:600;">Phase 3: Продвинутые фичи</span>
+    </div>
+    <div class="card">
+      <ul>
+        <li>OCR для фото чеков (Gemini 3.1 Flash Lite Vision — тот же API)</li>
+        <li>Recurring expenses (автоматические записи)</li>
+        <li>Умные insights: "Ты тратишь на кофе на 40% больше чем в прошлом месяце"</li>
+        <li>Telegram Mini App с красивым дашбордом</li>
+        <li>Интеграция с тайскими QR-платежами (парсинг SMS?)</li>
+        <li>Shared expenses (splitwise-логика для пар/семей)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 10. Security -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">10</span>
+      <h2>Безопасность</h2>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3><span class="icon">🔒</span> Меры защиты</h3>
+        <ul>
+          <li>Данные изолированы: каждый юзер — отдельный Spreadsheet</li>
+          <li>Открытая регистрация через /start (или whitelist через ALLOWED_USER_IDS)</li>
+          <li>GCP Default Service Account — editor-доступ к Spreadsheets</li>
+          <li>Env vars в .env.yaml + Secret Manager (для production)</li>
+          <li>Webhook с secret token для верификации</li>
+          <li>Cloud Functions IAM — контроль кто может вызвать функцию</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="icon">🛡</span> Privacy</h3>
+        <ul>
+          <li>Голосовые файлы удаляются сразу после обработки Gemini 3.1 FL</li>
+          <li>Gemini 3.1 FL получает только аудио, без метаданных пользователя</li>
+          <li>Ownership Spreadsheet передаётся юзеру (при наличии email)</li>
+          <li>Admin не видит данные юзеров без явного доступа</li>
+          <li>Нет хранения на сервере бота (stateless)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 11. Alternatives Considered -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">11</span>
+      <h2>Рассмотренные альтернативы</h2>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <tr><th>Решение</th><th>За</th><th>Против</th><th>Вердикт</th></tr>
+          <tr>
+            <td>Whisper + Claude/GPT (два вызова)</td>
+            <td>Лучший парсинг категорий</td>
+            <td>2 API, дороже, выше latency</td>
+            <td><span class="tag pink">Заменено на Gemini 3.1 FL</span></td>
+          </tr>
+          <tr>
+            <td>Фиксированная базовая валюта (env var)</td>
+            <td>Проще код</td>
+            <td>Не гибко для разных юзеров</td>
+            <td><span class="tag pink">Per-user настройки</span></td>
+          </tr>
+          <tr>
+            <td>Railway / Render + Docker</td>
+            <td>Простой деплой, гибкость</td>
+            <td>Лишняя зависимость, $5/мес, Docker не нужен</td>
+            <td><span class="tag pink">Cloud Functions бесплатно</span></td>
+          </tr>
+          <tr>
+            <td>Cloud Run</td>
+            <td>Больше контроля, min instances</td>
+            <td>Нужен Docker, overkill для бота</td>
+            <td><span class="tag yellow">Если нужен warm start</span></td>
+          </tr>
+          <tr>
+            <td>Supabase/PostgreSQL</td>
+            <td>SQL, масштабируемость</td>
+            <td>Overkill для 1 пользователя</td>
+            <td><span class="tag pink">Не нужно</span></td>
+          </tr>
+          <tr>
+            <td>Notion вместо Sheets</td>
+            <td>Красивые views</td>
+            <td>API медленнее, формулы слабее</td>
+            <td><span class="tag yellow">Можно добавить позже</span></td>
+          </tr>
+          <tr>
+            <td>Telegram Mini App</td>
+            <td>Rich UI прямо в TG</td>
+            <td>Сложнее в разработке</td>
+            <td><span class="tag yellow">V3 для дашборда</span></td>
+          </tr>
+          <tr>
+            <td>WhatsApp Bot</td>
+            <td>Популярнее в ЮВА</td>
+            <td>API платный, сложнее</td>
+            <td><span class="tag pink">Нет</span></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    expense-tracker-bot architecture v4.0 — march 2026 — gemini-3.1-flash-lite + usd base + cloud functions + multi-user
+  </div>
+
+</div>
+</body>
+</html>

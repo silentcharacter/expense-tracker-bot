@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expense Tracker Bot — Setup Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --border: #1e293b;
+    --accent: #22d3ee;
+    --accent2: #a78bfa;
+    --accent3: #34d399;
+    --accent4: #f472b6;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --text-bright: #f8fafc;
+    --warning: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.7;
+    padding: 40px 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+
+  .hero {
+    text-align: center;
+    padding: 60px 0 40px;
+    position: relative;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(52,211,153,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent3);
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    margin-bottom: 16px;
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 12px;
+    letter-spacing: -1px;
+  }
+  .hero h1 span { color: var(--accent3); }
+  .hero p {
+    color: var(--text-dim);
+    font-size: 17px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .section { margin: 48px 0; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--accent3);
+    background: rgba(52,211,153,0.1);
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+  }
+  .section h2 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-bright);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 16px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: rgba(52,211,153,0.3); }
+  .card h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p, .card li {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.8;
+  }
+  .card ul { list-style: none; padding: 0; }
+  .card ul li {
+    padding: 4px 0;
+    padding-left: 20px;
+    position: relative;
+  }
+  .card ul li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent3);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    background: rgba(52,211,153,0.15);
+    color: var(--accent3);
+    border-radius: 50%;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-right: 8px;
+  }
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    margin: 16px 0;
+  }
+  .step-content { flex: 1; }
+  .step-content h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 6px;
+  }
+  .step-content p {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  .code-block {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 12px 0;
+    overflow-x: auto;
+  }
+  .code-block pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #c9d1d9;
+  }
+  .comment { color: #8b949e; }
+  .keyword { color: #ff7b72; }
+  .string { color: #a5d6ff; }
+  .func { color: #d2a8ff; }
+  .type { color: #79c0ff; }
+  .url { color: #58a6ff; text-decoration: underline; }
+
+  .note-box {
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+    color: var(--warning);
+  }
+  .note-box strong { color: #fde68a; }
+
+  .success-box {
+    background: rgba(52,211,153,0.08);
+    border: 1px solid rgba(52,211,153,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+    color: var(--accent3);
+  }
+  .success-box strong { color: #6ee7b7; }
+
+  .danger-box {
+    background: rgba(244,114,182,0.08);
+    border: 1px solid rgba(244,114,182,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+    color: var(--accent4);
+  }
+  .danger-box strong { color: #f9a8d4; }
+
+  .tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin: 2px;
+  }
+  .tag.green { background: rgba(52,211,153,0.15); color: var(--accent3); }
+  .tag.blue { background: rgba(34,211,238,0.15); color: var(--accent); }
+  .tag.purple { background: rgba(167,139,250,0.15); color: var(--accent2); }
+  .tag.pink { background: rgba(244,114,182,0.15); color: var(--accent4); }
+  .tag.yellow { background: rgba(251,191,36,0.15); color: var(--warning); }
+
+  .table-wrap { overflow-x: auto; margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent3);
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 16px;
+    color: var(--text-dim);
+    border-bottom: 1px solid rgba(30,41,59,0.5);
+  }
+  tr:hover td { color: var(--text); }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--border), transparent);
+    margin: 48px 0;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 700px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 28px; }
+  }
+
+  .time-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: rgba(52,211,153,0.15);
+    color: var(--accent3);
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-left: 8px;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-label">Setup Guide</div>
+    <h1>Expense Tracker Bot — <span>Setup</span></h1>
+    <p>Пошаговая инструкция: от нуля до работающего бота. Все аккаунты, ключи и конфигурация за ~20 минут.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Prerequisites -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">00</span>
+      <h2>Что понадобится</h2>
+    </div>
+    <div class="card">
+      <h3><span class="icon">📋</span> Чек-лист перед началом</h3>
+      <ul>
+        <li>Google-аккаунт (Gmail) — твой существующий, новый не нужен</li>
+        <li>Telegram-аккаунт</li>
+        <li>Node.js ≥ 18 (для Claude Code)</li>
+        <li>Python 3.12</li>
+        <li>gcloud CLI (<a href="https://cloud.google.com/sdk/docs/install" style="color:var(--accent);">cloud.google.com/sdk/docs/install</a>)</li>
+        <li>~20 минут времени</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🔑</span> Итоговые ключи</h3>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Ключ</th><th>Откуда</th><th>Для чего</th><th>Стоимость</th></tr>
+          <tr>
+            <td><code>GOOGLE_API_KEY</code></td>
+            <td>AI Studio</td>
+            <td>Gemini 3.1 Flash Lite API</td>
+            <td><span class="tag green">Бесплатно</span></td>
+          </tr>
+          <tr>
+            <td><code>Service Account JSON</code></td>
+            <td>Cloud Console</td>
+            <td>Sheets + Drive API</td>
+            <td><span class="tag green">Бесплатно</span></td>
+          </tr>
+          <tr>
+            <td><code>TELEGRAM_BOT_TOKEN</code></td>
+            <td>@BotFather</td>
+            <td>Telegram Bot API</td>
+            <td><span class="tag green">Бесплатно</span></td>
+          </tr>
+          <tr>
+            <td><code>EXCHANGE_RATE_API_KEY</code></td>
+            <td>exchangerate-api.com</td>
+            <td>Курсы валют</td>
+            <td><span class="tag green">Бесплатно</span></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 1: GCP Project -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2>Google Cloud Project</h2>
+      <span class="time-badge">~5 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">☁️</span> Создание проекта</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Открой Google Cloud Console</h4>
+          <p>Перейди на <a href="https://console.cloud.google.com" style="color:var(--accent);">console.cloud.google.com</a> и залогинься своим Gmail.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Создай новый проект</h4>
+          <p>Кликни на выпадающий список проектов сверху → "New Project". Имя: <code>expense-bot</code>. Organization оставь пустым если нет Workspace.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Или через gcloud CLI</h4>
+          <div class="code-block"><pre><span class="comment"># Авторизация</span>
+gcloud auth login
+
+<span class="comment"># Создание проекта</span>
+gcloud projects create expense-bot-12345 \
+  --name=<span class="string">"Expense Bot"</span>
+
+<span class="comment"># Установить как текущий</span>
+gcloud config set project expense-bot-12345</pre>
+          </div>
+          <p style="margin-top:8px;">ID проекта должен быть уникальным глобально — добавь цифры к имени.</p>
+        </div>
+      </div>
+
+      <div class="note-box">
+        <strong>💰 Billing:</strong> Google Cloud требует привязку карты, но для нашего проекта всё попадает в бесплатный tier. Новые аккаунты получают $300 кредита на 90 дней. Cloud Functions, Sheets API и Drive API бесплатны в наших объёмах.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🔌</span> Включение API</h3>
+      <p style="margin-bottom: 12px;">Включи четыре API в проекте:</p>
+      <div class="code-block"><pre><span class="comment"># Все четыре API одной командой</span>
+gcloud services enable \
+  sheets.googleapis.com \
+  drive.googleapis.com \
+  cloudfunctions.googleapis.com \
+  generativelanguage.googleapis.com
+
+<span class="comment"># Проверить что включены</span>
+gcloud services list --enabled</pre>
+      </div>
+      <p style="margin-top:12px;">Или через UI: APIs & Services → Library → ищи каждый по имени → Enable.</p>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 2: Gemini API Key -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2>Gemini API Key</h2>
+      <span class="time-badge">~2 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🧠</span> Получение ключа через AI Studio</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Открой AI Studio</h4>
+          <p>Перейди на <a href="https://aistudio.google.com" style="color:var(--accent);">aistudio.google.com</a> (тот же Gmail-аккаунт).</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Создай API Key</h4>
+          <p>Кликни "Get API Key" → "Create API Key in existing project" → выбери <code>expense-bot</code>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Скопируй ключ</h4>
+          <p>Ключ выглядит как <code>AIzaSy...</code>. Сохрани его — это <code>GOOGLE_API_KEY</code> в .env.yaml.</p>
+        </div>
+      </div>
+
+      <div class="success-box">
+        <strong>🎁 Free tier Gemini 3.1 Flash Lite:</strong> 15 RPM, 250K TPM, 500 RPD. Для персонального бота (30 транзакций/день) — бесплатно. Хватит на ~16 активных пользователей. При большей нагрузке — включи billing (Tier 1), стоимость: $0.25/M input, $1.50/M output (~$0.90/мес при 30 запросах/день).
+      </div>
+
+      <div class="step">
+        <span class="step-num">✓</span>
+        <div class="step-content">
+          <h4>Проверка</h4>
+          <div class="code-block"><pre><span class="comment"># Быстрый тест — должен вернуть JSON-ответ</span>
+curl <span class="string">"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=YOUR_API_KEY"</span> \
+  -H <span class="string">'Content-Type: application/json'</span> \
+  -d <span class="string">'{"contents":[{"parts":[{"text":"Say hello"}]}]}'</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 3: Service Account -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2>Service Account (Sheets + Drive)</h2>
+      <span class="time-badge">~5 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🤖</span> Создание Service Account</h3>
+
+      <div class="code-block"><pre><span class="comment"># Создать Service Account</span>
+gcloud iam service-accounts create expense-bot-sa \
+  --display-name=<span class="string">"Expense Bot Service Account"</span>
+
+<span class="comment"># Скачать JSON-ключ</span>
+gcloud iam service-accounts keys create credentials.json \
+  --iam-account=expense-bot-sa@expense-bot-12345.iam.gserviceaccount.com</pre>
+      </div>
+
+      <p style="margin-top:12px;">Файл <code>credentials.json</code> появится в текущей директории. Это credentials для программного доступа к Sheets и Drive.</p>
+
+      <div class="danger-box">
+        <strong>🔒 Безопасность:</strong> Никогда не коммить credentials.json в git! Добавь в .gitignore немедленно. Для продакшена используй Google Secret Manager.
+      </div>
+
+      <div class="code-block"><pre><span class="comment"># Добавить в .gitignore</span>
+echo <span class="string">"credentials.json"</span> >> .gitignore</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">📊</span> Настройка Google Sheets</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Создай Template Spreadsheet</h4>
+          <p>Открой <a href="https://sheets.google.com" style="color:var(--accent);">sheets.google.com</a> → создай новый Spreadsheet → назови "Expense Bot — Template". Создай листы: Transactions, Dashboard, Categories.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Создай Master Registry Spreadsheet</h4>
+          <p>Ещё один Spreadsheet → назови "Expense Bot — Registry". Один лист Users с колонками: telegram_id, username, display_name, email, spreadsheet_id, owner, base_currency, default_currency, created_at, status.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Расшарь оба Service Account'у</h4>
+          <p>Открой каждый Spreadsheet → Share → вставь email Service Account'а (он выглядит как <code><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="6d08151d08031e08400f0219401e0c2d08151d08031e08400f0219405c5f5e595843040c00430a1e081f1b040e080c0e0e02180319430e0200">[email&#160;protected]</a></code>) → дай роль Editor.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">4</span>
+        <div class="step-content">
+          <h4>Создай папку для пользовательских Spreadsheets</h4>
+          <p>В Google Drive создай папку "ExpenseBot Users". Расшарь её Service Account'у (Editor). Скопируй ID папки из URL: <code>drive.google.com/drive/folders/<strong>FOLDER_ID</strong></code>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">5</span>
+        <div class="step-content">
+          <h4>Запиши ID</h4>
+          <p>Из URL каждого Spreadsheet скопируй ID: <code>docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit</code>. Тебе нужны три ID: TEMPLATE_SHEET_ID, REGISTRY_SHEET_ID, USERS_FOLDER_ID.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 4: Telegram Bot -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2>Telegram Bot</h2>
+      <span class="time-badge">~2 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🤖</span> Создание бота через BotFather</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Открой @BotFather в Telegram</h4>
+          <p>Найди <a href="https://t.me/BotFather" style="color:var(--accent);">@BotFather</a> в Telegram и начни чат.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Создай бота</h4>
+          <div class="code-block"><pre><span class="comment"># Отправь BotFather:</span>
+/newbot
+
+<span class="comment"># BotFather спросит имя — введи:</span>
+Expense Tracker
+
+<span class="comment"># BotFather спросит username — введи (должен заканчиваться на "bot"):</span>
+my_expense_tracker_bot</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Сохрани токен</h4>
+          <p>BotFather вернёт токен вида <code>7123456789:AAH...</code>. Это <code>TELEGRAM_BOT_TOKEN</code>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">4</span>
+        <div class="step-content">
+          <h4>(Опционально) Настрой команды</h4>
+          <div class="code-block"><pre><span class="comment"># Отправь BotFather:</span>
+/setcommands
+
+<span class="comment"># Выбери своего бота, затем отправь список:</span>
+start - Start and register
+email - Link your Google account
+settings - Change currencies
+today - Today's expenses
+week - Weekly summary
+month - Monthly report
+last - Last 10 expenses
+undo - Delete last expense
+budget - Budget status
+export - Export CSV</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 5: Exchange Rate API -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2>Exchange Rate API</h2>
+      <span class="time-badge">~2 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">💱</span> Регистрация</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Зарегистрируйся</h4>
+          <p>Перейди на <a href="https://www.exchangerate-api.com" style="color:var(--accent);">exchangerate-api.com</a> → Sign Up (бесплатно). Подтверди email.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Скопируй API Key</h4>
+          <p>После логина — ключ на главной странице дашборда. Это <code>EXCHANGE_RATE_API_KEY</code>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">✓</span>
+        <div class="step-content">
+          <h4>Проверка</h4>
+          <div class="code-block"><pre><span class="comment"># Должен вернуть JSON с курсами</span>
+curl <span class="string">"https://v6.exchangerate-api.com/v6/YOUR_KEY/latest/USD"</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="success-box">
+        <strong>🎁 Free tier:</strong> 1500 запросов/мес. Нам нужен ~1 запрос в день (курсы кешируются на 24 часа) = ~30 запросов/мес. Запас в 50 раз.
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 6: Assemble .env.yaml -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2>Сборка .env.yaml</h2>
+      <span class="time-badge">~2 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">⚙️</span> Финальная конфигурация</h3>
+      <p style="margin-bottom:12px;">Собери все ключи в один файл:</p>
+
+      <div class="code-block"><pre><span class="comment"># .env.yaml — конфигурация Cloud Function</span>
+
+<span class="comment"># Telegram</span>
+<span class="type">TELEGRAM_BOT_TOKEN</span>: <span class="string">"7123456789:AAH..."</span>
+
+<span class="comment"># Gemini</span>
+<span class="type">GOOGLE_API_KEY</span>: <span class="string">"AIzaSy..."</span>
+
+<span class="comment"># Google Sheets / Drive</span>
+<span class="type">ADMIN_EMAIL</span>: <span class="string">"<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="7801170d0a561d15191114381f15191114561b1715">[email&#160;protected]</a>"</span>
+<span class="type">TEMPLATE_SHEET_ID</span>: <span class="string">"1aBcDe..."</span>
+<span class="type">REGISTRY_SHEET_ID</span>: <span class="string">"1fGhIj..."</span>
+<span class="type">USERS_FOLDER_ID</span>: <span class="string">"1kLmNo..."</span>
+
+<span class="comment"># Exchange Rate</span>
+<span class="type">EXCHANGE_RATE_API_KEY</span>: <span class="string">"abc123..."</span>
+
+<span class="comment"># App Config</span>
+<span class="type">TIMEZONE</span>: <span class="string">"Asia/Bangkok"</span></pre>
+      </div>
+
+      <div class="danger-box">
+        <strong>🔒 Не коммить .env.yaml!</strong> Добавь в .gitignore. Для локальной разработки используй .env.yaml. Для продакшена — Cloud Functions environment variables или Secret Manager.
+      </div>
+
+      <div class="code-block"><pre><span class="comment"># .gitignore</span>
+credentials.json
+.env.yaml
+__pycache__/
+*.pyc</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 7: Verify -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">07</span>
+      <h2>Проверка</h2>
+      <span class="time-badge">~2 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">✅</span> Чек-лист готовности</h3>
+      <div class="table-wrap">
+        <table>
+          <tr><th>Компонент</th><th>Как проверить</th><th>Ожидаемый результат</th></tr>
+          <tr>
+            <td>GCP Project</td>
+            <td><code>gcloud config get-value project</code></td>
+            <td>expense-bot-12345</td>
+          </tr>
+          <tr>
+            <td>APIs enabled</td>
+            <td><code>gcloud services list --enabled</code></td>
+            <td>4 API в списке</td>
+          </tr>
+          <tr>
+            <td>Gemini API Key</td>
+            <td>curl запрос (см. шаг 02)</td>
+            <td>JSON-ответ с текстом</td>
+          </tr>
+          <tr>
+            <td>Service Account</td>
+            <td><code>ls credentials.json</code></td>
+            <td>Файл существует</td>
+          </tr>
+          <tr>
+            <td>Template Sheet</td>
+            <td>Открой в браузере</td>
+            <td>3 листа (Transactions, Dashboard, Categories)</td>
+          </tr>
+          <tr>
+            <td>Registry Sheet</td>
+            <td>Открой в браузере</td>
+            <td>Лист Users с колонками</td>
+          </tr>
+          <tr>
+            <td>Sheets shared with SA</td>
+            <td>Проверь Share settings</td>
+            <td>SA email с ролью Editor</td>
+          </tr>
+          <tr>
+            <td>Telegram Bot</td>
+            <td>Открой бота в Telegram</td>
+            <td>Бот существует, можно отправить /start</td>
+          </tr>
+          <tr>
+            <td>Exchange Rate API</td>
+            <td>curl запрос (см. шаг 05)</td>
+            <td>JSON с курсами</td>
+          </tr>
+          <tr>
+            <td>.env.yaml</td>
+            <td>Все поля заполнены</td>
+            <td>9 переменных, все непустые</td>
+          </tr>
+          <tr>
+            <td>.gitignore</td>
+            <td><code>cat .gitignore</code></td>
+            <td>credentials.json и .env.yaml в списке</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="success-box">
+      <strong>🎉 Готово!</strong> Все ключи получены, инфраструктура настр

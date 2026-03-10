@@ -5,18 +5,17 @@ import os
 from datetime import datetime
 from typing import Optional
 
+from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.auth import default as google_auth_default
 
 from models.expense import User, UserRole, UserStatus
 from services.sheets import SheetsService
 
 logger = logging.getLogger(__name__)
 
-_SCOPES = [
+_DRIVE_SCOPES = [
     "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 # Comprehensive ISO 4217 alphabetic currency codes
@@ -49,8 +48,9 @@ class UserRegistryError(Exception):
 class UserRegistry:
     """Manages user registration and personal Spreadsheet creation.
 
-    On first use, copies a template Spreadsheet, grants the service account
-    editor access, and records the new user in the Master Registry sheet.
+    Drive operations (copy template, transfer ownership) use the admin's
+    OAuth2 credentials so that files are created under the admin's Drive
+    quota — Service Accounts on consumer GCP projects have zero storage.
     Subsequent look-ups are served from an in-process cache.
     """
 
@@ -64,7 +64,6 @@ class UserRegistry:
         self._template_id = os.environ["TEMPLATE_SHEET_ID"]
         self._folder_id = os.environ["USERS_FOLDER_ID"]
         self._admin_email = os.environ["ADMIN_EMAIL"]
-        # telegram_id (int) → User
         self._cache: dict[int, User] = {}
 
     # ── Public API ──────────────────────────────────────────────────────────
@@ -94,8 +93,8 @@ class UserRegistry:
 
         Steps:
           1. Validate currency codes.
-          2. Copy template Spreadsheet via Drive API.
-          3. Transfer ownership to admin account.
+          2. Copy template Spreadsheet via Drive API (admin OAuth2).
+          3. Share new Spreadsheet with SA for gspread access.
           4. Write user row to Master Registry.
           5. Populate the Transactions header row.
           6. Cache and return the new User.
@@ -118,7 +117,7 @@ class UserRegistry:
         self.validate_currency(default_currency, raise_on_invalid=True)
 
         spreadsheet_id = self._copy_template(display_name)
-        self._transfer_ownership_to_admin(spreadsheet_id)
+        self._share_with_service_account(spreadsheet_id)
 
         user = User(
             telegram_id=telegram_id,
@@ -128,7 +127,7 @@ class UserRegistry:
             base_currency=base_currency.upper(),
             default_currency=default_currency.upper(),
             created_at=datetime.utcnow(),
-            owner=UserRole.user,
+            role=UserRole.user,
             status=UserStatus.active,
         )
 
@@ -142,11 +141,15 @@ class UserRegistry:
         return user
 
     async def transfer_to_user(self, telegram_id: int, email: str) -> None:
-        """Share the user's Spreadsheet and transfer ownership to their Google account.
+        """Share the user's Spreadsheet with their Google account as editor.
+
+        On consumer (non-Workspace) accounts, transferOwnership requires email
+        consent from the recipient, which the API cannot handle. Instead we
+        grant writer access so the user can view and edit their spreadsheet.
 
         Args:
             telegram_id: Telegram user ID.
-            email:       Google email address to receive ownership.
+            email:       Google email address to receive access.
 
         Raises:
             UserRegistryError: If the user is not found or Drive call fails.
@@ -158,21 +161,21 @@ class UserRegistry:
         try:
             self._drive.permissions().create(
                 fileId=user.spreadsheet_id,
-                transferOwnership=True,
                 body={
                     "type": "user",
-                    "role": "owner",
+                    "role": "writer",
                     "emailAddress": email,
                 },
+                sendNotificationEmail=True,
                 fields="id",
             ).execute()
         except HttpError as exc:
-            raise UserRegistryError(f"Drive API error transferring ownership: {exc}") from exc
+            raise UserRegistryError(f"Drive API error sharing spreadsheet: {exc}") from exc
 
         self._sheets.update_user_email(telegram_id, email)
         if telegram_id in self._cache:
             self._cache[telegram_id] = self._cache[telegram_id].model_copy(update={"email": email})
-        logger.info("Transferred spreadsheet %s to %s", user.spreadsheet_id, email)
+        logger.info("Shared spreadsheet %s with %s", user.spreadsheet_id, email)
 
     async def update_settings(
         self, telegram_id: int, base_currency: str, default_currency: str
@@ -252,28 +255,40 @@ class UserRegistry:
         except HttpError as exc:
             raise UserRegistryError(f"Failed to copy template Spreadsheet: {exc}") from exc
 
-    def _transfer_ownership_to_admin(self, spreadsheet_id: str) -> None:
-        """Grant the admin account owner permissions on a Spreadsheet.
-
-        Raises:
-            UserRegistryError: On Drive API failure.
-        """
+    def _share_with_service_account(self, spreadsheet_id: str) -> None:
+        """Grant the SA editor access so gspread can read/write the new Spreadsheet."""
+        sa_email = os.environ.get("SA_EMAIL")
+        if not sa_email:
+            return
         try:
             self._drive.permissions().create(
                 fileId=spreadsheet_id,
-                transferOwnership=True,
                 body={
                     "type": "user",
-                    "role": "owner",
-                    "emailAddress": self._admin_email,
+                    "role": "writer",
+                    "emailAddress": sa_email,
                 },
+                sendNotificationEmail=False,
                 fields="id",
             ).execute()
         except HttpError as exc:
-            raise UserRegistryError(f"Failed to transfer ownership to admin: {exc}") from exc
+            raise UserRegistryError(
+                f"Failed to share spreadsheet with service account: {exc}"
+            ) from exc
 
     @staticmethod
     def _build_drive_service():
-        """Build a Google Drive API service client using ADC."""
-        creds, _ = google_auth_default(scopes=_SCOPES)
+        """Build a Google Drive API client using the admin's OAuth2 refresh token.
+
+        SA on consumer GCP projects has zero Drive storage quota, so we use
+        the admin's personal Google account for all file-creation operations.
+        """
+        creds = OAuthCredentials(
+            token=None,
+            refresh_token=os.environ["GOOGLE_OAUTH_REFRESH_TOKEN"],
+            client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+            client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+            token_uri="https://oauth2.googleapis.com/token",
+            scopes=_DRIVE_SCOPES,
+        )
         return build("drive", "v3", credentials=creds)

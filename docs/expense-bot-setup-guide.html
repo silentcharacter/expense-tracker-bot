@@ -475,7 +475,7 @@ curl <span class="string">"https://generativelanguage.googleapis.com/v1beta/mode
   <div class="section">
     <div class="section-header">
       <span class="section-num">03</span>
-      <h2>Service Account (Sheets + Drive)</h2>
+      <h2>Service Account (Sheets API)</h2>
       <span class="time-badge">~5 мин</span>
     </div>
 
@@ -517,7 +517,7 @@ echo <span class="string">"credentials.json"</span> >> .gitignore</pre>
         <span class="step-num">2</span>
         <div class="step-content">
           <h4>Создай Master Registry Spreadsheet</h4>
-          <p>Ещё один Spreadsheet → назови "Expense Bot — Registry". Один лист Users с колонками: telegram_id, username, display_name, email, spreadsheet_id, owner, base_currency, default_currency, created_at, status.</p>
+          <p>Ещё один Spreadsheet → назови "Expense Bot — Registry". Переименуй первый лист (Sheet1) в <code>Registry</code>. Колонки: telegram_id, username, display_name, email, spreadsheet_id, owner, base_currency, default_currency, created_at, status.</p>
         </div>
       </div>
 
@@ -543,6 +543,95 @@ echo <span class="string">"credentials.json"</span> >> .gitignore</pre>
           <h4>Запиши ID</h4>
           <p>Из URL каждого Spreadsheet скопируй ID: <code>docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit</code>. Тебе нужны три ID: TEMPLATE_SHEET_ID, REGISTRY_SHEET_ID, USERS_FOLDER_ID.</p>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 3b: Admin OAuth2 -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">03b</span>
+      <h2>Admin OAuth2 (Drive file creation)</h2>
+      <span class="time-badge">~3 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🔐</span> Зачем нужен OAuth2</h3>
+      <p>Service Account на consumer GCP-проектах имеет <strong>нулевую квоту</strong> Google Drive — он не может владеть файлами. Поэтому для создания Spreadsheets (копирование шаблона) мы используем OAuth2-токен твоего личного Gmail-аккаунта (admin). SA остаётся для чтения/записи Sheets.</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">⚙️</span> Создание OAuth2 Desktop credentials</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Настрой OAuth Consent Screen</h4>
+          <p>Cloud Console → APIs & Services → <strong>OAuth consent screen</strong>.</p>
+          <ul>
+            <li>User Type: <strong>External</strong> → Create</li>
+            <li>App name: <code>Expense Bot</code></li>
+            <li>User support email: твой Gmail</li>
+            <li>Developer contact email: твой Gmail</li>
+            <li>Scopes — пропусти (Next)</li>
+            <li>Test users → <strong>+ Add users</strong> → добавь свой Gmail (тот же что ADMIN_EMAIL)</li>
+            <li>Save</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="danger-box">
+        <strong>🔒 Важно: добавь себя в Test users!</strong> Приложение в статусе Testing — авторизоваться могут только пользователи из списка. Без этого получишь <code>Error 403: access_denied</code>.
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Создай OAuth Client ID</h4>
+          <p>Cloud Console → APIs & Services → Credentials → <strong>+ Create Credentials</strong> → <strong>OAuth client ID</strong>.</p>
+          <ul>
+            <li>Application type: <strong>Desktop app</strong> (не Web application!)</li>
+            <li>Name: <code>Expense Bot Desktop</code></li>
+            <li>Create</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note-box">
+        <strong>⚠️ Именно Desktop app!</strong> Если выбрать Web application, получишь <code>Error 400: redirect_uri_mismatch</code>. В скачанном JSON должен быть ключ <code>"installed"</code>, а не <code>"web"</code>.
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Скачай JSON</h4>
+          <p>Нажми <strong>Download JSON</strong> и сохрани как <code>oauth_client_secret.json</code> в корень проекта. Добавь в <code>.gitignore</code>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">4</span>
+        <div class="step-content">
+          <h4>Получи Refresh Token</h4>
+          <div class="code-block"><pre><span class="comment"># Установи зависимость (если нет)</span>
+pip install google-auth-oauthlib
+
+<span class="comment"># Запусти скрипт — откроется браузер для авторизации</span>
+python scripts/get_oauth_token.py</pre>
+          </div>
+          <p style="margin-top:8px;">Откроется браузер → залогинься своим Gmail (тот же что ADMIN_EMAIL) → нажми "Continue" (Google покажет предупреждение для unverified apps — это нормально, нажми "Advanced" → "Go to Expense Bot").</p>
+          <p style="margin-top:8px;">Скрипт выведет три переменные — добавь их в <code>.env.yaml</code>:</p>
+          <div class="code-block"><pre><span class="type">GOOGLE_OAUTH_CLIENT_ID</span>: <span class="string">"..."</span>
+<span class="type">GOOGLE_OAUTH_CLIENT_SECRET</span>: <span class="string">"..."</span>
+<span class="type">GOOGLE_OAUTH_REFRESH_TOKEN</span>: <span class="string">"..."</span></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="note-box">
+        <strong>⚠️ Refresh token бессрочный</strong> пока OAuth-приложение в статусе Testing и ты не отзовёшь доступ. Получать повторно не нужно.
       </div>
     </div>
   </div>
@@ -684,10 +773,16 @@ curl <span class="string">"https://v6.exchangerate-api.com/v6/YOUR_KEY/latest/US
 <span class="type">GOOGLE_API_KEY</span>: <span class="string">"AIzaSy..."</span>
 
 <span class="comment"># Google Sheets / Drive</span>
-<span class="type">ADMIN_EMAIL</span>: <span class="string">"<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="7801170d0a561d15191114381f15191114561b1715">[email&#160;protected]</a>"</span>
+<span class="type">ADMIN_EMAIL</span>: <span class="string">"you@gmail.com"</span>
+<span class="type">SA_EMAIL</span>: <span class="string">"expense-bot-sa@PROJECT_ID.iam.gserviceaccount.com"</span>
 <span class="type">TEMPLATE_SHEET_ID</span>: <span class="string">"1aBcDe..."</span>
 <span class="type">REGISTRY_SHEET_ID</span>: <span class="string">"1fGhIj..."</span>
 <span class="type">USERS_FOLDER_ID</span>: <span class="string">"1kLmNo..."</span>
+
+<span class="comment"># Admin OAuth2 (Drive file creation)</span>
+<span class="type">GOOGLE_OAUTH_CLIENT_ID</span>: <span class="string">"123...apps.googleusercontent.com"</span>
+<span class="type">GOOGLE_OAUTH_CLIENT_SECRET</span>: <span class="string">"GOCSPX-..."</span>
+<span class="type">GOOGLE_OAUTH_REFRESH_TOKEN</span>: <span class="string">"1//0..."</span>
 
 <span class="comment"># Exchange Rate</span>
 <span class="type">EXCHANGE_RATE_API_KEY</span>: <span class="string">"abc123..."</span>
@@ -702,6 +797,7 @@ curl <span class="string">"https://v6.exchangerate-api.com/v6/YOUR_KEY/latest/US
 
       <div class="code-block"><pre><span class="comment"># .gitignore</span>
 credentials.json
+oauth_client_secret.json
 .env.yaml
 __pycache__/
 *.pyc</pre>
@@ -784,4 +880,113 @@ __pycache__/
     </div>
 
     <div class="success-box">
-      <strong>🎉 Готово!</strong> Все ключи получены, инфраструктура настр
+      <strong>🎉 Готово!</strong> Все ключи получены, инфраструктура настроена. Переходи к деплою!
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Step 8: Deploy -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">08</span>
+      <h2>Деплой на Cloud Functions</h2>
+      <span class="time-badge">~5 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🚀</span> Деплой функции</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Включи дополнительные API</h4>
+          <p>Cloud Functions Gen2 требует несколько API помимо тех, что мы включили ранее:</p>
+          <div class="code-block"><pre>gcloud services enable \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  run.googleapis.com \
+  storage.googleapis.com</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Деплой</h4>
+          <p>Из корня проекта запусти:</p>
+          <div class="code-block"><pre>gcloud functions deploy expense-bot \
+  --gen2 \
+  --runtime=python312 \
+  --region=asia-southeast1 \
+  --source=. \
+  --entry-point=webhook \
+  --trigger-http \
+  --allow-unauthenticated \
+  --env-vars-file=.env.yaml \
+  --memory=256MB \
+  --timeout=60s \
+  --service-account=expense-bot-sa@<span class="type">PROJECT_ID</span>.iam.gserviceaccount.com</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="note-box">
+        <strong>⚠️ --service-account:</strong> Обязательно укажи Service Account, созданный в шаге 03. Без этого флага Cloud Function будет работать от дефолтного Compute SA, у которого нет доступа к расшаренным таблицам. Замени <code>PROJECT_ID</code> на ID своего проекта.
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Получи URL функции</h4>
+          <p>После успешного деплоя в выводе будет URL вида:</p>
+          <div class="code-block"><pre>https://asia-southeast1-<span class="type">PROJECT_ID</span>.cloudfunctions.net/expense-bot</pre>
+          </div>
+          <p style="margin-top:8px;">Это URL для Telegram webhook.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">4</span>
+        <div class="step-content">
+          <h4>Установи Telegram webhook</h4>
+          <div class="code-block"><pre>curl <span class="string">"https://api.telegram.org/bot<span class="type">TELEGRAM_BOT_TOKEN</span>/setWebhook?url=<span class="type">FUNCTION_URL</span>"</span></pre>
+          </div>
+          <p style="margin-top:8px;">Замени <code>TELEGRAM_BOT_TOKEN</code> и <code>FUNCTION_URL</code> на свои значения. Ответ должен содержать <code>"ok": true</code>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">✓</span>
+        <div class="step-content">
+          <h4>Проверка</h4>
+          <p>Открой бота в Telegram и отправь <code>/start</code>. Бот должен ответить приветствием и зарегистрировать тебя.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🔄</span> Обновление (редеплой)</h3>
+      <p>При изменении кода просто запусти ту же команду деплоя повторно. При изменении только переменных окружения — достаточно обновить <code>.env.yaml</code> и задеплоить заново.</p>
+
+      <div class="code-block"><pre><span class="comment"># Проверить логи после деплоя</span>
+gcloud functions logs read expense-bot \
+  --region=asia-southeast1 \
+  --gen2 \
+  --limit=50</pre>
+      </div>
+    </div>
+
+    <div class="success-box">
+      <strong>🎉 Бот запущен!</strong> Отправь голосовое или текстовое сообщение с расходом — бот распарсит его через Gemini и запишет в Google Sheets.
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="footer">expense-bot setup guide · v1.0</div>
+
+</div>
+</body>
+</html>

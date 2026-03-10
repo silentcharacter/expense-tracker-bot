@@ -4,17 +4,10 @@ Receives Telegram webhook POST requests via functions-framework, routes
 each Update to the appropriate handler, and returns HTTP 200.
 
 Deploy command:
-  gcloud functions deploy expense-bot \\
-    --gen2 \\
-    --runtime=python312 \\
-    --region=asia-southeast1 \\
-    --source=. \\
-    --entry-point=webhook \\
-    --trigger-http \\
-    --allow-unauthenticated \\
-    --env-vars-file=.env.yaml \\
-    --memory=256MB \\
-    --timeout=60s
+  gcloud functions deploy expense-bot \
+    --gen2 --runtime=python312 --region=asia-southeast1 \
+    --source=. --entry-point=webhook --trigger-http \
+    --allow-unauthenticated --env-vars-file=.env.yaml --memory=256MB --timeout=60s
 """
 
 import asyncio

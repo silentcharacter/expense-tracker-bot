@@ -118,7 +118,7 @@ class User(BaseModel):
     display_name: str = Field(..., description="Full name from Telegram profile")
     email: str = Field(default="", description="Google email for Sheets ownership")
     spreadsheet_id: str = Field(..., description="Personal Spreadsheet ID")
-    owner: UserRole = UserRole.user
+    role: UserRole = UserRole.user
     base_currency: str = Field(..., description="Base currency for analytics and budgets")
     default_currency: str = Field(..., description="Fallback currency when none is mentioned")
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -137,7 +137,7 @@ class User(BaseModel):
             self.display_name,
             self.email,
             self.spreadsheet_id,
-            self.owner.value,
+            self.role.value,
             self.base_currency,
             self.default_currency,
             self.created_at.isoformat(),
@@ -153,7 +153,7 @@ class User(BaseModel):
             "display_name",
             "email",
             "spreadsheet_id",
-            "owner",
+            "role",
             "base_currency",
             "default_currency",
             "created_at",

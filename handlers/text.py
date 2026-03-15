@@ -69,7 +69,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         expense = await gemini.parse_text(text, user.default_currency)
     except Exception as exc:
-        logger.error("Gemini text parsing failed for user %s: %s", tg_user.id, exc)
+        logger.exception("Gemini text parsing failed for user %s: %s", tg_user.id, exc)
         await status_msg.edit_text(
             "Sorry, I couldn't parse that expense. "
             "Try: `350 baht taxi grab`",
@@ -83,7 +83,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             expense.amount, expense.currency, user.base_currency
         )
     except Exception as exc:
-        logger.error("Currency conversion failed %s→%s: %s", expense.currency, user.base_currency, exc)
+        logger.exception("Currency conversion failed %s→%s: %s", expense.currency, user.base_currency, exc)
         amount_base = expense.amount
         fx_rate = 1.0
 
@@ -206,7 +206,7 @@ async def _complete_onboarding_from_text(
             default_currency=default_currency,
         )
     except Exception as exc:
-        logger.error("Onboarding failed for %s: %s", tg_user.id, exc)
+        logger.exception("Onboarding failed for %s: %s", tg_user.id, exc)
         await update.message.reply_text(f"Registration failed: {exc}\nSend /start to retry.")
         return
 

@@ -50,7 +50,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         tg_file = await voice.get_file()
         audio_bytes: bytes = await tg_file.download_as_bytearray()
     except Exception as exc:
-        logger.error("Failed to download voice file for user %s: %s", tg_user.id, exc)
+        logger.exception("Failed to download voice file for user %s: %s", tg_user.id, exc)
         await status_msg.edit_text("Could not download your voice message. Please try again.")
         return
 
@@ -58,7 +58,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         expense = await gemini.parse_audio(audio_bytes, user.default_currency)
     except Exception as exc:
-        logger.error("Gemini parsing failed for user %s: %s", tg_user.id, exc)
+        logger.exception("Gemini parsing failed for user %s: %s", tg_user.id, exc)
         await status_msg.edit_text(
             "Sorry, I couldn't understand the expense. "
             "Please try again or type it manually."
@@ -71,7 +71,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             expense.amount, expense.currency, user.base_currency
         )
     except Exception as exc:
-        logger.error("Currency conversion failed for %s→%s: %s", expense.currency, user.base_currency, exc)
+        logger.exception("Currency conversion failed for %s→%s: %s", expense.currency, user.base_currency, exc)
         # Fall back to treating the amount as already in base currency
         amount_base = expense.amount
         fx_rate = 1.0

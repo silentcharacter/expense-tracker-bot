@@ -49,7 +49,7 @@ class GeminiService:
     well-formed Expense on every call.
     """
 
-    MODEL = "gemini-2.0-flash"
+    MODEL = "gemini-3.1-flash-lite-preview"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         self._client = genai.Client(
@@ -79,7 +79,7 @@ class GeminiService:
                 parts=[
                     types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg"),
                     types.Part.from_text(
-                        f"Parse this voice expense. Default currency: {default_currency}"
+                        text=f"Parse this voice expense. Default currency: {default_currency}"
                     ),
                 ],
             )
@@ -105,7 +105,7 @@ class GeminiService:
                 role="user",
                 parts=[
                     types.Part.from_text(
-                        f"Parse this expense: {text}\nDefault currency: {default_currency}"
+                        text=f"Parse this expense: {text}\nDefault currency: {default_currency}"
                     )
                 ],
             )
@@ -136,7 +136,7 @@ class GeminiService:
                 ),
             )
         except Exception as exc:
-            logger.error("Gemini API error: %s", exc)
+            logger.exception("Gemini API error: %s", exc)
             raise GeminiServiceError(f"Gemini API error: {exc}") from exc
 
         raw = response.text
@@ -145,7 +145,7 @@ class GeminiService:
         try:
             expense = Expense.model_validate_json(raw)
         except Exception as exc:
-            logger.error("Failed to parse Gemini response: %s — raw: %s", exc, raw)
+            logger.exception("Failed to parse Gemini response: %s — raw: %s", exc, raw)
             raise GeminiServiceError(f"Invalid JSON from Gemini: {exc}") from exc
 
         return expense

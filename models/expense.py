@@ -36,11 +36,19 @@ class Expense(BaseModel):
     This is the schema returned by Gemini as structured JSON.
     """
 
-    amount: float = Field(..., gt=0, description="Expense amount")
+    amount: float = Field(..., description="Expense amount")
     currency: str = Field(..., min_length=3, max_length=3, description="ISO 4217 currency code")
     category: str = Field(..., description="Expense category slug")
     subcategory: str = Field(default="", description="Optional subcategory slug")
     description: str = Field(..., description="Short description (2-5 words)")
+
+    @field_validator("amount")
+    @classmethod
+    def positive_amount(cls, v: float) -> float:
+        """Ensure amount is positive."""
+        if v <= 0:
+            raise ValueError("amount must be greater than 0")
+        return v
 
     @field_validator("currency")
     @classmethod

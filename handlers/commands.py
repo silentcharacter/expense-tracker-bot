@@ -80,7 +80,7 @@ async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         await registry.transfer_to_user(tg_user.id, google_email)
     except Exception as exc:
-        logger.error("Failed to transfer spreadsheet for %s: %s", tg_user.id, exc)
+        logger.exception("Failed to transfer spreadsheet for %s: %s", tg_user.id, exc)
         await update.message.reply_text(f"Error: {exc}")
         return
 

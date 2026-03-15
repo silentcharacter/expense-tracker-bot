@@ -261,7 +261,7 @@ async def _finish_onboarding(
             default_currency=default_currency,
         )
     except (ValueError, Exception) as exc:
-        logger.error("Onboarding failed for %s: %s", tg_user.id, exc)
+        logger.exception("Onboarding failed for %s: %s", tg_user.id, exc)
         query = update.callback_query
         await query.edit_message_text(f"Registration failed: {exc}\nSend /start to try again.")
         return

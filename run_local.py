@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+from urllib.request import urlopen
 
 import yaml
 
@@ -22,17 +23,27 @@ def _load_env_yaml(path: Path = Path(".env.yaml")) -> None:
             os.environ.setdefault(key, str(value))
 
 
+def _delete_webhook(token: str) -> None:
+    """Delete the Telegram webhook so polling works."""
+    url = f"https://api.telegram.org/bot{token}/deleteWebhook"
+    try:
+        with urlopen(url) as resp:
+            body = resp.read().decode()
+        print(f"Webhook deleted: {body}")
+    except Exception as exc:
+        print(f"Warning: failed to delete webhook: {exc}")
+
+
 def main() -> None:
     _load_env_yaml()
     os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json")
+
+    _delete_webhook(os.environ["TELEGRAM_BOT_TOKEN"])
 
     from main import _build_application
 
     app = _build_application()
     print("Bot started in polling mode. Press Ctrl+C to stop.")
-    print("Don't forget to delete the webhook first:")
-    print(f"  curl https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/deleteWebhook")
-    print()
     app.run_polling(drop_pending_updates=True)
 
 

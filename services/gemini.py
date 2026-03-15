@@ -27,10 +27,13 @@ You are an expense parser. Extract the following fields from the user's input \
     "ruble" / "руб" / "₽"       → RUB
   If the currency is not mentioned, use the user's default currency \
 (provided below).
-- category: one of {categories}
-- subcategory: a short clarifying word (e.g. "restaurant", "grocery", \
-"fuel", "gym"); empty string if unclear.
+- category: one of the category slugs listed below.
+- subcategory: MUST be one of the subcategory slugs listed for the chosen \
+category below, or empty string if unclear. Do NOT invent new values.
 - description: a brief description in the same language as the input (2–5 words).
+
+Available categories and their subcategories:
+{categories_with_subs}
 
 Respond ONLY with valid JSON matching the schema. Do not add any extra text.
 Default currency: {default_currency}
@@ -39,9 +42,12 @@ Default currency: {default_currency}
 
 def _build_system_instruction(categories: list[UserCategory], default_currency: str) -> str:
     """Render the system prompt with per-user categories and default currency."""
-    cat_list = "|".join(c.slug for c in categories)
+    lines = []
+    for c in categories:
+        subs = ", ".join(s.slug for s in c.subcategories)
+        lines.append(f"  {c.slug}: [{subs}]")
     return _SYSTEM_INSTRUCTION_TEMPLATE.format(
-        categories=cat_list,
+        categories_with_subs="\n".join(lines),
         default_currency=default_currency,
     )
 

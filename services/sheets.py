@@ -6,6 +6,7 @@ from datetime import datetime, date
 from typing import Optional
 
 import gspread
+from gspread.utils import ValueRenderOption
 from google.auth import default as google_auth_default
 from google.oauth2.service_account import Credentials
 
@@ -80,7 +81,7 @@ class SheetsService:
             record:         Fully populated ExpenseRecord.
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        sheet.append_row(record.to_sheet_row(), value_input_option="USER_ENTERED")
+        sheet.append_row(record.to_sheet_row(), value_input_option="RAW")
         logger.info("Appended transaction %s to %s", record.id, spreadsheet_id)
 
     def delete_last_transaction(self, spreadsheet_id: str) -> Optional[ExpenseRecord]:
@@ -90,7 +91,7 @@ class SheetsService:
             The deleted ExpenseRecord, or None if the sheet is empty.
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        all_values = sheet.get_all_values()
+        all_values = sheet.get_all_values(value_render_option=ValueRenderOption.unformatted)
         if len(all_values) <= 1:  # header only
             return None
 
@@ -125,7 +126,10 @@ class SheetsService:
             List of ExpenseRecord ordered by timestamp descending.
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        rows = sheet.get_all_records(expected_headers=ExpenseRecord.sheet_headers())
+        rows = sheet.get_all_records(
+            expected_headers=ExpenseRecord.sheet_headers(),
+            value_render_option=ValueRenderOption.unformatted,
+        )
 
         records: list[ExpenseRecord] = []
         for row in rows:

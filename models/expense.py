@@ -77,6 +77,7 @@ class ExpenseRecord(BaseModel):
     amount_local: float = Field(..., description="Amount in original currency")
     local_currency: str = Field(..., description="ISO 4217 original currency")
     amount_base: float = Field(..., description="Amount converted to user's base currency")
+    base_currency: str = Field(..., min_length=3, max_length=3, description="ISO 4217 user's base currency")
     fx_rate: float = Field(..., description="Exchange rate local → base")
     category: str
     subcategory: str = ""
@@ -92,6 +93,7 @@ class ExpenseRecord(BaseModel):
             self.amount_local,
             self.local_currency,
             self.amount_base,
+            self.base_currency,
             self.fx_rate,
             self.category,
             self.subcategory,
@@ -109,6 +111,7 @@ class ExpenseRecord(BaseModel):
             "amount_local",
             "local_currency",
             "amount_base",
+            "base_currency",
             "fx_rate",
             "category",
             "subcategory",

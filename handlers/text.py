@@ -92,6 +92,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         amount_local=expense.amount,
         local_currency=expense.currency,
         amount_base=amount_base,
+        base_currency=user.base_currency,
         fx_rate=fx_rate,
         category=expense.category,
         subcategory=expense.subcategory,

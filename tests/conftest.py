@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def _load_env_yaml() -> None:
     """Load .env.yaml into os.environ so services can read their keys."""
-    env_path = Path(__file__).resolve().parent.parent / ".env.yaml"
+    project_root = Path(__file__).resolve().parent.parent
+    env_path = project_root / ".env.yaml"
     if not env_path.exists():
         pytest.skip(".env.yaml not found — cannot run integration tests")
     with open(env_path) as f:
@@ -22,6 +23,10 @@ def _load_env_yaml() -> None:
         for key, value in data.items():
             if value is not None:
                 os.environ.setdefault(key, str(value))
+
+    sa_file = project_root / "credentials.json"
+    if sa_file.exists():
+        os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(sa_file))
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -43,3 +48,10 @@ def currency_service():
     from services.currency import CurrencyService, _rate_cache
     _rate_cache.clear()
     return CurrencyService()
+
+
+@pytest.fixture(scope="session")
+def sheets_service():
+    """Provide a real SheetsService instance backed by .env.yaml credentials."""
+    from services.sheets import SheetsService
+    return SheetsService()

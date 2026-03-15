@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from models.expense import ExpenseRecord, ExpenseSource
-from models.category import category_label, subcategory_label, CATEGORIES
+from models.category import category_label, subcategory_label
 
 if TYPE_CHECKING:
     pass
@@ -45,14 +45,20 @@ def confirm_keyboard(record_id: str) -> InlineKeyboardMarkup:
     )
 
 
-def category_keyboard(record_id: str) -> InlineKeyboardMarkup:
-    """Build a keyboard with all available categories for editing."""
+async def category_keyboard(
+    record_id: str,
+    spreadsheet_id: str,
+    sheets,
+) -> InlineKeyboardMarkup:
+    """Build a keyboard with the user's categories for editing."""
+    from services.sheets import SheetsService as _SheetsService  # noqa: F401
+    categories = sheets.get_categories(spreadsheet_id)
     buttons = [
         InlineKeyboardButton(
             cat.label,
             callback_data=f"{CB_SET_CATEGORY}:{record_id}:{cat.slug}",
         )
-        for cat in CATEGORIES
+        for cat in categories
     ]
     # Arrange in two columns
     rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
@@ -155,12 +161,22 @@ async def _handle_edit_category(
     update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
 ) -> None:
     """Show the category selection keyboard."""
+    from services.sheets import SheetsService
+    from services.user_registry import UserRegistry
+
     query = update.callback_query
     record_id = parts[1] if len(parts) > 1 else ""
-    await query.edit_message_text(
-        "Choose a category:",
-        reply_markup=category_keyboard(record_id),
-    )
+
+    registry: UserRegistry = context.bot_data["registry"]
+    sheets: SheetsService = context.bot_data["sheets"]
+
+    user = await registry.get_user(update.effective_user.id)
+    if user is None:
+        await query.edit_message_text("You are not registered. Send /start.")
+        return
+
+    markup = await category_keyboard(record_id, user.spreadsheet_id, sheets)
+    await query.edit_message_text("Choose a category:", reply_markup=markup)
 
 
 async def _handle_set_category(

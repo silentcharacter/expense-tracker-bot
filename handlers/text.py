@@ -51,10 +51,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     from services.user_registry import UserRegistry
     from services.gemini import GeminiService
     from services.currency import CurrencyService
+    from services.sheets import SheetsService
 
     registry: UserRegistry = context.bot_data["registry"]
     gemini: GeminiService = context.bot_data["gemini"]
     currency_svc: CurrencyService = context.bot_data["currency"]
+    sheets: SheetsService = context.bot_data["sheets"]
 
     tg_user = update.effective_user
     user = await registry.get_user(tg_user.id)
@@ -64,10 +66,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         return
 
+    categories = sheets.get_categories(user.spreadsheet_id)
+
     # ── Parse with Gemini ───────────────────────────────────────────────────
     status_msg = await message.reply_text("Parsing…")
     try:
-        expense = await gemini.parse_text(text, user.default_currency)
+        expense = await gemini.parse_text(text, user.default_currency, categories)
     except Exception as exc:
         logger.exception("Gemini text parsing failed for user %s: %s", tg_user.id, exc)
         await status_msg.edit_text(

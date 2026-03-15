@@ -176,3 +176,37 @@ def subcategory_label(category_slug: str, subcategory_slug: str) -> str:
     """Return the human-readable label for a subcategory slug."""
     sub = get_subcategory(category_slug, subcategory_slug)
     return sub.label if sub else subcategory_slug.replace("_", " ").capitalize()
+
+
+# ── Per-user dynamic categories ──────────────────────────────────────────────
+
+from pydantic import BaseModel  # noqa: E402
+
+
+class UserSubcategory(BaseModel):
+    """A per-user subcategory loaded from the Categories sheet."""
+
+    slug: str
+    label: str
+    budget: float | None = None
+
+
+class UserCategory(BaseModel):
+    """A per-user expense category loaded from the Categories sheet."""
+
+    slug: str
+    label: str
+    budget: float | None = None
+    subcategories: list[UserSubcategory] = []
+
+
+def default_user_categories() -> list[UserCategory]:
+    """Return the default UserCategory list derived from the hardcoded CATEGORIES."""
+    return [
+        UserCategory(
+            slug=c.slug,
+            label=c.label,
+            subcategories=[UserSubcategory(slug=s.slug, label=s.label) for s in c.subcategories],
+        )
+        for c in CATEGORIES
+    ]

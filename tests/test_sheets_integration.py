@@ -11,6 +11,7 @@ Run:
 import pytest
 
 from models.expense import ExpenseRecord, ExpenseSource
+from models.category import CATEGORIES
 
 
 def _find_test_spreadsheet(sheets_service) -> str:
@@ -67,3 +68,29 @@ def test_append_transaction_writes_and_reads_back(sheets_service, test_spreadshe
         assert got.raw_input == record.raw_input
     finally:
         sheets_service.delete_last_transaction(test_spreadsheet_id)
+
+
+# ── get_categories / ensure_categories_sheet ─────────────────────────────────
+
+@pytest.mark.integration
+def test_ensure_categories_sheet_seeds_defaults(sheets_service, test_spreadsheet_id):
+    """ensure_categories_sheet should write header + default category rows if empty."""
+    from services.sheets import _category_cache
+    _category_cache.pop(test_spreadsheet_id, None)
+
+    sheets_service.ensure_categories_sheet(test_spreadsheet_id)
+    cats = sheets_service.get_categories(test_spreadsheet_id)
+
+    default_slugs = {c.slug for c in CATEGORIES}
+    assert {c.slug for c in cats} == default_slugs
+
+
+@pytest.mark.integration
+def test_get_categories_returns_cached(sheets_service, test_spreadsheet_id):
+    """Second call within TTL should return the same list object from cache."""
+    from services.sheets import _category_cache
+    _category_cache.pop(test_spreadsheet_id, None)
+
+    cats1 = sheets_service.get_categories(test_spreadsheet_id)
+    cats2 = sheets_service.get_categories(test_spreadsheet_id)
+    assert cats1 is cats2

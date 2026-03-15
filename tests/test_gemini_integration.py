@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from models.expense import Expense
-from models.category import CATEGORY_SLUGS
+from models.category import default_user_categories
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -30,13 +30,14 @@ async def test_parse_audio_returns_valid_expense(gemini_service):
             "Record a Telegram voice message like '200 бат такси' and save it there."
         )
 
+    categories = default_user_categories()
     audio_bytes = audio_path.read_bytes()
-    expense = await gemini_service.parse_audio(audio_bytes, default_currency="THB")
+    expense = await gemini_service.parse_audio(audio_bytes, default_currency="THB", categories=categories)
 
     assert isinstance(expense, Expense)
     assert expense.amount > 0
     assert len(expense.currency) == 3
-    assert expense.category in CATEGORY_SLUGS
+    assert expense.category in {c.slug for c in categories}
     assert isinstance(expense.description, str) and expense.description
 
 
@@ -45,19 +46,21 @@ async def test_parse_audio_returns_valid_expense(gemini_service):
 @pytest.mark.integration
 async def test_parse_text_simple(gemini_service):
     """A simple text expense should be parsed correctly."""
-    expense = await gemini_service.parse_text("350 baht taxi grab", default_currency="THB")
+    categories = default_user_categories()
+    expense = await gemini_service.parse_text("350 baht taxi grab", default_currency="THB", categories=categories)
 
     assert isinstance(expense, Expense)
     assert expense.amount == pytest.approx(350, abs=1)
     assert expense.currency == "THB"
-    assert expense.category in CATEGORY_SLUGS
+    assert expense.category in {c.slug for c in categories}
     assert expense.description
 
 
 @pytest.mark.integration
 async def test_parse_text_infers_default_currency(gemini_service):
     """When no currency is mentioned, should use the provided default."""
-    expense = await gemini_service.parse_text("500 groceries", default_currency="USD")
+    categories = default_user_categories()
+    expense = await gemini_service.parse_text("500 groceries", default_currency="USD", categories=categories)
 
     assert isinstance(expense, Expense)
     assert expense.amount == pytest.approx(500, abs=1)
@@ -67,9 +70,10 @@ async def test_parse_text_infers_default_currency(gemini_service):
 @pytest.mark.integration
 async def test_parse_text_different_language(gemini_service):
     """Russian text input should be parsed correctly."""
-    expense = await gemini_service.parse_text("200 рублей кофе старбакс", default_currency="RUB")
+    categories = default_user_categories()
+    expense = await gemini_service.parse_text("200 рублей кофе старбакс", default_currency="RUB", categories=categories)
 
     assert isinstance(expense, Expense)
     assert expense.amount == pytest.approx(200, abs=1)
     assert expense.currency == "RUB"
-    assert expense.category in CATEGORY_SLUGS
+    assert expense.category in {c.slug for c in categories}

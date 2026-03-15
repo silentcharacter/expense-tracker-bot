@@ -7,7 +7,7 @@ Deploy command:
   gcloud functions deploy expense-bot \
     --gen2 --runtime=python312 --region=asia-southeast1 \
     --source=. --entry-point=webhook --trigger-http \
-    --allow-unauthenticated --env-vars-file=.env.yaml --memory=256MB --timeout=60s
+    --allow-unauthenticated --env-vars-file=.env.yaml --memory=256MB --timeout=60s --service-account=expense-bot-sa@expense-bot-489609.iam.gserviceaccount.com
 """
 
 import asyncio

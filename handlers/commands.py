@@ -12,7 +12,7 @@ from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from models.category import category_label, CATEGORIES
+from models.category import category_label
 from handlers.callbacks import currency_keyboard, CB_ONBOARD_BASE, CB_SETTINGS_BASE, CB_SETTINGS_DEFAULT
 
 logger = logging.getLogger(__name__)
@@ -277,29 +277,45 @@ async def budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     today_date = date.today()
     start_of_month = today_date.replace(day=1)
     records = sheets.get_transactions(user.spreadsheet_id, since=start_of_month)
-    budgets = sheets.get_budgets(user.spreadsheet_id)
+    categories = sheets.get_categories(user.spreadsheet_id)
 
-    if not budgets:
+    has_budget = any(
+        c.budget is not None or any(s.budget is not None for s in c.subcategories)
+        for c in categories
+    )
+    if not has_budget:
         await update.message.reply_text(
             "No budgets configured.\n"
             "Open your Spreadsheet → Categories sheet and add budget amounts."
         )
         return
 
-    # Aggregate spending per category
-    spent: dict[str, float] = {}
+    # Aggregate spending per category and subcategory
+    spent_cat: dict[str, float] = {}
+    spent_sub: dict[tuple[str, str], float] = {}
     for r in records:
-        spent[r.category] = spent.get(r.category, 0.0) + r.amount_base
+        spent_cat[r.category] = spent_cat.get(r.category, 0.0) + r.amount_base
+        if r.subcategory:
+            key = (r.category, r.subcategory)
+            spent_sub[key] = spent_sub.get(key, 0.0) + r.amount_base
 
     lines = [f"Budget — {today_date.strftime('%B %Y')} ({user.base_currency}):\n"]
-    for cat_slug, limit in sorted(budgets.items()):
-        used = spent.get(cat_slug, 0.0)
-        pct = (used / limit * 100) if limit else 0
-        bar = "█" * int(pct / 10) + "░" * (10 - int(pct / 10))
-        over = " ⚠ OVER BUDGET" if used > limit else ""
-        lines.append(
-            f"{category_label(cat_slug)}: {used:,.2f}/{limit:,.2f} ({pct:.0f}%) {bar}{over}"
-        )
+    for cat in categories:
+        cat_used = spent_cat.get(cat.slug, 0.0)
+        if cat.budget is not None:
+            pct = (cat_used / cat.budget * 100) if cat.budget else 0
+            bar_len = min(int(pct / 10), 10)
+            bar = "█" * bar_len + "░" * (10 - bar_len)
+            over = " ⚠" if cat_used > cat.budget else ""
+            lines.append(f"{cat.label}: {cat_used:,.0f}/{cat.budget:,.0f} ({pct:.0f}%) {bar}{over}")
+        for sub in cat.subcategories:
+            if sub.budget is not None:
+                sub_used = spent_sub.get((cat.slug, sub.slug), 0.0)
+                pct = (sub_used / sub.budget * 100) if sub.budget else 0
+                bar_len = min(int(pct / 10), 10)
+                bar = "█" * bar_len + "░" * (10 - bar_len)
+                over = " ⚠" if sub_used > sub.budget else ""
+                lines.append(f"  {sub.label}: {sub_used:,.0f}/{sub.budget:,.0f} ({pct:.0f}%) {bar}{over}")
 
     await update.message.reply_text("\n".join(lines))
 
@@ -314,20 +330,21 @@ async def cat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     registry: UserRegistry = context.bot_data["registry"]
     sheets: SheetsService = context.bot_data["sheets"]
 
+    user = await registry.get_user(update.effective_user.id)
+    if user is None:
+        await update.message.reply_text("You are not registered. Send /start first.")
+        return
+
+    categories = sheets.get_categories(user.spreadsheet_id)
     args = context.args or []
     if not args:
-        slugs = ", ".join(c.slug for c in CATEGORIES)
+        slugs = ", ".join(c.slug for c in categories)
         await update.message.reply_text(f"Usage: /cat <category>\nCategories: {slugs}")
         return
 
     cat_slug = args[0].lower()
-    if not any(c.slug == cat_slug for c in CATEGORIES):
+    if not any(c.slug == cat_slug for c in categories):
         await update.message.reply_text(f"Unknown category: {cat_slug}")
-        return
-
-    user = await registry.get_user(update.effective_user.id)
-    if user is None:
-        await update.message.reply_text("You are not registered. Send /start first.")
         return
 
     today_date = date.today()

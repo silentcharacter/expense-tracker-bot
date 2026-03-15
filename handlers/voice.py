@@ -30,10 +30,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     from services.user_registry import UserRegistry
     from services.gemini import GeminiService
     from services.currency import CurrencyService
+    from services.sheets import SheetsService
 
     registry: UserRegistry = context.bot_data["registry"]
     gemini: GeminiService = context.bot_data["gemini"]
     currency_svc: CurrencyService = context.bot_data["currency"]
+    sheets: SheetsService = context.bot_data["sheets"]
 
     tg_user = update.effective_user
     user = await registry.get_user(tg_user.id)
@@ -42,6 +44,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "You are not registered yet. Send /start to sign up."
         )
         return
+
+    categories = sheets.get_categories(user.spreadsheet_id)
 
     # ── 1. Download audio ───────────────────────────────────────────────────
     status_msg = await update.message.reply_text("Processing your voice message…")
@@ -56,7 +60,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     # ── 2. Parse with Gemini ────────────────────────────────────────────────
     try:
-        expense = await gemini.parse_audio(audio_bytes, user.default_currency)
+        expense = await gemini.parse_audio(audio_bytes, user.default_currency, categories)
     except Exception as exc:
         logger.exception("Gemini parsing failed for user %s: %s", tg_user.id, exc)
         await status_msg.edit_text(

@@ -8,11 +8,11 @@ from google import genai
 from google.genai import types
 
 from models.expense import Expense
-from models.category import CATEGORY_SLUGS
+from models.category import UserCategory
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_INSTRUCTION = """\
+_SYSTEM_INSTRUCTION_TEMPLATE = """\
 You are an expense parser. Extract the following fields from the user's input \
 (voice transcript or text):
 
@@ -33,8 +33,17 @@ You are an expense parser. Extract the following fields from the user's input \
 - description: a brief description in the same language as the input (2–5 words).
 
 Respond ONLY with valid JSON matching the schema. Do not add any extra text.
-Default currency: {{default_currency}}
-""".format(categories="|".join(CATEGORY_SLUGS))
+Default currency: {default_currency}
+"""
+
+
+def _build_system_instruction(categories: list[UserCategory], default_currency: str) -> str:
+    """Render the system prompt with per-user categories and default currency."""
+    cat_list = "|".join(c.slug for c in categories)
+    return _SYSTEM_INSTRUCTION_TEMPLATE.format(
+        categories=cat_list,
+        default_currency=default_currency,
+    )
 
 
 class GeminiServiceError(Exception):
@@ -58,13 +67,19 @@ class GeminiService:
 
     # ── Public API ──────────────────────────────────────────────────────────
 
-    async def parse_audio(self, audio_bytes: bytes, default_currency: str) -> Expense:
+    async def parse_audio(
+        self,
+        audio_bytes: bytes,
+        default_currency: str,
+        categories: list[UserCategory],
+    ) -> Expense:
         """Parse an OGG voice message into a structured Expense.
 
         Args:
             audio_bytes:      Raw OGG/Opus bytes downloaded from Telegram.
             default_currency: User's default ISO 4217 currency code; used
                               when the user does not mention a currency.
+            categories:       User's configured expense categories.
 
         Returns:
             Parsed Expense model.
@@ -72,7 +87,7 @@ class GeminiService:
         Raises:
             GeminiServiceError: When Gemini returns an unprocessable response.
         """
-        system = _SYSTEM_INSTRUCTION.replace("{default_currency}", default_currency)
+        system = _build_system_instruction(categories, default_currency)
         contents = [
             types.Content(
                 role="user",
@@ -86,12 +101,18 @@ class GeminiService:
         ]
         return await self._generate(system, contents)
 
-    async def parse_text(self, text: str, default_currency: str) -> Expense:
+    async def parse_text(
+        self,
+        text: str,
+        default_currency: str,
+        categories: list[UserCategory],
+    ) -> Expense:
         """Parse a text message into a structured Expense.
 
         Args:
             text:             Raw text from the user (e.g. "350 baht food grab").
             default_currency: User's default ISO 4217 currency code.
+            categories:       User's configured expense categories.
 
         Returns:
             Parsed Expense model.
@@ -99,7 +120,7 @@ class GeminiService:
         Raises:
             GeminiServiceError: When Gemini returns an unprocessable response.
         """
-        system = _SYSTEM_INSTRUCTION.replace("{default_currency}", default_currency)
+        system = _build_system_instruction(categories, default_currency)
         contents = [
             types.Content(
                 role="user",

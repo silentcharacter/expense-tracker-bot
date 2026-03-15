@@ -133,6 +133,7 @@ class UserRegistry:
 
         self._sheets.register_user(user)
         self._sheets.ensure_transactions_header(spreadsheet_id)
+        self._sheets.ensure_categories_sheet(spreadsheet_id)
         self._cache[telegram_id] = user
 
         logger.info(

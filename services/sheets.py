@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from datetime import datetime, date
 from typing import Optional
 
@@ -11,6 +12,21 @@ from google.auth import default as google_auth_default
 from google.oauth2.service_account import Credentials
 
 from models.expense import ExpenseRecord, User
+from models.category import UserCategory, UserSubcategory, default_user_categories
+
+# Module-level category cache: spreadsheet_id → (list[UserCategory], expiry_timestamp)
+_category_cache: dict[str, tuple[list[UserCategory], float]] = {}
+_CATEGORY_TTL = 300.0  # 5 minutes
+
+
+def _parse_budget(raw) -> float | None:
+    """Parse a raw cell value into a float budget, or None if empty/invalid."""
+    if raw in ("", None):
+        return None
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -156,23 +172,113 @@ class SheetsService:
 
     # ── Budget (Categories sheet) ────────────────────────────────────────────
 
+    def get_categories(self, spreadsheet_id: str) -> list[UserCategory]:
+        """Read user's categories from the Categories sheet with a 5-minute TTL cache.
+
+        Expects columns: slug, label, budget (budget is optional).
+        Falls back to default CATEGORIES if the sheet is empty or unreadable.
+
+        Returns:
+            List of UserCategory for this user.
+        """
+        now = time.monotonic()
+        cached = _category_cache.get(spreadsheet_id)
+        if cached and now < cached[1]:
+            return cached[0]
+
+        categories: list[UserCategory] = []
+        sheet_was_empty = False
+        try:
+            sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+            rows = sheet.get_all_records()
+            # Accumulate into cat_data before constructing models (subcategory rows
+            # may appear before or after their parent category row)
+            cat_data: dict[str, dict] = {}
+            for row in rows:
+                # Support new "category" column and legacy "slug" column name
+                cat_slug = str(row.get("category") or row.get("slug", "")).strip().lower()
+                sub_slug = str(row.get("subcategory", "")).strip().lower()
+                label = str(row.get("label", "")).strip()
+                budget = _parse_budget(row.get("budget", ""))
+                if not cat_slug:
+                    continue
+                entry = cat_data.setdefault(cat_slug, {"label": "", "budget": None, "subs": []})
+                if not sub_slug:  # category row
+                    if label:
+                        entry["label"] = label
+                    if budget is not None:
+                        entry["budget"] = budget
+                else:  # subcategory row
+                    entry["subs"].append((sub_slug, label, budget))
+
+            from models.category import category_label as _cat_label
+            for slug, info in cat_data.items():
+                label = info["label"] or _cat_label(slug)
+                subs = [
+                    UserSubcategory(
+                        slug=s,
+                        label=lbl or s.replace("_", " ").capitalize(),
+                        budget=b,
+                    )
+                    for s, lbl, b in info["subs"]
+                ]
+                categories.append(UserCategory(slug=slug, label=label, budget=info["budget"], subcategories=subs))
+
+            if not categories:
+                sheet_was_empty = True
+        except Exception as exc:
+            logger.warning("Could not read categories for %s: %s", spreadsheet_id, exc)
+            sheet_was_empty = True
+
+        if not categories:
+            categories = default_user_categories()
+            if sheet_was_empty:
+                # Seed the sheet so the user can configure labels and budgets
+                try:
+                    self.ensure_categories_sheet(spreadsheet_id)
+                except Exception as exc:
+                    logger.warning("Could not seed categories sheet for %s: %s", spreadsheet_id, exc)
+
+        _category_cache[spreadsheet_id] = (categories, now + _CATEGORY_TTL)
+        return categories
+
+    def ensure_categories_sheet(self, spreadsheet_id: str) -> None:
+        """Write headers and default category/subcategory rows to Categories sheet if empty.
+
+        Schema: category | subcategory | label | budget
+        Category row: subcategory column is empty.
+        Subcategory row: subcategory column is filled.
+
+        Safe to call on new or existing spreadsheets — leaves existing data intact.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        existing = sheet.get_all_values()
+        if existing and len(existing) > 1:
+            return  # user has already configured categories, leave them
+
+        headers = ["category", "subcategory", "label", "budget"]
+        sheet.clear()
+        sheet.insert_row(headers, index=1)
+
+        rows = []
+        for cat in default_user_categories():
+            rows.append([cat.slug, "", cat.label, ""])
+            for sub in cat.subcategories:
+                rows.append([cat.slug, sub.slug, sub.label, ""])
+        sheet.append_rows(rows, value_input_option="RAW")
+        logger.info("Seeded %d category/subcategory rows for spreadsheet %s", len(rows), spreadsheet_id)
+
     def get_budgets(self, spreadsheet_id: str) -> dict[str, float]:
         """Read category budgets from the Categories sheet.
 
         Returns:
             Dict mapping category slug → budget amount in base currency.
         """
-        try:
-            sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
-            rows = sheet.get_all_records()
-            return {
-                row["category"]: float(row["budget"])
-                for row in rows
-                if row.get("category") and row.get("budget")
-            }
-        except Exception as exc:
-            logger.warning("Could not read budgets: %s", exc)
-            return {}
+        return {
+            cat.slug: cat.budget
+            for cat in self.get_categories(spreadsheet_id)
+            if cat.budget is not None
+        }
 
     # ── Master Registry ──────────────────────────────────────────────────────
 

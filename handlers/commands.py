@@ -13,7 +13,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from models.category import category_label
-from handlers.callbacks import currency_keyboard, CB_ONBOARD_BASE, CB_SETTINGS_BASE, CB_SETTINGS_DEFAULT
+from handlers.callbacks import currency_keyboard, CB_ONBOARD_BASE, CB_SHOW_SETTINGS_BASE, CB_SHOW_SETTINGS_DEFAULT
 
 logger = logging.getLogger(__name__)
 
@@ -56,38 +56,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ── /email ───────────────────────────────────────────────────────────────────
 
 async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/email <address> — share and transfer the Spreadsheet to the user's Google account."""
+    """/email — prompt for a Google account address, then share the Spreadsheet."""
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
     tg_user = update.effective_user
 
-    args = context.args or []
-    if not args:
-        await update.message.reply_text(
-            "Usage: /email your@gmail.com\n"
-            "Your Spreadsheet will be shared and transferred to that Google account."
-        )
-        return
-
-    google_email = args[0].strip()
     user = await registry.get_user(tg_user.id)
     if user is None:
         await update.message.reply_text("You are not registered. Send /start first.")
         return
 
-    await update.message.reply_text("Sharing your Spreadsheet…")
-    try:
-        await registry.transfer_to_user(tg_user.id, google_email)
-    except Exception as exc:
-        logger.exception("Failed to transfer spreadsheet for %s: %s", tg_user.id, exc)
-        await update.message.reply_text(f"Error: {exc}")
-        return
-
+    context.user_data["awaiting"] = "email_address"
     await update.message.reply_text(
-        f"Done! Your Spreadsheet has been shared with *{google_email}*.\n"
-        f"You can now find it in Google Drive.",
-        parse_mode="Markdown",
+        "Please enter your Google account email address.\n"
+        "Your Spreadsheet will be shared and transferred to that account."
     )
 
 
@@ -120,11 +103,11 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 [
                     InlineKeyboardButton(
                         f"Change base ({user.base_currency})",
-                        callback_data=f"show_settings_base",
+                        callback_data=CB_SHOW_SETTINGS_BASE,
                     ),
                     InlineKeyboardButton(
                         f"Change default ({user.default_currency})",
-                        callback_data=f"show_settings_default",
+                        callback_data=CB_SHOW_SETTINGS_DEFAULT,
                     ),
                 ]
             ]

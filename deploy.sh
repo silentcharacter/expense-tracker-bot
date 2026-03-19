@@ -9,6 +9,9 @@ ENTRY_POINT="webhook"
 SERVICE_ACCOUNT="expense-bot-sa@${PROJECT}.iam.gserviceaccount.com"
 WEBHOOK_BASE="https://${REGION}-${PROJECT}.cloudfunctions.net/${FUNCTION}"
 
+
+echo "=== Deploying function ==="
+
 gcloud functions deploy "$FUNCTION" \
   --gen2 \
   --project="$PROJECT" \

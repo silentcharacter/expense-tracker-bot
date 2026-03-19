@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.helpers import escape_markdown
 
 from models.expense import ExpenseRecord, ExpenseSource
 from models.category import category_label, subcategory_label
@@ -25,6 +26,8 @@ CB_ONBOARD_BASE = "ob_base"
 CB_ONBOARD_DEFAULT = "ob_default"
 CB_SETTINGS_BASE = "set_base"
 CB_SETTINGS_DEFAULT = "set_default"
+CB_SHOW_SETTINGS_BASE = "show_settings_base"
+CB_SHOW_SETTINGS_DEFAULT = "show_settings_default"
 
 # Popular currencies shown on inline keyboards
 POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
@@ -99,6 +102,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         CB_ONBOARD_DEFAULT: _handle_onboard_default_currency,
         CB_SETTINGS_BASE: _handle_settings_base_currency,
         CB_SETTINGS_DEFAULT: _handle_settings_default_currency,
+        CB_SHOW_SETTINGS_BASE: _handle_show_settings_base,
+        CB_SHOW_SETTINGS_DEFAULT: _handle_show_settings_default,
     }
 
     handler = handlers.get(prefix)
@@ -209,6 +214,7 @@ async def _handle_set_category(
     await query.edit_message_text(
         _format_confirmation(updated, base_currency, cat_label),
         reply_markup=confirm_keyboard(updated.id),
+        parse_mode="Markdown",
     )
 
 
@@ -297,6 +303,30 @@ async def _finish_onboarding(
 
 # ── Settings currency selection ──────────────────────────────────────────────
 
+async def _handle_show_settings_base(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
+) -> None:
+    """Show the currency keyboard for changing the base currency."""
+    query = update.callback_query
+    await query.edit_message_text(
+        "Choose your new *base currency* (used for analytics and budgets):",
+        parse_mode="Markdown",
+        reply_markup=currency_keyboard(CB_SETTINGS_BASE),
+    )
+
+
+async def _handle_show_settings_default(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
+) -> None:
+    """Show the currency keyboard for changing the default currency."""
+    query = update.callback_query
+    await query.edit_message_text(
+        "Choose your new *default currency* (used when no currency is mentioned):",
+        parse_mode="Markdown",
+        reply_markup=currency_keyboard(CB_SETTINGS_DEFAULT),
+    )
+
+
 async def _handle_settings_base_currency(
     update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
 ) -> None:
@@ -351,16 +381,21 @@ async def _apply_settings_currency(
     )
 
 
-# ── Formatting helpers ───────────────────────────────────────────────────────
+# ── Formatting helpers ───────────────────────────────────────────────────
+
+def _esc(text: str) -> str:
+    """Escape Markdown v1 special characters in user-facing text."""
+    return escape_markdown(text, version=1)
 
 def _format_confirmation(record: ExpenseRecord, base_currency: str, cat_label: str) -> str:
-    """Format an expense confirmation message."""
+    """Format an expense confirmation message (Markdown v1)."""
+    esc = _esc
     lines = [
-        f"*{record.amount_local:,.2f} {record.local_currency}*",
-        f"≈ {record.amount_base:,.2f} {base_currency} (rate {record.fx_rate:.4f})",
-        f"Category: {cat_label}",
-        f"Description: {record.description}",
+        f"*{record.amount_local:,.2f} {esc(record.local_currency)}*",
+        f"≈ {record.amount_base:,.2f} {esc(base_currency)} (rate {record.fx_rate:.4f})",
+        f"Category: {esc(cat_label)}",
+        f"Description: {esc(record.description)}",
     ]
     if record.subcategory:
-        lines.insert(3, f"Subcategory: {record.subcategory}")
+        lines.insert(3, f"Subcategory: {esc(record.subcategory)}")
     return "\n".join(lines)

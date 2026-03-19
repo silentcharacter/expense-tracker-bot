@@ -130,10 +130,37 @@ async def _handle_awaiting_input(
     awaiting: str,
     text: str,
 ) -> None:
-    """Handle free-text currency input during onboarding or /settings."""
+    """Handle free-text input during onboarding, /settings, or /email flows."""
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
+
+    if awaiting == "email_address":
+        google_email = text.strip()
+        if "@" not in google_email or "." not in google_email.split("@")[-1]:
+            await update.message.reply_text(
+                "That doesn't look like a valid email address. Please try again."
+            )
+            return
+        context.user_data.pop("awaiting", None)
+        await update.message.reply_text("Sharing your Spreadsheet…")
+        try:
+            await registry.transfer_to_user(update.effective_user.id, google_email)
+        except Exception as exc:
+            logger.exception(
+                "Failed to transfer spreadsheet for %s: %s",
+                update.effective_user.id,
+                exc,
+            )
+            await update.message.reply_text(f"Error: {exc}")
+            return
+        await update.message.reply_text(
+            f"Done! Your Spreadsheet has been shared with *{google_email}*.\n"
+            "You can now find it in Google Drive.",
+            parse_mode="Markdown",
+        )
+        return
+
     code = text.strip().upper()
 
     if not registry.validate_currency(code):

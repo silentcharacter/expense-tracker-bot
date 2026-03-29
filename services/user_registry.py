@@ -212,6 +212,13 @@ class UserRegistry:
         self._cache[telegram_id] = updated
         return updated
 
+    async def get_all_active_users(self) -> list[User]:
+        """Return all active users, populating the cache along the way."""
+        users = self._sheets.get_all_active_users()
+        for user in users:
+            self._cache[user.telegram_id] = user
+        return users
+
     # ── Currency validation ──────────────────────────────────────────────────
 
     @staticmethod

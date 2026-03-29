@@ -67,6 +67,7 @@ def _build_application() -> Application:
     app.add_handler(CommandHandler("budget", commands.budget))
     app.add_handler(CommandHandler("export", commands.export))
     app.add_handler(CommandHandler("cat", commands.cat))
+    app.add_handler(CommandHandler("broadcast", commands.broadcast))
 
     # ── Message handlers ────────────────────────────────────────────────────
     app.add_handler(MessageHandler(filters.VOICE, voice.handle_voice))
@@ -89,18 +90,63 @@ def _get_app() -> Application:
     return _app
 
 
+# ── CORS helpers ─────────────────────────────────────────────────────────────
+
+
+def _cors_preflight() -> tuple:
+    """Return a CORS preflight response (204 No Content)."""
+    headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Max-Age": "3600",
+    }
+    return "", 204, headers
+
+
+def _handle_api_route(request):
+    """Run the async Mini App API handler and add CORS headers to the response."""
+    from api.routes import handle_api_request
+    from flask import jsonify as _jsonify
+
+    try:
+        result = asyncio.run(handle_api_request(request))
+    except Exception as exc:
+        logger.exception("Mini App API handler error: %s", exc)
+        return _jsonify({"error": "internal server error"}), 500
+
+    # CORS preflight returns a 3-tuple ("", 204, headers_dict)
+    if isinstance(result, tuple) and len(result) == 3:
+        return result
+
+    body, status = result[0], result[1]
+    if hasattr(body, "headers"):
+        body.headers["Access-Control-Allow-Origin"] = "*"
+    return body, status
+
+
 # ── Cloud Function entry point ───────────────────────────────────────────────
 
 @functions_framework.http
-def webhook(request) -> tuple[str, int]:
-    """Receive a Telegram webhook POST and dispatch it to the appropriate handler.
+def webhook(request) -> tuple:
+    """Receive requests and route them to the Telegram webhook or Mini App API.
 
     Args:
         request: Flask/WSGI request object provided by functions-framework.
 
     Returns:
-        ("ok", 200) on success, or an error message with a non-200 status.
+        HTTP response tuple.
     """
+    path = request.path
+
+    # CORS preflight — must be handled before any auth checks
+    if request.method == "OPTIONS":
+        return _cors_preflight()
+
+    # Mini App REST API — uses its own initData auth, not the webhook secret
+    if path.startswith("/api/"):
+        return _handle_api_route(request)
+
     # Optional: verify Telegram secret token header
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
     if secret:

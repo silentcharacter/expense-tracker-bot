@@ -1,7 +1,8 @@
 """Command handlers: /start, /email, /settings, /today, /week, /month,
-/last, /undo, /budget, /export, /cat.
+/last, /undo, /budget, /export, /cat, /broadcast.
 """
 
+import asyncio
 import csv
 import io
 import logging
@@ -10,6 +11,7 @@ from datetime import date, timedelta, datetime
 from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Forbidden, TelegramError
 from telegram.ext import ContextTypes
 
 from models.category import category_label
@@ -422,6 +424,50 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         filename=filename,
         caption=f"Expenses {since} → {until} ({len(records)} rows)",
     )
+
+
+# ── /broadcast ────────────────────────────────────────────────────────────
+
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/broadcast <message> — send a message to all active users (admin only)."""
+    from services.user_registry import UserRegistry
+    from models.expense import UserRole
+
+    registry: UserRegistry = context.bot_data["registry"]
+    sender = await registry.get_user(update.effective_user.id)
+
+    if not sender or sender.role != UserRole.admin:
+        await update.message.reply_text("This command is only available to admins.")
+        return
+
+    text = update.message.text
+    prefix = "/broadcast"
+    message_body = text[len(prefix):].strip() if text.startswith(prefix) else ""
+
+    if not message_body:
+        await update.message.reply_text("Usage: /broadcast <message>")
+        return
+
+    users = await registry.get_all_active_users()
+    sent, failed, blocked = 0, 0, 0
+
+    for user in users:
+        try:
+            await context.bot.send_message(chat_id=user.telegram_id, text=message_body)
+            sent += 1
+        except Forbidden:
+            blocked += 1
+        except TelegramError as exc:
+            logger.warning("Failed to send broadcast to %s: %s", user.telegram_id, exc)
+            failed += 1
+        await asyncio.sleep(0.05)  # ~20 msg/s, well within Telegram's rate limit
+
+    report = f"Broadcast complete.\nSent: {sent}"
+    if blocked:
+        report += f"\nBlocked bot: {blocked}"
+    if failed:
+        report += f"\nFailed: {failed}"
+    await update.message.reply_text(report)
 
 
 # ── Shared period summary helper ─────────────────────────────────────────────

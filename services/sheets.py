@@ -299,6 +299,22 @@ class SheetsService:
                     return None
         return None
 
+    def get_all_active_users(self) -> list[User]:
+        """Return all active users from the Master Registry."""
+        from models.expense import UserStatus
+
+        sheet = self._get_sheet(self._registry_id, "Registry")
+        rows = sheet.get_all_records(expected_headers=User.registry_headers())
+        users: list[User] = []
+        for row in rows:
+            try:
+                user = User(**row)
+                if user.status == UserStatus.active:
+                    users.append(user)
+            except Exception as exc:
+                logger.error("Malformed registry row: %s", exc)
+        return users
+
     def register_user(self, user: User) -> None:
         """Append a new user row to the Master Registry.
 
@@ -340,6 +356,84 @@ class SheetsService:
         sheet.update_cell(cell.row, base_col, base_currency.upper())
         sheet.update_cell(cell.row, default_col, default_currency.upper())
         return True
+
+    def delete_transaction_by_id(self, spreadsheet_id: str, expense_id: str) -> Optional[ExpenseRecord]:
+        """Find a transaction by ID, delete its row, and return the deleted record.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            expense_id:     UUID of the expense to delete.
+
+        Returns:
+            The deleted ExpenseRecord, or None if not found.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
+        all_values = sheet.get_all_values(value_render_option=ValueRenderOption.unformatted)
+        if len(all_values) <= 1:
+            return None
+
+        headers = ExpenseRecord.sheet_headers()
+        id_col = headers.index("id")
+
+        for row_idx, row in enumerate(all_values):
+            if row_idx == 0:  # skip header
+                continue
+            if len(row) > id_col and str(row[id_col]) == expense_id:
+                row_dict = dict(zip(headers, row))
+                try:
+                    record: Optional[ExpenseRecord] = ExpenseRecord(**row_dict)
+                except Exception as exc:
+                    logger.warning("Could not parse row into ExpenseRecord during delete: %s", exc)
+                    record = None
+                sheet.delete_rows(row_idx + 1)  # gspread rows are 1-based
+                logger.info("Deleted transaction %s from %s", expense_id, spreadsheet_id)
+                return record
+
+        return None
+
+    def update_category_budgets(self, spreadsheet_id: str, budgets: dict[str, float]) -> None:
+        """Update budget amounts for the given category slugs in the Categories sheet.
+
+        Only updates category-level rows (rows where subcategory column is empty).
+        Invalidates the in-memory category cache after writing.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            budgets:        Mapping of category slug → new budget amount.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        all_values = sheet.get_all_values()
+        if not all_values or len(all_values) < 2:
+            return
+
+        raw_headers = [h.lower().strip() for h in all_values[0]]
+        # Support both "category" (new schema) and "slug" (legacy)
+        cat_col = next((i for i, h in enumerate(raw_headers) if h in ("category", "slug")), None)
+        sub_col = next((i for i, h in enumerate(raw_headers) if h == "subcategory"), None)
+        budget_col = next((i for i, h in enumerate(raw_headers) if h == "budget"), None)
+
+        if cat_col is None or budget_col is None:
+            logger.warning(
+                "Could not find required columns in Categories sheet for %s", spreadsheet_id
+            )
+            return
+
+        updates: list[tuple[int, int, float]] = []
+        for row_idx, row in enumerate(all_values[1:], start=2):  # skip header; 1-based
+            cat_slug = str(row[cat_col]).strip().lower() if len(row) > cat_col else ""
+            sub_slug = (
+                str(row[sub_col]).strip().lower()
+                if sub_col is not None and len(row) > sub_col
+                else ""
+            )
+            if cat_slug in budgets and not sub_slug:
+                updates.append((row_idx, budget_col + 1, budgets[cat_slug]))
+
+        for row_num, col_num, value in updates:
+            sheet.update_cell(row_num, col_num, value)
+
+        _category_cache.pop(spreadsheet_id, None)
+        logger.info("Updated %d category budgets for %s", len(updates), spreadsheet_id)
 
     # ── Spreadsheet initialisation ───────────────────────────────────────────
 

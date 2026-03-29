@@ -31,3 +31,11 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# Frontend (mini-app)
+node_modules/
+mini-app/dist/
+mini-app/.env.local
+mini-app/.env.*.local
+mini-app/.env.production
+mini-app/.vite/

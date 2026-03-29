@@ -24,7 +24,7 @@ python run_local.py
 # Check currency rates
 curl "https://v6.exchangerate-api.com/v6/$(grep EXCHANGE_RATE_API_KEY .env.yaml | cut -d'"' -f2)/pair/THB/USD"
 
-# Deploy to Google Cloud Functions
+# Deploy Cloud Function (bot + API)
 gcloud functions deploy expense-bot \
   --gen2 \
   --runtime=python312 \
@@ -37,3 +37,7 @@ gcloud functions deploy expense-bot \
   --memory=256MB \
   --timeout=60s \
   --service-account=expense-bot-sa@expense-bot-489609.iam.gserviceaccount.com
+
+# Deploy Mini App to GCS (static files)
+./deploy_mini_app.sh                       # default bucket: expense-bot-mini-app
+./deploy_mini_app.sh my-custom-bucket      # custom bucket name

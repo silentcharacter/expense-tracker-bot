@@ -16,7 +16,7 @@ import os
 from typing import Optional
 
 import functions_framework
-from telegram import Update
+from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -24,6 +24,8 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+
+from models.expense import UserRole
 
 from handlers import commands, voice, text, callbacks
 from services.gemini import GeminiService
@@ -36,6 +38,28 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# ── Bot command menu ──────────────────────────────────────────────────────────
+
+_PUBLIC_COMMANDS = [
+    BotCommand("start", "Register or view your profile"),
+    BotCommand("today", "Today's expense summary"),
+    BotCommand("week", "This week's summary"),
+    BotCommand("month", "This month's summary"),
+    BotCommand("budget", "Budget vs spending"),
+    BotCommand("cat", "Category breakdown"),
+    BotCommand("last", "Recent transactions"),
+    BotCommand("undo", "Delete last transaction"),
+    BotCommand("export", "Export CSV"),
+    BotCommand("settings", "Currency settings"),
+    BotCommand("email", "Share spreadsheet"),
+]
+
+_ADMIN_COMMANDS = _PUBLIC_COMMANDS + [
+    BotCommand("broadcast", "Send message to all users"),
+]
+
+_commands_registered = False
 
 # ── Singleton Application (reused across warm invocations) ───────────────────
 _app: Optional[Application] = None
@@ -188,4 +212,28 @@ async def _process_update(app: Application, update: Update) -> None:
         update: The deserialized Telegram Update.
     """
     async with app:
+        await _register_commands_once(app)
         await app.process_update(update)
+
+
+async def _register_commands_once(app: Application) -> None:
+    """Set the bot command menu on first invocation after cold start."""
+    global _commands_registered
+    if _commands_registered:
+        return
+    _commands_registered = True
+
+    try:
+        await app.bot.set_my_commands(_PUBLIC_COMMANDS)
+
+        registry = app.bot_data.get("registry")
+        if registry:
+            users = await registry.get_all_active_users()
+            for user in users:
+                if user.role == UserRole.admin:
+                    await app.bot.set_my_commands(
+                        _ADMIN_COMMANDS,
+                        scope=BotCommandScopeChat(chat_id=user.telegram_id),
+                    )
+    except Exception as exc:
+        logger.warning("Failed to register bot commands: %s", exc)

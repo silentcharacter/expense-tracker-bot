@@ -43,10 +43,6 @@ logger = logging.getLogger(__name__)
 
 _PUBLIC_COMMANDS = [
     BotCommand("start", "Register or view your profile"),
-    BotCommand("today", "Today's expense summary"),
-    BotCommand("week", "This week's summary"),
-    BotCommand("month", "This month's summary"),
-    BotCommand("budget", "Budget vs spending"),
     BotCommand("cat", "Category breakdown"),
     BotCommand("last", "Recent transactions"),
     BotCommand("undo", "Delete last transaction"),
@@ -83,12 +79,8 @@ def _build_application() -> Application:
     app.add_handler(CommandHandler("start", commands.start))
     app.add_handler(CommandHandler("email", commands.email))
     app.add_handler(CommandHandler("settings", commands.settings))
-    app.add_handler(CommandHandler("today", commands.today))
-    app.add_handler(CommandHandler("week", commands.week))
-    app.add_handler(CommandHandler("month", commands.month))
     app.add_handler(CommandHandler("last", commands.last))
     app.add_handler(CommandHandler("undo", commands.undo))
-    app.add_handler(CommandHandler("budget", commands.budget))
     app.add_handler(CommandHandler("export", commands.export))
     app.add_handler(CommandHandler("cat", commands.cat))
     app.add_handler(CommandHandler("broadcast", commands.broadcast))

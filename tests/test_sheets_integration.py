@@ -75,14 +75,25 @@ def test_append_transaction_writes_and_reads_back(sheets_service, test_spreadshe
 @pytest.mark.integration
 def test_ensure_categories_sheet_seeds_defaults(sheets_service, test_spreadsheet_id):
     """ensure_categories_sheet should write header + default category rows if empty."""
-    from services.sheets import _category_cache
-    _category_cache.pop(test_spreadsheet_id, None)
+    from services.sheets import _category_cache, SHEET_CATEGORIES
 
-    sheets_service.ensure_categories_sheet(test_spreadsheet_id)
-    cats = sheets_service.get_categories(test_spreadsheet_id)
+    sheet = sheets_service._get_sheet(test_spreadsheet_id, SHEET_CATEGORIES)
+    backup = sheet.get_all_values()
 
-    default_slugs = {c.slug for c in CATEGORIES}
-    assert {c.slug for c in cats} == default_slugs
+    try:
+        sheet.clear()
+        _category_cache.pop(test_spreadsheet_id, None)
+
+        sheets_service.ensure_categories_sheet(test_spreadsheet_id)
+        cats = sheets_service.get_categories(test_spreadsheet_id)
+
+        default_slugs = {c.slug for c in CATEGORIES}
+        assert {c.slug for c in cats} == default_slugs
+    finally:
+        sheet.clear()
+        if backup:
+            sheet.update(backup, raw=False)
+        _category_cache.pop(test_spreadsheet_id, None)
 
 
 @pytest.mark.integration

@@ -1,14 +1,10 @@
-"""Command handlers: /start, /email, /settings, /today, /week, /month,
-/last, /undo, /budget, /export, /cat, /broadcast.
-"""
+"""Command handlers: /start, /email, /settings, /last, /undo, /export, /cat, /broadcast."""
 
 import asyncio
 import csv
 import io
 import logging
-import os
 from datetime import date, timedelta, datetime
-from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import Forbidden, TelegramError
@@ -18,8 +14,6 @@ from models.category import category_label
 from handlers.callbacks import currency_keyboard, CB_ONBOARD_BASE, CB_SHOW_SETTINGS_BASE, CB_SHOW_SETTINGS_DEFAULT
 
 logger = logging.getLogger(__name__)
-
-_TIMEZONE = os.environ.get("TIMEZONE", "Asia/Bangkok")
 
 
 # ── /start ───────────────────────────────────────────────────────────────────
@@ -155,31 +149,6 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-# ── /today ───────────────────────────────────────────────────────────────────
-
-async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/today — show total and breakdown of today's expenses."""
-    await _period_summary(update, context, days=0, label="Today")
-
-
-# ── /week ────────────────────────────────────────────────────────────────────
-
-async def week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/week — show this week's expense summary."""
-    await _period_summary(update, context, days=6, label="This week")
-
-
-# ── /month ───────────────────────────────────────────────────────────────────
-
-async def month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/month — show this month's expense summary grouped by category."""
-    today_date = date.today()
-    start_of_month = today_date.replace(day=1)
-    await _period_summary(
-        update, context, since=start_of_month, label="This month"
-    )
-
-
 # ── /last ────────────────────────────────────────────────────────────────────
 
 async def last(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -242,67 +211,6 @@ async def undo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Deleted: {deleted.amount_local:,.2f} {deleted.local_currency} "
         f"— {category_label(deleted.category)} — {deleted.description}"
     )
-
-
-# ── /budget ──────────────────────────────────────────────────────────────────
-
-async def budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/budget — show current month's spending vs configured category budgets."""
-    from services.sheets import SheetsService
-    from services.user_registry import UserRegistry
-
-    registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
-
-    user = await registry.get_user(update.effective_user.id)
-    if user is None:
-        await update.message.reply_text("You are not registered. Send /start first.")
-        return
-
-    today_date = date.today()
-    start_of_month = today_date.replace(day=1)
-    records = sheets.get_transactions(user.spreadsheet_id, since=start_of_month)
-    categories = sheets.get_categories(user.spreadsheet_id)
-
-    has_budget = any(
-        c.budget is not None or any(s.budget is not None for s in c.subcategories)
-        for c in categories
-    )
-    if not has_budget:
-        await update.message.reply_text(
-            "No budgets configured.\n"
-            "Open your Spreadsheet → Categories sheet and add budget amounts."
-        )
-        return
-
-    # Aggregate spending per category and subcategory
-    spent_cat: dict[str, float] = {}
-    spent_sub: dict[tuple[str, str], float] = {}
-    for r in records:
-        spent_cat[r.category] = spent_cat.get(r.category, 0.0) + r.amount_base
-        if r.subcategory:
-            key = (r.category, r.subcategory)
-            spent_sub[key] = spent_sub.get(key, 0.0) + r.amount_base
-
-    lines = [f"Budget — {today_date.strftime('%B %Y')} ({user.base_currency}):\n"]
-    for cat in categories:
-        cat_used = spent_cat.get(cat.slug, 0.0)
-        if cat.budget is not None:
-            pct = (cat_used / cat.budget * 100) if cat.budget else 0
-            bar_len = min(int(pct / 10), 10)
-            bar = "█" * bar_len + "░" * (10 - bar_len)
-            over = " ⚠" if cat_used > cat.budget else ""
-            lines.append(f"{cat.label}: {cat_used:,.0f}/{cat.budget:,.0f} ({pct:.0f}%) {bar}{over}")
-        for sub in cat.subcategories:
-            if sub.budget is not None:
-                sub_used = spent_sub.get((cat.slug, sub.slug), 0.0)
-                pct = (sub_used / sub.budget * 100) if sub.budget else 0
-                bar_len = min(int(pct / 10), 10)
-                bar = "█" * bar_len + "░" * (10 - bar_len)
-                over = " ⚠" if sub_used > sub.budget else ""
-                lines.append(f"  {sub.label}: {sub_used:,.0f}/{sub.budget:,.0f} ({pct:.0f}%) {bar}{over}")
-
-    await update.message.reply_text("\n".join(lines))
 
 
 # ── /cat ─────────────────────────────────────────────────────────────────────
@@ -468,66 +376,3 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if failed:
         report += f"\nFailed: {failed}"
     await update.message.reply_text(report)
-
-
-# ── Shared period summary helper ─────────────────────────────────────────────
-
-async def _period_summary(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    label: str,
-    days: Optional[int] = None,
-    since: Optional[date] = None,
-) -> None:
-    """Compute and send a totals + per-category breakdown for a date range.
-
-    Args:
-        update:  Telegram Update.
-        context: PTB context.
-        label:   Header label for the reply (e.g. "This week").
-        days:    Number of days back from today (0 = today only). Mutually
-                 exclusive with `since`.
-        since:   Explicit start date. Mutually exclusive with `days`.
-    """
-    from services.sheets import SheetsService
-    from services.user_registry import UserRegistry
-
-    registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
-
-    user = await registry.get_user(update.effective_user.id)
-    if user is None:
-        await update.message.reply_text("You are not registered. Send /start first.")
-        return
-
-    today_date = date.today()
-    if since is None:
-        since = today_date - timedelta(days=days or 0)
-
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=today_date)
-
-    if not records:
-        await update.message.reply_text(f"{label}: no expenses.")
-        return
-
-    total_base = sum(r.amount_base for r in records)
-
-    # Group by category
-    by_cat: dict[str, float] = {}
-    for r in records:
-        by_cat[r.category] = by_cat.get(r.category, 0.0) + r.amount_base
-
-    top_cats = sorted(by_cat.items(), key=lambda x: x[1], reverse=True)
-
-    lines = [
-        f"{label}: *{total_base:,.2f} {user.base_currency}* ({len(records)} transactions)\n"
-    ]
-    for cat_slug, amount in top_cats:
-        pct = amount / total_base * 100
-        lines.append(f"  {category_label(cat_slug)}: {amount:,.2f} ({pct:.0f}%)")
-
-    if days and days > 0:
-        daily_avg = total_base / (days + 1)
-        lines.append(f"\nDaily avg: {daily_avg:,.2f} {user.base_currency}")
-
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")

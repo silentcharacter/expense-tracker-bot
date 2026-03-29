@@ -2,9 +2,9 @@ import type { Period } from "../../api/summary";
 import { useTelegram } from "../../hooks/useTelegram";
 
 const PERIODS: { value: Period; label: string }[] = [
+  { value: "today", label: "Day" },
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
-  { value: "year", label: "Year" },
 ];
 
 interface PeriodSelectorProps {

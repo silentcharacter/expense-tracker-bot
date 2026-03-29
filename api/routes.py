@@ -124,7 +124,7 @@ def _period_dates(period: str) -> tuple[date, date]:
     if period == "today":
         return today, today
     elif period == "week":
-        return today - timedelta(days=6), today
+        return today - timedelta(days=today.weekday()), today
     elif period == "month":
         return today.replace(day=1), today
     elif period == "year":
@@ -225,6 +225,8 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         {"date": d, "amount_base": round(amt, 4)} for d, amt in sorted(daily.items())
     ]
 
+    days_remaining = max((until - date.today()).days, 0)
+
     result: dict = {
         "period": period,
         "date_range": {"start": since.isoformat(), "end": until.isoformat()},
@@ -232,6 +234,7 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "base_currency": user.base_currency,
         "transaction_count": len(records),
         "daily_average": round(total_base / days, 4),
+        "days_remaining": days_remaining,
         "by_category": by_category,
         "by_currency": by_currency,
         "daily_totals": daily_totals,
@@ -251,6 +254,19 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
             "change_percent": change_pct,
             "direction": "up" if change_pct > 0 else "down" if change_pct < 0 else "flat",
         }
+
+        prev_cat_totals: dict[str, float] = defaultdict(float)
+        for r in prev_records:
+            prev_cat_totals[r.category] += r.amount_base
+
+        for cat in result["by_category"]:
+            prev_amt = round(prev_cat_totals.get(cat["category"], 0.0), 4)
+            cat["previous_amount_base"] = prev_amt
+            cat["change_percent"] = (
+                round((cat["amount_base"] - prev_amt) / prev_amt * 100, 1)
+                if prev_amt > 0
+                else 0.0
+            )
 
     return jsonify(result), 200
 

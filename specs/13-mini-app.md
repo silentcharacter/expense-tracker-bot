@@ -330,62 +330,128 @@ Validates ISO 4217 codes. Returns updated settings.
 
 ```
 ┌─────────────────────────────────┐
-│  Header: "Expense Tracker"       │
-│  Period selector: Today/Week/Mo  │
-├─────────────────────────────────┤
 │                                  │
 │  [Active page content]           │
 │                                  │
 │                                  │
 ├─────────────────────────────────┤
-│  📊 Dashboard  📋 History  ⚙ Set │
-│  (bottom tabs)                   │
+│ 🏠 Overview │📊 Analytics│💰 Budget│⚙️ Settings│
+│             (bottom tabs)        │
 └─────────────────────────────────┘
 ```
 
-Three tabs: **Dashboard**, **History**, **Settings**.
+Four tabs: **Overview**, **Analytics**, **Budget**, **Settings**.
 
 ---
 
-### Page 1: Dashboard (`/`)
+### Page 1: Overview (`/`)
 
-The main analytics view. Shows summary for selected period.
+High-level summary of spending for the selected period. _(Spec TBD — defined separately from the Analytics tab.)_
+
+---
+
+### Page 2: Analytics (`/analytics`)
+
+Deep analytics view for the selected period. Focuses on trends, insights, and category-level comparison against the previous period.
+
+**Period selector**: segmented control at the top — **Today / Week / Month**.
 
 **Layout (top to bottom):**
 
-1. **Period Selector** — segmented control: Today / Week / Month
-2. **Total Card** — big number with base currency, comparison badge (↑12% or ↓8%)
-3. **Daily Average** — smaller card below total
-4. **Category Donut Chart** — interactive donut (Recharts `PieChart`), tap category → highlight
-5. **Category Breakdown List** — below chart, each row: emoji + name + amount + bar + percentage
-6. **Daily Spending Chart** — bar chart (Recharts `BarChart`), one bar per day
-7. **Budget Progress** — horizontal progress bars per category with budget limits
-8. **Currency Breakdown** — if multi-currency expenses exist, pie chart showing spend by currency
-9. **Top Expenses** — top 5 largest transactions for the period
+#### 1. Daily Spending Chart
+
+- Section header: "DAILY SPENDING — [MONTH NAME]" (e.g. "DAILY SPENDING — MARCH")
+- Bar chart (Recharts `BarChart`): one bar per day in the selected period
+  - X-axis: day numbers
+  - Y-axis: amount in base currency
+  - Highlight bar: today (or last day with data) shown in accent colour, others in muted colour
+- Stats row below the chart — 4 compact stat tiles:
+  - **Avg/day** — average daily spending for the period
+  - **Total** — total spent in the period (base currency, e.g. "$1,176")
+  - **Days left** — calendar days remaining in the period (e.g. "2")
+  - **Transactions** — number of transactions in the period (e.g. "4")
+
+#### 2. Insights
+
+Section header: "INSIGHTS"
+
+A vertical list of smart observation cards generated from the user's data. Each card:
+- Left: category emoji icon
+- Body: **bold title** (e.g. "Entertainment up 32%") + subtitle text (1–2 lines of context, e.g. "You spent $1.00 to $60 last month on bars & parties")
+- Right: metric badge — either a **% change** (green for decrease, red/orange for increase) or a **$ amount**
+
+Three card types shown in the mockup:
+| Card type | Title pattern | Badge |
+|-----------|--------------|-------|
+| Trend alert | "{Category} up/down {N}%" | "+32%" / "−15%" |
+| Budget status | "{Category} on track / over budget" | "57%" (budget used) |
+| Share insight | "{Category}: ${amount} this month" | "$48" |
+
+Insights are derived client-side from `/api/summary` data (no separate endpoint). Generate one card per notable category: biggest increase, biggest decrease, on-track budget, largest absolute spend.
+
+#### 3. VS Last Month
+
+Section header: "VS LAST MONTH"
+
+Category-by-category comparison of current period vs the equivalent previous period.
+
+Each row:
+- Left: category colour dot + category name
+- Centre: mini horizontal bar chart — two overlapping bars (current vs previous period), coloured by category
+- Right: **% change badge** — green if spending decreased, red/orange if increased (e.g. "+12%", "−28%")
+
+Categories shown in descending order by absolute spend in the current period. All active categories included (not just top 5).
 
 **Component tree:**
 ```
-<DashboardPage>
-  <PeriodSelector value={period} onChange={setPeriod} />
-  <TotalCard total={summary.total_base} currency={user.base_currency} comparison={summary.comparison} />
-  <DailyAverageCard average={summary.daily_average} currency={user.base_currency} />
-  <CategoryDonut data={summary.by_category} />
-  <CategoryBreakdown data={summary.by_category} currency={user.base_currency} />
-  <DailyChart data={summary.daily_totals} />
-  <BudgetProgress budgets={budgets} />
-  <CurrencyBreakdown data={summary.by_currency} />
-  <TopExpenses expenses={topExpenses} />
-</DashboardPage>
+<AnalyticsPage>
+  <PeriodSelector options={["Today", "Week", "Month"]} value={period} onChange={setPeriod} />
+
+  <Section title="DAILY SPENDING — {monthName}">
+    <DailySpendingChart data={summary.daily_totals} highlightToday />
+    <StatsRow>
+      <StatTile label="Avg/day"      value={summary.daily_average} />
+      <StatTile label="Total"        value={summary.total_base} />
+      <StatTile label="Days left"    value={summary.days_remaining} />
+      <StatTile label="Transactions" value={summary.transaction_count} />
+    </StatsRow>
+  </Section>
+
+  <Section title="INSIGHTS">
+    {insights.map(insight => (
+      <InsightCard
+        key={insight.category}
+        emoji={insight.emoji}
+        title={insight.title}
+        subtitle={insight.subtitle}
+        badge={insight.badge}
+      />
+    ))}
+  </Section>
+
+  <Section title="VS LAST MONTH">
+    {summary.by_category.map(cat => (
+      <CategoryComparisonRow
+        key={cat.slug}
+        category={cat}
+        current={cat.total_base}
+        previous={cat.previous_total_base}
+        changePercent={cat.change_percent}
+      />
+    ))}
+  </Section>
+</AnalyticsPage>
 ```
 
 **Data fetching:**
 - On mount and period change: `GET /api/summary?period={period}&compare=true`
-- Budgets: `GET /api/budgets`
+  - Response must include `by_category[].previous_total_base`, `by_category[].change_percent`, `days_remaining`, `transaction_count`
+- Insights computed client-side from summary response — no extra request
 - Skeleton loading state while fetching
 
 ---
 
-### Page 2: History (`/history`)
+### Page 3: History (`/history`)
 
 Scrollable transaction list with filters.
 
@@ -446,7 +512,7 @@ Scrollable transaction list with filters.
 
 ---
 
-### Page 3: Settings (`/settings`)
+### Page 4: Settings (`/settings`)
 
 User configuration.
 

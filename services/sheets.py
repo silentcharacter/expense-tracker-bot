@@ -18,6 +18,11 @@ from models.category import UserCategory, UserSubcategory, default_user_categori
 _category_cache: dict[str, tuple[list[UserCategory], float]] = {}
 _CATEGORY_TTL = 300.0  # 5 minutes
 
+# Module-level transaction cache: spreadsheet_id → (list[ExpenseRecord], expiry_timestamp)
+# Short TTL to collapse burst reads from the mini app without serving very stale data.
+_transaction_cache: dict[str, tuple[list["ExpenseRecord"], float]] = {}
+_TRANSACTION_TTL = 30.0  # 30 seconds
+
 
 def _parse_budget(raw) -> float | None:
     """Parse a raw cell value into a float budget, or None if empty/invalid."""
@@ -98,6 +103,7 @@ class SheetsService:
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
         sheet.append_row(record.to_sheet_row(), value_input_option="RAW")
+        _transaction_cache.pop(spreadsheet_id, None)
         logger.info("Appended transaction %s to %s", record.id, spreadsheet_id)
 
     def delete_last_transaction(self, spreadsheet_id: str) -> Optional[ExpenseRecord]:
@@ -114,6 +120,7 @@ class SheetsService:
         last_row_index = len(all_values)  # 1-based, header = row 1
         last_row = all_values[-1]
         sheet.delete_rows(last_row_index)
+        _transaction_cache.pop(spreadsheet_id, None)
 
         headers = ExpenseRecord.sheet_headers()
         row_dict = dict(zip(headers, last_row))
@@ -122,6 +129,31 @@ class SheetsService:
         except Exception as exc:
             logger.warning("Could not parse deleted row into ExpenseRecord: %s", exc)
             return None
+
+    def _get_all_transactions(self, spreadsheet_id: str) -> list[ExpenseRecord]:
+        """Return every parsed record for a spreadsheet, with 30s TTL cache."""
+        now = time.monotonic()
+        cached = _transaction_cache.get(spreadsheet_id)
+        if cached and now < cached[1]:
+            return cached[0]
+
+        sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
+        rows = sheet.get_all_records(
+            expected_headers=ExpenseRecord.sheet_headers(),
+            value_render_option=ValueRenderOption.unformatted,
+        )
+
+        records: list[ExpenseRecord] = []
+        for row in rows:
+            try:
+                records.append(ExpenseRecord(**row))
+            except Exception:
+                continue
+
+        records.sort(key=lambda r: r.timestamp, reverse=True)
+        _transaction_cache[spreadsheet_id] = (records, now + _TRANSACTION_TTL)
+        logger.debug("Cached %d transactions for %s (TTL %.0fs)", len(records), spreadsheet_id, _TRANSACTION_TTL)
+        return records
 
     def get_transactions(
         self,
@@ -132,6 +164,9 @@ class SheetsService:
     ) -> list[ExpenseRecord]:
         """Fetch transactions optionally filtered by date range.
 
+        Uses a short in-memory TTL cache to collapse burst reads from the
+        mini app (multiple endpoints reading the same sheet in parallel).
+
         Args:
             spreadsheet_id: User's Spreadsheet ID.
             since:          Inclusive start date (UTC).
@@ -141,30 +176,23 @@ class SheetsService:
         Returns:
             List of ExpenseRecord ordered by timestamp descending.
         """
-        sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        rows = sheet.get_all_records(
-            expected_headers=ExpenseRecord.sheet_headers(),
-            value_render_option=ValueRenderOption.unformatted,
-        )
+        all_records = self._get_all_transactions(spreadsheet_id)
 
-        records: list[ExpenseRecord] = []
-        for row in rows:
-            try:
-                record = ExpenseRecord(**row)
-            except Exception:
-                continue
-            if since and record.timestamp.date() < since:
-                continue
-            if until and record.timestamp.date() > until:
-                continue
-            records.append(record)
-
-        # Sort descending by timestamp
-        records.sort(key=lambda r: r.timestamp, reverse=True)
+        if since or until:
+            filtered: list[ExpenseRecord] = []
+            for r in all_records:
+                d = r.timestamp.date()
+                if since and d < since:
+                    continue
+                if until and d > until:
+                    continue
+                filtered.append(r)
+        else:
+            filtered = list(all_records)
 
         if limit:
-            records = records[:limit]
-        return records
+            filtered = filtered[:limit]
+        return filtered
 
     def get_last_n_transactions(self, spreadsheet_id: str, n: int = 10) -> list[ExpenseRecord]:
         """Return the n most recent transactions."""
@@ -386,6 +414,7 @@ class SheetsService:
                     logger.warning("Could not parse row into ExpenseRecord during delete: %s", exc)
                     record = None
                 sheet.delete_rows(row_idx + 1)  # gspread rows are 1-based
+                _transaction_cache.pop(spreadsheet_id, None)
                 logger.info("Deleted transaction %s from %s", expense_id, spreadsheet_id)
                 return record
 

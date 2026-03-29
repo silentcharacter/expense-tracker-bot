@@ -7,6 +7,8 @@ export interface CategorySummary {
   amount_base: number;
   percentage: number;
   transaction_count: number;
+  previous_amount_base?: number;
+  change_percent?: number;
 }
 
 export interface CurrencySummary {
@@ -37,6 +39,7 @@ export interface SummaryResponse {
   by_currency: CurrencySummary[];
   daily_totals: DailyTotal[];
   comparison?: PeriodComparison;
+  days_remaining?: number;
 }
 
 // ── Expenses ─────────────────────────────────────────────────────────────────

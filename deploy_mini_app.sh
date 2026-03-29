@@ -51,15 +51,25 @@ gsutil web set -m index.html -e index.html "gs://$BUCKET"
 gsutil iam ch allUsers:objectViewer "gs://$BUCKET"
 
 # 5) Upload build
-echo "[5/5] Uploading dist/ to gs://$BUCKET..."
+echo "[5/6] Uploading dist/ to gs://$BUCKET..."
 gsutil -m -h "Cache-Control:public,max-age=3600" cp -r dist/* "gs://$BUCKET/"
 # index.html should not be cached aggressively (it references hashed assets)
 gsutil -h "Cache-Control:no-cache,max-age=0" cp dist/index.html "gs://$BUCKET/index.html"
 
 URL="https://storage.googleapis.com/$BUCKET/index.html"
+
+# Copy URL to clipboard for pasting into BotFather Main App URL
+if command -v pbcopy &>/dev/null; then
+  echo -n "$URL" | pbcopy
+  echo "      URL copied to clipboard ✓"
+elif command -v xclip &>/dev/null; then
+  echo -n "$URL" | xclip -selection clipboard
+  echo "      URL copied to clipboard ✓"
+fi
+
 echo ""
 echo "=== Done ==="
 echo "Mini App URL: $URL"
 echo ""
-echo "Set this URL in BotFather:"
-echo "  /mybots → your bot → Bot Menu Button → $URL"
+echo "Update Main App URL in BotFather (cannot be automated):"
+echo "  https://t.me/BotFather → /editapp → Edit Web App URL → paste"

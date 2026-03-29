@@ -20,6 +20,9 @@ function periodLabel(period: string, dateRange: { start: string; end: string }):
   if (period === "year") {
     return `Total · ${start.getFullYear()}`;
   }
+  if (period === "today") {
+    return "Total · Today";
+  }
   return "Total · This week";
 }
 

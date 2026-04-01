@@ -48,6 +48,7 @@ _PUBLIC_COMMANDS = [
     BotCommand("export", "Export CSV"),
     BotCommand("settings", "Currency settings"),
     BotCommand("email", "Share spreadsheet"),
+    BotCommand("feedback", "Send feedback"),
 ]
 
 _ADMIN_COMMANDS = _PUBLIC_COMMANDS + [
@@ -81,6 +82,7 @@ def _build_application() -> Application:
     app.add_handler(CommandHandler("last", commands.last))
     app.add_handler(CommandHandler("undo", commands.undo))
     app.add_handler(CommandHandler("export", commands.export))
+    app.add_handler(CommandHandler("feedback", commands.feedback))
     app.add_handler(CommandHandler("broadcast", commands.broadcast))
 
     # ── Message handlers ────────────────────────────────────────────────────

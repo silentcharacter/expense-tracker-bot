@@ -353,6 +353,12 @@ class SheetsService:
         sheet.append_row(user.to_registry_row(), value_input_option="USER_ENTERED")
         logger.info("Registered user %s (%s)", user.telegram_id, user.display_name)
 
+    def append_feedback(self, telegram_id: int, username: str, display_name: str, feedback: str) -> None:
+        """Append user feedback to the Feedback tab of the Registry spreadsheet."""
+        sheet = self._get_sheet(self._registry_id, "Feedback")
+        sheet.append_row([str(telegram_id), username, display_name, feedback], value_input_option="USER_ENTERED")
+        logger.info("Appended feedback from %s", telegram_id)
+
     def update_user_email(self, telegram_id: int, email: str) -> bool:
         """Set the email field for an existing user in the Master Registry.
 

@@ -325,3 +325,23 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if failed:
         report += f"\nFailed: {failed}"
     await update.message.reply_text(report)
+
+
+# ── /feedback ────────────────────────────────────────────────────────────────
+
+async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/feedback — prompt for feedback text to send."""
+    from services.user_registry import UserRegistry
+
+    registry: UserRegistry = context.bot_data["registry"]
+    tg_user = update.effective_user
+
+    user = await registry.get_user(tg_user.id)
+    if user is None:
+        await update.message.reply_text("You are not registered. Send /start first.")
+        return
+
+    context.user_data["awaiting"] = "feedback_text"
+    await update.message.reply_text(
+        "Please type your feedback below. Your next message will be saved and reviewed by the developers."
+    )

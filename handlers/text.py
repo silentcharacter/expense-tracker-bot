@@ -163,6 +163,18 @@ async def _handle_awaiting_input(
         )
         return
 
+    if awaiting == "feedback_text":
+        context.user_data.pop("awaiting", None)
+        user = await registry.get_user(update.effective_user.id)
+        if user:
+            from services.sheets import SheetsService
+            sheets: SheetsService = context.bot_data["sheets"]
+            sheets.append_feedback(user.telegram_id, user.username, user.display_name, text)
+            await update.message.reply_text("Thank you for your feedback!")
+        else:
+            await update.message.reply_text("You are not registered. Send /start first.")
+        return
+
     code = text.strip().upper()
 
     if not registry.validate_currency(code):
@@ -217,6 +229,7 @@ async def _handle_awaiting_input(
                 )
             except ValueError as exc:
                 await update.message.reply_text(str(exc))
+
 
 
 async def _complete_onboarding_from_text(

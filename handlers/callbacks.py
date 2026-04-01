@@ -1,7 +1,7 @@
 """Inline keyboard callback handler."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 # ── Callback data prefixes ──────────────────────────────────────────────────
 # Format: "<PREFIX>:<payload>"
 
-CB_CONFIRM = "confirm"
-CB_CANCEL = "cancel"
+CB_UNDO = "undo"
 CB_EDIT_CATEGORY = "edit_cat"
 CB_SET_CATEGORY = "set_cat"
+CB_SET_SUBCATEGORY = "set_sub"
 CB_ONBOARD_BASE = "ob_base"
 CB_ONBOARD_DEFAULT = "ob_default"
 CB_SETTINGS_BASE = "set_base"
@@ -35,14 +35,13 @@ POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
 
 # ── Keyboard builders ────────────────────────────────────────────────────────
 
-def confirm_keyboard(record_id: str) -> InlineKeyboardMarkup:
-    """Build the confirm / edit / cancel keyboard for a pending expense."""
+def saved_keyboard(record_id: str) -> InlineKeyboardMarkup:
+    """Build the undo / edit-category keyboard for a just-saved expense."""
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✓ Save", callback_data=f"{CB_CONFIRM}:{record_id}"),
+                InlineKeyboardButton("↩ Undo", callback_data=f"{CB_UNDO}:{record_id}"),
                 InlineKeyboardButton("✎ Category", callback_data=f"{CB_EDIT_CATEGORY}:{record_id}"),
-                InlineKeyboardButton("✕ Cancel", callback_data=f"{CB_CANCEL}:{record_id}"),
             ]
         ]
     )
@@ -65,6 +64,25 @@ async def category_keyboard(
     ]
     # Arrange in two columns
     rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    return InlineKeyboardMarkup(rows)
+
+
+def subcategory_keyboard(record_id: str, subcategories: list) -> InlineKeyboardMarkup:
+    """Build a keyboard with subcategory choices plus a skip option."""
+    buttons = [
+        InlineKeyboardButton(
+            sub.label,
+            callback_data=f"{CB_SET_SUBCATEGORY}:{record_id}:{sub.slug}",
+        )
+        for sub in subcategories
+    ]
+    rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([
+        InlineKeyboardButton(
+            "— Skip —",
+            callback_data=f"{CB_SET_SUBCATEGORY}:{record_id}:_none_",
+        )
+    ])
     return InlineKeyboardMarkup(rows)
 
 
@@ -94,10 +112,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     prefix = parts[0] if parts else ""
 
     handlers = {
-        CB_CONFIRM: _handle_confirm,
-        CB_CANCEL: _handle_cancel,
+        CB_UNDO: _handle_undo,
         CB_EDIT_CATEGORY: _handle_edit_category,
         CB_SET_CATEGORY: _handle_set_category,
+        CB_SET_SUBCATEGORY: _handle_set_subcategory,
         CB_ONBOARD_BASE: _handle_onboard_base_currency,
         CB_ONBOARD_DEFAULT: _handle_onboard_default_currency,
         CB_SETTINGS_BASE: _handle_settings_base_currency,
@@ -114,18 +132,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text("Unknown action.")
 
 
-# ── Confirmation flow ────────────────────────────────────────────────────────
+# ── Undo flow ────────────────────────────────────────────────────────────────
 
-async def _handle_confirm(
+async def _handle_undo(
     update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
 ) -> None:
-    """Persist the pending expense and acknowledge the user."""
+    """Delete the just-saved expense by ID."""
     query = update.callback_query
-    pending: dict = context.user_data.get("pending_expense", {})
-
-    if not pending:
-        await query.edit_message_text("Session expired. Please re-send the expense.")
-        return
+    record_id = parts[1] if len(parts) > 1 else ""
 
     from services.sheets import SheetsService
     from services.user_registry import UserRegistry
@@ -138,28 +152,15 @@ async def _handle_confirm(
         await query.edit_message_text("You are not registered. Send /start to sign up.")
         return
 
-    record: ExpenseRecord = pending["record"]
-    sheets.append_transaction(user.spreadsheet_id, record)
-    context.user_data.pop("pending_expense", None)
+    deleted = sheets.delete_transaction_by_id(user.spreadsheet_id, record_id)
+    context.user_data.pop("last_expense", None)
 
-    cat_label = category_label(record.category)
-    sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
-    cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
-
-    await query.edit_message_text(
-        f"Saved: {record.amount_local:,.2f} {record.local_currency}"
-        f" ({record.amount_base:,.2f} {user.base_currency})\n"
-        f"{cat_display} — {record.description}"
-    )
-
-
-async def _handle_cancel(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
-) -> None:
-    """Discard the pending expense."""
-    query = update.callback_query
-    context.user_data.pop("pending_expense", None)
-    await query.edit_message_text("Cancelled.")
+    if deleted:
+        await query.edit_message_text(
+            f"Removed: {deleted.amount_local:,.2f} {deleted.local_currency} — {deleted.description}"
+        )
+    else:
+        await query.edit_message_text("Could not find the expense to remove.")
 
 
 async def _handle_edit_category(
@@ -184,38 +185,117 @@ async def _handle_edit_category(
     await query.edit_message_text("Choose a category:", reply_markup=markup)
 
 
+async def _apply_category_update(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+    sheets,
+    user,
+    record_id: str,
+    category: str,
+    subcategory: str,
+) -> None:
+    """Persist category+subcategory to Sheets and redisplay the saved card."""
+    ok = sheets.update_transaction_category(user.spreadsheet_id, record_id, category, subcategory)
+    if not ok:
+        await query.edit_message_text(
+            "Could not update the category. The expense may have been removed."
+        )
+        return
+
+    last = context.user_data.get("last_expense", {})
+    record: Optional[ExpenseRecord] = last.get("record")
+    if record:
+        updated = record.model_copy(update={"category": category, "subcategory": subcategory})
+        context.user_data["last_expense"] = {"record": updated}
+    else:
+        updated = None
+
+    cat_label_str = category_label(category)
+    sub_label_str = subcategory_label(category, subcategory) if subcategory else ""
+    cat_display = f"{cat_label_str} / {sub_label_str}" if sub_label_str else cat_label_str
+
+    if updated:
+        await query.edit_message_text(
+            f"{_format_confirmation(updated, user.base_currency, cat_display)}\n\n✓ Saved",
+            reply_markup=saved_keyboard(record_id),
+            parse_mode="Markdown",
+        )
+    else:
+        await query.edit_message_text(
+            f"Category updated to {cat_display}.",
+            reply_markup=saved_keyboard(record_id),
+        )
+
+
 async def _handle_set_category(
     update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
 ) -> None:
-    """Update the category on the pending expense and return to confirm view."""
+    """Show subcategory keyboard if available, otherwise save immediately."""
     query = update.callback_query
     if len(parts) < 3:
         await query.edit_message_text("Invalid action.")
         return
 
+    record_id = parts[1]
     new_category = parts[2]
-    pending: dict = context.user_data.get("pending_expense", {})
-    if not pending:
-        await query.edit_message_text("Session expired. Please re-send the expense.")
-        return
 
-    record: ExpenseRecord = pending["record"]
-    updated = record.model_copy(update={"category": new_category, "subcategory": ""})
-    pending["record"] = updated
-    context.user_data["pending_expense"] = pending
-
+    from services.sheets import SheetsService
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
-    user = await registry.get_user(update.effective_user.id)
-    base_currency = user.base_currency if user else "?"
+    sheets: SheetsService = context.bot_data["sheets"]
 
-    cat_label = category_label(new_category)
-    await query.edit_message_text(
-        _format_confirmation(updated, base_currency, cat_label),
-        reply_markup=confirm_keyboard(updated.id),
-        parse_mode="Markdown",
-    )
+    user = await registry.get_user(update.effective_user.id)
+    if user is None:
+        await query.edit_message_text("You are not registered. Send /start.")
+        return
+
+    categories = sheets.get_categories(user.spreadsheet_id)
+    cat_obj = next((c for c in categories if c.slug == new_category), None)
+    subcats = cat_obj.subcategories if cat_obj else []
+
+    if subcats:
+        context.user_data["editing_category"] = new_category
+        cat_label_str = category_label(new_category)
+        await query.edit_message_text(
+            f"Category: *{escape_markdown(cat_label_str)}*\nChoose a subcategory:",
+            reply_markup=subcategory_keyboard(record_id, subcats),
+            parse_mode="Markdown",
+        )
+    else:
+        await _apply_category_update(query, context, sheets, user, record_id, new_category, "")
+
+
+async def _handle_set_subcategory(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
+) -> None:
+    """Save the chosen subcategory (or none) for an already-saved expense."""
+    query = update.callback_query
+    if len(parts) < 3:
+        await query.edit_message_text("Invalid action.")
+        return
+
+    record_id = parts[1]
+    sub_slug = parts[2]
+    subcategory = "" if sub_slug == "_none_" else sub_slug
+    category = context.user_data.pop("editing_category", "")
+
+    if not category:
+        await query.edit_message_text("Session expired. Please tap ✎ Category again.")
+        return
+
+    from services.sheets import SheetsService
+    from services.user_registry import UserRegistry
+
+    registry: UserRegistry = context.bot_data["registry"]
+    sheets: SheetsService = context.bot_data["sheets"]
+
+    user = await registry.get_user(update.effective_user.id)
+    if user is None:
+        await query.edit_message_text("You are not registered. Send /start.")
+        return
+
+    await _apply_category_update(query, context, sheets, user, record_id, category, subcategory)
 
 
 # ── Onboarding currency selection ───────────────────────────────────────────

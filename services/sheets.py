@@ -420,6 +420,45 @@ class SheetsService:
 
         return None
 
+    def update_transaction_category(
+        self, spreadsheet_id: str, record_id: str, category: str, subcategory: str
+    ) -> bool:
+        """Find a transaction by ID and update its category and subcategory cells.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            record_id:      UUID of the expense to update.
+            category:       New category slug.
+            subcategory:    New subcategory slug (empty string to clear).
+
+        Returns:
+            True if the row was found and updated, False otherwise.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
+        all_values = sheet.get_all_values(value_render_option=ValueRenderOption.unformatted)
+        if len(all_values) <= 1:
+            return False
+
+        headers = ExpenseRecord.sheet_headers()
+        id_col = headers.index("id")
+        cat_col = headers.index("category") + 1    # 1-based for gspread
+        sub_col = headers.index("subcategory") + 1
+
+        for row_idx, row in enumerate(all_values):
+            if row_idx == 0:  # skip header
+                continue
+            if len(row) > id_col and str(row[id_col]) == record_id:
+                sheet.update_cell(row_idx + 1, cat_col, category)
+                sheet.update_cell(row_idx + 1, sub_col, subcategory)
+                _transaction_cache.pop(spreadsheet_id, None)
+                logger.info(
+                    "Updated category for transaction %s in %s: %s/%s",
+                    record_id, spreadsheet_id, category, subcategory,
+                )
+                return True
+
+        return False
+
     def update_category_budgets(self, spreadsheet_id: str, budgets: dict[str, float]) -> None:
         """Update budget amounts for the given category slugs in the Categories sheet.
 

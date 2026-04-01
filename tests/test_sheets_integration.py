@@ -70,6 +70,49 @@ def test_append_transaction_writes_and_reads_back(sheets_service, test_spreadshe
         sheets_service.delete_last_transaction(test_spreadsheet_id)
 
 
+# ── update_transaction_category ──────────────────────────────────────────────
+
+@pytest.mark.integration
+def test_update_transaction_category_changes_category(sheets_service, test_spreadsheet_id):
+    """update_transaction_category should update category/subcategory in-place."""
+    record = ExpenseRecord(
+        amount_local=10.00,
+        local_currency="USD",
+        amount_base=10.00,
+        base_currency="USD",
+        fx_rate=1.0,
+        category="food",
+        subcategory="cafe",
+        description="integration test category update",
+        source=ExpenseSource.text,
+        raw_input="10 usd coffee",
+    )
+    sheets_service.append_transaction(test_spreadsheet_id, record)
+
+    try:
+        ok = sheets_service.update_transaction_category(
+            test_spreadsheet_id, record.id, "transport", ""
+        )
+        assert ok is True
+
+        recent = sheets_service.get_transactions(test_spreadsheet_id, limit=10)
+        got = next((r for r in recent if r.id == record.id), None)
+        assert got is not None, f"Record {record.id} not found after update"
+        assert got.category == "transport"
+        assert got.subcategory == ""
+    finally:
+        sheets_service.delete_transaction_by_id(test_spreadsheet_id, record.id)
+
+
+@pytest.mark.integration
+def test_update_transaction_category_returns_false_for_unknown_id(sheets_service, test_spreadsheet_id):
+    """update_transaction_category should return False when the record ID doesn't exist."""
+    ok = sheets_service.update_transaction_category(
+        test_spreadsheet_id, "00000000-0000-0000-0000-000000000000", "food", ""
+    )
+    assert ok is False
+
+
 # ── get_categories / ensure_categories_sheet ─────────────────────────────────
 
 @pytest.mark.integration

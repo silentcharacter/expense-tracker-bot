@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 
 from models.expense import ExpenseRecord, ExpenseSource
 from models.category import category_label, subcategory_label
-from handlers.callbacks import confirm_keyboard, _format_confirmation
+from handlers.callbacks import saved_keyboard, _format_confirmation
 
 logger = logging.getLogger(__name__)
 
@@ -95,19 +95,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         raw_input=raw_transcript,
     )
 
-    context.user_data["pending_expense"] = {"record": record}
+    # ── 5. Save immediately ─────────────────────────────────────────────────
+    sheets.append_transaction(user.spreadsheet_id, record)
+    context.user_data["last_expense"] = {"record": record}
 
-    # ── 5. Show confirmation ────────────────────────────────────────────────
+    # ── 6. Show saved card ──────────────────────────────────────────────────
     cat_label = category_label(record.category)
     sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
     cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
 
     text = (
         f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n"
-        f"Is this correct?"
+        f"✓ Saved"
     )
     await status_msg.edit_text(
         text,
-        reply_markup=confirm_keyboard(record.id),
+        reply_markup=saved_keyboard(record.id),
         parse_mode="Markdown",
     )

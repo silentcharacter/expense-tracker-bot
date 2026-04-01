@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Period } from "../api/summary";
-import type { Expense } from "../api/types";
+import type { CategoryInfo, Expense } from "../api/types";
 import { fetchExpenses } from "../api/expenses";
+import { fetchCategories } from "../api/categories";
 import { useUser } from "../context/UserContext";
 import { useSummary } from "../hooks/useSummary";
 import { PeriodSelector } from "../components/dashboard/PeriodSelector";
@@ -44,6 +45,7 @@ export function DashboardPage() {
   const { user } = useUser();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
@@ -54,6 +56,12 @@ export function DashboardPage() {
       .then((res) => setExpenses(res.expenses))
       .catch(() => setExpenses([]));
   }, [summary]);
+
+  useEffect(() => {
+    fetchCategories()
+      .then((res) => setCategories(res.categories))
+      .catch(() => setCategories([]));
+  }, []);
 
   const currency = summary?.base_currency ?? user?.base_currency ?? "USD";
 
@@ -125,8 +133,12 @@ export function DashboardPage() {
               />
               <CategoryDonut
                 data={summary.by_category}
+                expenses={expenses}
+                categories={categories}
                 currency={currency}
                 total={summary.total_base}
+                selectedCategory={categoryFilter}
+                onCategoryChange={setCategoryFilter}
               />
               <SearchBar value={search} onChange={setSearch} />
               <CategoryFilter categories={summary.by_category} selected={categoryFilter} onChange={setCategoryFilter} />

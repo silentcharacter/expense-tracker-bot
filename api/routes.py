@@ -111,6 +111,8 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
         return _api_settings_get(user)
     elif path == "/settings" and method == "PUT":
         return await _api_settings_update(request, user)
+    elif path == "/categories" and method == "GET":
+        return _api_categories_get(user)
     else:
         return jsonify({"error": "not found"}), 404
 
@@ -133,12 +135,25 @@ def _period_dates(period: str) -> tuple[date, date]:
         raise ValueError(f"Unknown period {period!r}; must be today|week|month|year")
 
 
-def _previous_period_dates(since: date, until: date) -> tuple[date, date]:
-    """Return an equal-length period ending the day before since."""
-    length = (until - since).days + 1
-    prev_until = since - timedelta(days=1)
-    prev_since = prev_until - timedelta(days=length - 1)
-    return prev_since, prev_until
+def _previous_period_dates(period: str, since: date, until: date) -> tuple[date, date]:
+    """Return the full previous period for comparison.
+
+    month — full previous calendar month (e.g. Apr → Mar 1–31).
+    year  — full previous calendar year (e.g. 2026 → Jan 1–Dec 31 2025).
+    week  — full previous week Mon–Sun.
+    today — yesterday.
+    """
+    if period == "month":
+        prev_month_last = since - timedelta(days=1)
+        return prev_month_last.replace(day=1), prev_month_last
+    if period == "year":
+        return date(since.year - 1, 1, 1), date(since.year - 1, 12, 31)
+    if period == "week":
+        prev_since = since - timedelta(weeks=1)
+        return prev_since, prev_since + timedelta(days=6)
+    # today → yesterday
+    yesterday = since - timedelta(days=1)
+    return yesterday, yesterday
 
 
 # ── Serialisation ───────────────────────────────────────────────────────────
@@ -241,19 +256,18 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     }
 
     if compare:
-        prev_since, prev_until = _previous_period_dates(since, until)
+        prev_since, prev_until = _previous_period_dates(period, since, until)
         prev_records = sheets.get_transactions(
             user.spreadsheet_id, since=prev_since, until=prev_until
         )
         prev_total = sum(r.amount_base for r in prev_records)
-        change_pct = (
-            round((total_base - prev_total) / prev_total * 100, 1) if prev_total else 0.0
-        )
-        result["comparison"] = {
-            "previous_total": round(prev_total, 4),
-            "change_percent": change_pct,
-            "direction": "up" if change_pct > 0 else "down" if change_pct < 0 else "flat",
-        }
+        if prev_total > 0:
+            change_pct = round((total_base - prev_total) / prev_total * 100, 1)
+            result["comparison"] = {
+                "previous_total": round(prev_total, 4),
+                "change_percent": change_pct,
+                "direction": "up" if change_pct > 0 else "down" if change_pct < 0 else "flat",
+            }
 
         prev_cat_totals: dict[str, float] = defaultdict(float)
         for r in prev_records:
@@ -416,3 +430,25 @@ async def _api_settings_update(request: flask.Request, user: User) -> tuple:
         return jsonify({"error": str(exc)}), 400
 
     return _api_settings_get(updated_user)
+
+
+# ── GET /api/categories ──────────────────────────────────────────────────────
+
+
+def _api_categories_get(user: User) -> tuple:
+    """Return user's categories with subcategories and labels."""
+    sheets = _get_sheets()
+    categories = sheets.get_categories(user.spreadsheet_id)
+    return jsonify({
+        "categories": [
+            {
+                "slug": cat.slug,
+                "label": cat.label,
+                "subcategories": [
+                    {"slug": sub.slug, "label": sub.label}
+                    for sub in cat.subcategories
+                ],
+            }
+            for cat in categories
+        ]
+    }), 200

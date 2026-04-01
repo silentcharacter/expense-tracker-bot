@@ -108,3 +108,20 @@ export interface UpdateSettingsRequest {
 export interface UpdateBudgetsRequest {
   budgets: Record<string, number>;
 }
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+export interface SubcategoryInfo {
+  slug: string;
+  label: string;
+}
+
+export interface CategoryInfo {
+  slug: string;
+  label: string;
+  subcategories: SubcategoryInfo[];
+}
+
+export interface CategoriesResponse {
+  categories: CategoryInfo[];
+}

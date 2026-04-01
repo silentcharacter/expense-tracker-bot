@@ -1,4 +1,4 @@
-"""Command handlers: /start, /email, /settings, /last, /undo, /export, /cat, /broadcast."""
+"""Command handlers: /start, /email, /settings, /last, /undo, /export, /broadcast."""
 
 import asyncio
 import csv
@@ -211,57 +211,6 @@ async def undo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Deleted: {deleted.amount_local:,.2f} {deleted.local_currency} "
         f"— {category_label(deleted.category)} — {deleted.description}"
     )
-
-
-# ── /cat ─────────────────────────────────────────────────────────────────────
-
-async def cat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/cat <category> — show this month's spending for a specific category."""
-    from services.sheets import SheetsService
-    from services.user_registry import UserRegistry
-
-    registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
-
-    user = await registry.get_user(update.effective_user.id)
-    if user is None:
-        await update.message.reply_text("You are not registered. Send /start first.")
-        return
-
-    categories = sheets.get_categories(user.spreadsheet_id)
-    args = context.args or []
-    if not args:
-        slugs = ", ".join(c.slug for c in categories)
-        await update.message.reply_text(f"Usage: /cat <category>\nCategories: {slugs}")
-        return
-
-    cat_slug = args[0].lower()
-    if not any(c.slug == cat_slug for c in categories):
-        await update.message.reply_text(f"Unknown category: {cat_slug}")
-        return
-
-    today_date = date.today()
-    start_of_month = today_date.replace(day=1)
-    records = sheets.get_transactions(user.spreadsheet_id, since=start_of_month)
-    cat_records = [r for r in records if r.category == cat_slug]
-
-    if not cat_records:
-        await update.message.reply_text(
-            f"No {category_label(cat_slug)} expenses this month."
-        )
-        return
-
-    total = sum(r.amount_base for r in cat_records)
-    lines = [
-        f"{category_label(cat_slug)} — {today_date.strftime('%B')}: "
-        f"{total:,.2f} {user.base_currency} ({len(cat_records)} transactions)\n"
-    ]
-    for r in cat_records[:20]:  # cap to avoid overly long messages
-        ts = r.timestamp.strftime("%d %b")
-        lines.append(f"  {ts}  {r.amount_local:,.2f} {r.local_currency}  {r.description}")
-
-    await update.message.reply_text("\n".join(lines))
-
 
 # ── /export ──────────────────────────────────────────────────────────────────
 

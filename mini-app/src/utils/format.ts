@@ -20,9 +20,9 @@ export function formatAmountCompact(amount: number, currency: string): string {
   return formatAmount(amount, currency);
 }
 
-export function formatPercent(value: number, showSign = false): string {
+export function formatPercent(value: number, showSign = false, decimals = 1): string {
   const sign = showSign && value > 0 ? "+" : "";
-  return `${sign}${value.toFixed(1)}%`;
+  return `${sign}${value.toFixed(decimals)}%`;
 }
 
 export function formatDate(isoString: string): string {

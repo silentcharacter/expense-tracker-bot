@@ -1,19 +1,29 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
-import type { CategorySummary } from "../../api/types";
-import { getCategoryColor, getCategoryLabel } from "../../utils/categories";
+import type { CategorySummary, Expense, CategoryInfo } from "../../api/types";
+import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../../utils/categories";
 import { formatAmount, formatPercent } from "../../utils/format";
 
 interface CategoryDonutProps {
   data: CategorySummary[];
+  expenses: Expense[];
+  categories: CategoryInfo[];
   currency: string;
   total: number;
+  selectedCategory: string | null;
+  onCategoryChange: (category: string | null) => void;
+}
+
+interface ChartEntry {
+  key: string;
+  displayName: string;
+  amount_base: number;
+  percentage: number;
+  color: string;
 }
 
 interface TooltipPayload {
-  name: string;
-  value: number;
-  payload: CategorySummary;
+  payload: ChartEntry;
 }
 
 interface CustomTooltipProps {
@@ -35,7 +45,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
         position: "relative",
       }}
     >
-      <p className="font-medium">{getCategoryLabel(item.category)}</p>
+      <p className="font-medium">{item.displayName}</p>
       <p className="amount" style={{ color: "var(--app-text-secondary)" }}>
         {formatAmount(item.amount_base, "USD", 0)} · {formatPercent(item.percentage)}
       </p>
@@ -43,56 +53,149 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   );
 }
 
-export function CategoryDonut({ data, currency, total }: CategoryDonutProps) {
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+function subcategoryColor(hex: string, index: number, total: number): string {
+  const opacity = total === 1 ? 1.0 : 1.0 - (index / (total - 1)) * 0.55;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${opacity.toFixed(2)})`;
+}
+
+export function CategoryDonut({ data, expenses, categories, currency, total, selectedCategory, onCategoryChange }: CategoryDonutProps) {
+  const drillCategory = selectedCategory;
+  const [activeSlice, setActiveSlice] = useState<string | null>(null);
 
   if (!data.length) return null;
 
   const sorted = [...data].sort((a, b) => b.amount_base - a.amount_base);
 
-  const centerText = activeCategory
-    ? formatAmount(
-        sorted.find((e) => e.category === activeCategory)?.amount_base ?? 0,
-        currency,
-        0
-      )
-    : formatAmount(total, currency, 0);
+  const subcategoryLabelMap = useMemo(() => {
+    const map = new Map<string, Map<string, string>>();
+    for (const cat of categories) {
+      map.set(cat.slug, new Map(cat.subcategories.map((s) => [s.slug, s.label])));
+    }
+    return map;
+  }, [categories]);
 
-  const centerLabel = activeCategory
-    ? getCategoryLabel(activeCategory)
+  function getSubLabel(catSlug: string, subSlug: string): string {
+    return subcategoryLabelMap.get(catSlug)?.get(subSlug) ?? subSlug.replace(/_/g, " ");
+  }
+
+  const subcategoryEntries = useMemo(() => {
+    if (!drillCategory) return [];
+    const filtered = expenses.filter((e) => e.category === drillCategory);
+    const catTotal = filtered.reduce((s, e) => s + e.amount_base, 0);
+    const buckets = new Map<string, { amount: number; count: number }>();
+    for (const e of filtered) {
+      const key = e.subcategory?.trim() || "__other__";
+      const b = buckets.get(key) ?? { amount: 0, count: 0 };
+      buckets.set(key, { amount: b.amount + e.amount_base, count: b.count + 1 });
+    }
+    return [...buckets.entries()]
+      .map(([slug, { amount }]) => ({
+        key: slug,
+        displayName: slug === "__other__" ? "Other" : getSubLabel(drillCategory, slug),
+        amount_base: amount,
+        percentage: catTotal > 0 ? (amount / catTotal) * 100 : 0,
+      }))
+      .sort((a, b) => b.amount_base - a.amount_base);
+  }, [drillCategory, expenses, subcategoryLabelMap]);
+
+  const chartEntries: ChartEntry[] = useMemo(() => {
+    if (drillCategory) {
+      const catColor = getCategoryColor(drillCategory);
+      return subcategoryEntries.map((s, i) => ({
+        key: s.key,
+        displayName: s.displayName,
+        amount_base: s.amount_base,
+        percentage: s.percentage,
+        color: subcategoryColor(catColor, i, subcategoryEntries.length),
+      }));
+    }
+    return sorted.map((e) => ({
+      key: e.category,
+      displayName: getCategoryLabel(e.category),
+      amount_base: e.amount_base,
+      percentage: e.percentage,
+      color: getCategoryColor(e.category),
+    }));
+  }, [drillCategory, subcategoryEntries, sorted]);
+
+  function handleClick(key: string) {
+    if (!drillCategory) {
+      onCategoryChange(key);
+      setActiveSlice(null);
+    } else {
+      setActiveSlice((prev) => (prev === key ? null : key));
+    }
+  }
+
+  const centerAmount = activeSlice
+    ? (chartEntries.find((e) => e.key === activeSlice)?.amount_base ?? 0)
+    : drillCategory
+    ? chartEntries.reduce((s, e) => s + e.amount_base, 0)
+    : total;
+
+  const centerLabel = activeSlice
+    ? (chartEntries.find((e) => e.key === activeSlice)?.displayName ?? "")
+    : drillCategory
+    ? getCategoryLabel(drillCategory)
     : "total";
 
   return (
     <div className="card">
-      <p
-        className="text-[11px] font-semibold uppercase tracking-wider mb-3"
-        style={{ color: "var(--app-text-secondary)" }}
-      >
-        By Category
-      </p>
+      <div className="flex items-center gap-2 mb-3">
+        {drillCategory ? (
+          <>
+            <button
+              className="flex items-center gap-1 text-xs font-medium"
+              style={{ color: "var(--app-accent)" }}
+              onClick={() => { onCategoryChange(null); setActiveSlice(null); }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              All categories
+            </button>
+            <span style={{ color: "var(--app-text-secondary)" }}>·</span>
+            <p
+              className="text-[11px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--app-text-secondary)" }}
+            >
+              {getCategoryEmoji(drillCategory)} {getCategoryLabel(drillCategory)}
+            </p>
+          </>
+        ) : (
+          <p
+            className="text-[11px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--app-text-secondary)" }}
+          >
+            By Category
+          </p>
+        )}
+      </div>
+
       <div className="flex items-center gap-3">
-        {/* Donut chart with centered total */}
+        {/* Donut chart */}
         <div className="relative flex-shrink-0" style={{ width: 130, height: 130 }}>
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer key={drillCategory ?? "root"} width="100%" height="100%">
             <PieChart>
               <Pie
-                data={sorted}
+                data={chartEntries}
                 dataKey="amount_base"
-                nameKey="category"
+                nameKey="key"
                 innerRadius="55%"
                 outerRadius="85%"
                 paddingAngle={2}
                 stroke="none"
-                onClick={(entry: CategorySummary) =>
-                  setActiveCategory(activeCategory === entry.category ? null : entry.category)
-                }
+                onClick={(entry: ChartEntry) => handleClick(entry.key)}
                 style={{ cursor: "pointer", outline: "none" }}
               >
-                {sorted.map((entry) => (
+                {chartEntries.map((entry) => (
                   <Cell
-                    key={entry.category}
-                    fill={getCategoryColor(entry.category)}
-                    opacity={activeCategory && activeCategory !== entry.category ? 0.35 : 1}
+                    key={entry.key}
+                    fill={entry.color}
+                    opacity={activeSlice && activeSlice !== entry.key ? 0.35 : 1}
                   />
                 ))}
               </Pie>
@@ -104,10 +207,10 @@ export function CategoryDonut({ data, currency, total }: CategoryDonutProps) {
               className="amount text-[13px] font-bold leading-tight"
               style={{ color: "var(--app-text-primary)" }}
             >
-              {centerText}
+              {formatAmount(centerAmount, currency, 0)}
             </span>
             <span
-              className="text-[9px] leading-tight"
+              className="text-[9px] leading-tight text-center px-1"
               style={{ color: "var(--app-text-secondary)" }}
             >
               {centerLabel}
@@ -117,28 +220,31 @@ export function CategoryDonut({ data, currency, total }: CategoryDonutProps) {
 
         {/* Legend */}
         <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-          {sorted.map((entry) => (
+          {drillCategory && chartEntries.length === 0 && (
+            <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+              No breakdown available
+            </p>
+          )}
+          {chartEntries.map((entry) => (
             <button
-              key={entry.category}
+              key={entry.key}
               className="flex items-center gap-2 text-left"
-              onClick={() =>
-                setActiveCategory(activeCategory === entry.category ? null : entry.category)
-              }
+              onClick={() => handleClick(entry.key)}
             >
               <span
                 className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ backgroundColor: getCategoryColor(entry.category) }}
+                style={{ backgroundColor: entry.color }}
               />
               <span
                 className="text-xs truncate flex-1"
                 style={{
                   color:
-                    activeCategory && activeCategory !== entry.category
+                    activeSlice && activeSlice !== entry.key
                       ? "var(--app-text-secondary)"
                       : "var(--app-text-primary)",
                 }}
               >
-                {getCategoryLabel(entry.category)}
+                {entry.displayName}
               </span>
               <span
                 className="amount text-xs font-medium flex-shrink-0"

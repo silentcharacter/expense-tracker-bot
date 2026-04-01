@@ -28,6 +28,9 @@ function periodLabel(period: string, dateRange: { start: string; end: string }):
 
 function previousPeriodName(period: string, dateRange: { start: string; end: string }): string {
   const start = new Date(dateRange.start + "T12:00:00");
+  if (period === "today") {
+    return "yesterday";
+  }
   if (period === "month") {
     const prev = new Date(start);
     prev.setMonth(prev.getMonth() - 1);
@@ -50,7 +53,7 @@ export function TotalCard({
   comparison,
 }: TotalCardProps) {
   const comparisonText = comparison
-    ? `${formatPercent(Math.abs(comparison.change_percent))} ${comparison.direction === "up" ? "more" : "less"} than ${previousPeriodName(period, dateRange)}`
+    ? `${formatPercent(Math.abs(comparison.change_percent), false, 0)} ${comparison.direction === "up" ? "more" : "less"} than ${previousPeriodName(period, dateRange)}`
     : null;
 
   return (

@@ -43,7 +43,6 @@ logger = logging.getLogger(__name__)
 
 _PUBLIC_COMMANDS = [
     BotCommand("start", "Register or view your profile"),
-    BotCommand("cat", "Category breakdown"),
     BotCommand("last", "Recent transactions"),
     BotCommand("undo", "Delete last transaction"),
     BotCommand("export", "Export CSV"),
@@ -82,7 +81,6 @@ def _build_application() -> Application:
     app.add_handler(CommandHandler("last", commands.last))
     app.add_handler(CommandHandler("undo", commands.undo))
     app.add_handler(CommandHandler("export", commands.export))
-    app.add_handler(CommandHandler("cat", commands.cat))
     app.add_handler(CommandHandler("broadcast", commands.broadcast))
 
     # ── Message handlers ────────────────────────────────────────────────────

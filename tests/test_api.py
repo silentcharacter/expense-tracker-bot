@@ -1,4 +1,4 @@
-"""Unit tests for api/routes.py — all 7 endpoints + auth edge cases.
+"""Unit tests for api/routes.py — all endpoints + auth edge cases.
 
 No external services are used. Services are replaced with MagicMock /
 AsyncMock fixtures so tests run offline and instantaneously.
@@ -12,6 +12,7 @@ import flask
 import pytest
 
 from models.expense import ExpenseRecord, ExpenseSource, User, UserRole, UserStatus
+from models.category import UserCategory, UserSubcategory
 
 # A minimal Flask app whose context makes flask.jsonify() usable in tests.
 _flask_app = flask.Flask(__name__)
@@ -82,8 +83,11 @@ async def _call(
     json_body: dict | None = None,
     args: dict | None = None,
     valid_auth: bool = True,
-) -> tuple[dict, int]:
-    """Call handle_api_request inside a Flask test context and return (body, status)."""
+) -> tuple[dict | bytes, int]:
+    """Call handle_api_request inside a Flask test context and return (body, status).
+
+    body is a dict for JSON responses, or raw bytes for non-JSON (e.g. CSV export).
+    """
     from api.routes import handle_api_request
 
     auth_return = {"id": TG_ID} if valid_auth else None
@@ -108,6 +112,9 @@ async def _call(
         return {}, result[1]
 
     response, status = result[0], result[1]
+    content_type = response.content_type if hasattr(response, "content_type") else ""
+    if "text/csv" in content_type:
+        return response.get_data(), status
     body: dict = json.loads(response.get_data(as_text=True))
     return body, status
 
@@ -327,11 +334,17 @@ async def test_expense_delete_not_found(mock_sheets, mock_registry) -> None:
 
 async def test_budgets_get_status_calculation(mock_sheets, mock_registry) -> None:
     """Budget statuses: normal (<80%), warning (80-100%), exceeded (>100%)."""
-    mock_sheets.get_budgets.return_value = {
-        "food": 100.0,       # 40% spent → normal
-        "transport": 100.0,  # 90% spent → warning
-        "housing": 100.0,    # 120% spent → exceeded
-    }
+    mock_sheets.get_categories.return_value = [
+        UserCategory(slug="food", label="Food & Drinks", subcategories=[
+            UserSubcategory(slug="restaurant", label="Restaurant", budget=100.0),
+        ]),
+        UserCategory(slug="transport", label="Transport", subcategories=[
+            UserSubcategory(slug="taxi", label="Taxi", budget=100.0),
+        ]),
+        UserCategory(slug="housing", label="Housing", subcategories=[
+            UserSubcategory(slug="rent", label="Rent", budget=100.0),
+        ]),
+    ]
     mock_sheets.get_transactions.return_value = [
         _make_record(category="food", amount_base=40.0),
         _make_record(category="transport", amount_base=90.0),
@@ -346,24 +359,53 @@ async def test_budgets_get_status_calculation(mock_sheets, mock_registry) -> Non
     assert by_cat["housing"]["status"] == "exceeded"
     assert by_cat["food"]["spent"] == pytest.approx(40.0)
     assert by_cat["housing"]["remaining"] == pytest.approx(-20.0)
+    # Each category entry includes subcategories list
+    assert isinstance(by_cat["food"]["subcategories"], list)
 
 
 async def test_budgets_get_unspent_category(mock_sheets, mock_registry) -> None:
     """Categories with a budget but zero spending appear with spent=0."""
-    mock_sheets.get_budgets.return_value = {"food": 200.0}
+    mock_sheets.get_categories.return_value = [
+        UserCategory(slug="food", label="Food & Drinks", subcategories=[
+            UserSubcategory(slug="restaurant", label="Restaurant", budget=200.0),
+        ]),
+    ]
     mock_sheets.get_transactions.return_value = []
     body, status = await _call("GET", "/api/budgets", mock_sheets, mock_registry)
     assert status == 200
     assert body["budgets"][0]["spent"] == 0.0
     assert body["budgets"][0]["status"] == "normal"
+    assert body["budgets"][0]["budget"] == 200.0
+
+
+async def test_budgets_get_includes_unbudgeted_categories(mock_sheets, mock_registry) -> None:
+    """GET /api/budgets returns all categories, including those with no subcategory budgets."""
+    mock_sheets.get_categories.return_value = [
+        UserCategory(slug="food", label="Food & Drinks", subcategories=[
+            UserSubcategory(slug="restaurant", label="Restaurant", budget=200.0),
+        ]),
+        UserCategory(slug="other", label="Other", subcategories=[]),
+    ]
+    mock_sheets.get_transactions.return_value = []
+    body, status = await _call("GET", "/api/budgets", mock_sheets, mock_registry)
+    assert status == 200
+    slugs = [b["category"] for b in body["budgets"]]
+    assert "food" in slugs
+    assert "other" in slugs
+    by_cat = {b["category"]: b for b in body["budgets"]}
+    assert by_cat["other"]["budget"] == 0.0
 
 
 # ── PUT /api/budgets ──────────────────────────────────────────────────────────
 
 
 async def test_budgets_update_calls_sheets(mock_sheets, mock_registry) -> None:
-    """PUT /api/budgets calls update_category_budgets and returns updated budgets."""
-    mock_sheets.get_budgets.return_value = {"food": 450.0}
+    """PUT /api/budgets calls update_subcategory_budgets and returns updated budgets."""
+    mock_sheets.get_categories.return_value = [
+        UserCategory(slug="food", label="Food & Drinks", subcategories=[
+            UserSubcategory(slug="restaurant", label="Restaurant", budget=450.0),
+        ]),
+    ]
     mock_sheets.get_transactions.return_value = []
 
     body, status = await _call(
@@ -371,11 +413,11 @@ async def test_budgets_update_calls_sheets(mock_sheets, mock_registry) -> None:
         "/api/budgets",
         mock_sheets,
         mock_registry,
-        json_body={"budgets": {"food": 450.0, "transport": 200.0}},
+        json_body={"budgets": {"food/restaurant": 450.0, "transport/taxi": 200.0}},
     )
     assert status == 200
-    mock_sheets.update_category_budgets.assert_called_once_with(
-        "sheet123", {"food": 450.0, "transport": 200.0}
+    mock_sheets.update_subcategory_budgets.assert_called_once_with(
+        "sheet123", {"food/restaurant": 450.0, "transport/taxi": 200.0}
     )
     # Response is the updated budgets view
     assert "budgets" in body
@@ -408,7 +450,7 @@ async def test_budgets_update_non_dict(mock_sheets, mock_registry) -> None:
 
 
 async def test_settings_get_fields(mock_sheets, mock_registry, user: User) -> None:
-    """Settings response contains all spec-required fields."""
+    """Settings response contains all spec-required fields including notification flags."""
     body, status = await _call("GET", "/api/settings", mock_sheets, mock_registry)
     assert status == 200
     assert body["telegram_id"] == TG_ID
@@ -418,12 +460,40 @@ async def test_settings_get_fields(mock_sheets, mock_registry, user: User) -> No
     assert body["spreadsheet_id"] == "sheet123"
     assert body["role"] == "user"
     assert "created_at" in body
+    # Notification flags (defaults)
+    assert body["budget_alerts"] is True
+    assert body["weekly_summary"] is True
+    assert body["insights"] is True
 
 
 # ── PUT /api/settings ─────────────────────────────────────────────────────────
 
 
-async def test_settings_update_success(mock_sheets, mock_registry, user: User) -> None:
+async def test_settings_update_currencies(mock_sheets, mock_registry, user: User) -> None:
+    """Providing only base_currency updates that field; no 400 is raised."""
+    updated = user.model_copy(update={"base_currency": "EUR"})
+    mock_registry.update_settings.return_value = updated
+
+    body, status = await _call(
+        "PUT",
+        "/api/settings",
+        mock_sheets,
+        mock_registry,
+        json_body={"base_currency": "EUR"},
+    )
+    assert status == 200
+    mock_registry.update_settings.assert_called_once_with(
+        TG_ID,
+        base_currency="EUR",
+        default_currency=None,
+        budget_alerts=None,
+        weekly_summary=None,
+        insights=None,
+    )
+    assert body["base_currency"] == "EUR"
+
+
+async def test_settings_update_both_currencies(mock_sheets, mock_registry, user: User) -> None:
     updated = user.model_copy(update={"base_currency": "EUR", "default_currency": "THB"})
     mock_registry.update_settings.return_value = updated
 
@@ -435,8 +505,31 @@ async def test_settings_update_success(mock_sheets, mock_registry, user: User) -
         json_body={"base_currency": "EUR", "default_currency": "THB"},
     )
     assert status == 200
-    mock_registry.update_settings.assert_called_once_with(TG_ID, "EUR", "THB")
     assert body["base_currency"] == "EUR"
+
+
+async def test_settings_update_notifications(mock_sheets, mock_registry, user: User) -> None:
+    """Toggling a notification flag persists via registry.update_settings."""
+    updated = user.model_copy(update={"budget_alerts": False})
+    mock_registry.update_settings.return_value = updated
+
+    body, status = await _call(
+        "PUT",
+        "/api/settings",
+        mock_sheets,
+        mock_registry,
+        json_body={"budget_alerts": False},
+    )
+    assert status == 200
+    mock_registry.update_settings.assert_called_once_with(
+        TG_ID,
+        base_currency=None,
+        default_currency=None,
+        budget_alerts=False,
+        weekly_summary=None,
+        insights=None,
+    )
+    assert body["budget_alerts"] is False
 
 
 async def test_settings_update_invalid_currency(mock_sheets, mock_registry) -> None:
@@ -448,21 +541,185 @@ async def test_settings_update_invalid_currency(mock_sheets, mock_registry) -> N
         "/api/settings",
         mock_sheets,
         mock_registry,
-        json_body={"base_currency": "FAKE", "default_currency": "THB"},
+        json_body={"base_currency": "FAKE"},
     )
     assert status == 400
     assert "error" in body
 
 
-async def test_settings_update_missing_fields(mock_sheets, mock_registry) -> None:
+async def test_settings_update_empty_body(mock_sheets, mock_registry) -> None:
+    """Empty body (no updatable fields) returns 400."""
     body, status = await _call(
         "PUT",
         "/api/settings",
         mock_sheets,
         mock_registry,
-        json_body={"base_currency": "USD"},  # default_currency missing
+        json_body={},
     )
     assert status == 400
+    assert "error" in body
+
+
+# ── DELETE /api/expenses ──────────────────────────────────────────────────────
+
+
+async def test_expenses_clear_all(mock_sheets, mock_registry) -> None:
+    """DELETE /api/expenses clears all transactions and returns deleted count."""
+    mock_sheets.clear_all_transactions.return_value = 17
+
+    body, status = await _call(
+        "DELETE",
+        "/api/expenses",
+        mock_sheets,
+        mock_registry,
+    )
+    assert status == 200
+    assert body["deleted"] == 17
+    mock_sheets.clear_all_transactions.assert_called_once_with("sheet123")
+
+
+async def test_expenses_clear_all_empty(mock_sheets, mock_registry) -> None:
+    """Clearing an already-empty sheet returns 0."""
+    mock_sheets.clear_all_transactions.return_value = 0
+
+    body, status = await _call("DELETE", "/api/expenses", mock_sheets, mock_registry)
+    assert status == 200
+    assert body["deleted"] == 0
+
+
+# ── GET /api/export ───────────────────────────────────────────────────────────
+
+
+async def test_export_returns_csv(mock_sheets, mock_registry) -> None:
+    """GET /api/export returns CSV bytes with correct content."""
+    mock_sheets.get_transactions.return_value = [
+        _make_record(category="food", description="lunch"),
+    ]
+
+    raw, status = await _call(
+        "GET",
+        "/api/export",
+        mock_sheets,
+        mock_registry,
+        args={"start": "2026-03-01", "end": "2026-03-31"},
+    )
+    assert status == 200
+    assert isinstance(raw, bytes)
+    text = raw.decode("utf-8")
+    assert "id,timestamp" in text
+    assert "food" in text
+    assert "lunch" in text
+
+
+async def test_export_invalid_date(mock_sheets, mock_registry) -> None:
+    body, status = await _call(
+        "GET",
+        "/api/export",
+        mock_sheets,
+        mock_registry,
+        args={"start": "not-a-date"},
+    )
+    assert status == 400
+    assert "error" in body
+
+
+async def test_export_default_date_range(mock_sheets, mock_registry) -> None:
+    """Without start/end params the export defaults to the current month."""
+    mock_sheets.get_transactions.return_value = []
+
+    raw, status = await _call("GET", "/api/export", mock_sheets, mock_registry)
+    assert status == 200
+    assert isinstance(raw, bytes)
+    # Header row always present
+    assert b"id,timestamp" in raw
+
+
+# ── GET /api/categories ───────────────────────────────────────────────────────
+
+
+async def test_categories_get_returns_list(mock_sheets, mock_registry) -> None:
+    """GET /api/categories returns all user categories with subcategories."""
+    mock_sheets.get_categories.return_value = [
+        UserCategory(slug="food", label="Food & Drinks", subcategories=[
+            UserSubcategory(slug="restaurant", label="Restaurant", budget=100.0),
+            UserSubcategory(slug="groceries", label="Groceries", budget=None),
+        ]),
+        UserCategory(slug="transport", label="Transport", subcategories=[]),
+    ]
+    body, status = await _call("GET", "/api/categories", mock_sheets, mock_registry)
+    assert status == 200
+    assert "categories" in body
+    slugs = [c["slug"] for c in body["categories"]]
+    assert "food" in slugs
+    assert "transport" in slugs
+    food = next(c for c in body["categories"] if c["slug"] == "food")
+    assert food["label"] == "Food & Drinks"
+    assert len(food["subcategories"]) == 2
+    sub_slugs = [s["slug"] for s in food["subcategories"]]
+    assert "restaurant" in sub_slugs
+    assert "groceries" in sub_slugs
+
+
+# ── POST /api/categories ──────────────────────────────────────────────────────
+
+
+async def test_categories_create_success(mock_sheets, mock_registry) -> None:
+    """POST /api/categories creates a new category and returns updated list."""
+    mock_sheets.get_categories.return_value = [
+        UserCategory(slug="custom", label="My Custom", subcategories=[]),
+    ]
+    body, status = await _call(
+        "POST",
+        "/api/categories",
+        mock_sheets,
+        mock_registry,
+        json_body={"label": "My Custom"},
+    )
+    assert status == 200
+    mock_sheets.add_category.assert_called_once_with("sheet123", "my_custom", "My Custom")
+    slugs = [c["slug"] for c in body["categories"]]
+    assert "custom" in slugs
+
+
+async def test_categories_create_no_extra_fields(mock_sheets, mock_registry) -> None:
+    """POST /api/categories ignores unknown fields, creates category without budget."""
+    mock_sheets.get_categories.return_value = []
+    body, status = await _call(
+        "POST",
+        "/api/categories",
+        mock_sheets,
+        mock_registry,
+        json_body={"label": "Entertainment"},
+    )
+    assert status == 200
+    mock_sheets.add_category.assert_called_once_with("sheet123", "entertainment", "Entertainment")
+
+
+async def test_categories_create_missing_label(mock_sheets, mock_registry) -> None:
+    """POST /api/categories without label returns 400."""
+    body, status = await _call(
+        "POST",
+        "/api/categories",
+        mock_sheets,
+        mock_registry,
+        json_body={},
+    )
+    assert status == 400
+    assert "error" in body
+
+
+async def test_categories_create_duplicate_slug(mock_sheets, mock_registry) -> None:
+    """POST /api/categories with duplicate slug returns 409."""
+    mock_sheets.add_category.side_effect = ValueError("Category 'food' already exists")
+    body, status = await _call(
+        "POST",
+        "/api/categories",
+        mock_sheets,
+        mock_registry,
+        json_body={"label": "Food"},
+    )
+    assert status == 409
+    assert "error" in body
 
 
 # ── Unknown routes ────────────────────────────────────────────────────────────

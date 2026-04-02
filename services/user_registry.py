@@ -179,14 +179,26 @@ class UserRegistry:
         logger.info("Shared spreadsheet %s with %s", user.spreadsheet_id, email)
 
     async def update_settings(
-        self, telegram_id: int, base_currency: str, default_currency: str
+        self,
+        telegram_id: int,
+        base_currency: Optional[str] = None,
+        default_currency: Optional[str] = None,
+        budget_alerts: Optional[bool] = None,
+        weekly_summary: Optional[bool] = None,
+        insights: Optional[bool] = None,
     ) -> User:
-        """Update a user's currency settings.
+        """Update mutable settings for a user.
+
+        Only the fields that are not None are written; others are left unchanged.
+        Currency values are validated before writing.
 
         Args:
             telegram_id:      Telegram user ID.
-            base_currency:    New ISO 4217 base currency.
-            default_currency: New ISO 4217 default currency.
+            base_currency:    New ISO 4217 base currency (optional).
+            default_currency: New ISO 4217 default currency (optional).
+            budget_alerts:    Toggle budget-alert notifications (optional).
+            weekly_summary:   Toggle weekly-summary notifications (optional).
+            insights:         Toggle insights notifications (optional).
 
         Returns:
             Updated User object.
@@ -195,20 +207,37 @@ class UserRegistry:
             ValueError:        On invalid currency codes.
             UserRegistryError: If the user is not found.
         """
-        self.validate_currency(base_currency, raise_on_invalid=True)
-        self.validate_currency(default_currency, raise_on_invalid=True)
+        if base_currency is not None:
+            self.validate_currency(base_currency, raise_on_invalid=True)
+        if default_currency is not None:
+            self.validate_currency(default_currency, raise_on_invalid=True)
 
         user = await self.get_user(telegram_id)
         if user is None:
             raise UserRegistryError(f"User {telegram_id} not found")
 
-        self._sheets.update_user_settings(telegram_id, base_currency, default_currency)
-        updated = user.model_copy(
-            update={
-                "base_currency": base_currency.upper(),
-                "default_currency": default_currency.upper(),
-            }
+        self._sheets.update_user_settings(
+            telegram_id,
+            base_currency=base_currency,
+            default_currency=default_currency,
+            budget_alerts=budget_alerts,
+            weekly_summary=weekly_summary,
+            insights=insights,
         )
+
+        model_updates: dict[str, object] = {}
+        if base_currency is not None:
+            model_updates["base_currency"] = base_currency.upper()
+        if default_currency is not None:
+            model_updates["default_currency"] = default_currency.upper()
+        if budget_alerts is not None:
+            model_updates["budget_alerts"] = budget_alerts
+        if weekly_summary is not None:
+            model_updates["weekly_summary"] = weekly_summary
+        if insights is not None:
+            model_updates["insights"] = insights
+
+        updated = user.model_copy(update=model_updates)
         self._cache[telegram_id] = updated
         return updated
 

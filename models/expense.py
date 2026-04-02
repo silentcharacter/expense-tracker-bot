@@ -134,11 +134,24 @@ class User(BaseModel):
     default_currency: str = Field(..., description="Fallback currency when none is mentioned")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     status: UserStatus = UserStatus.active
+    budget_alerts: bool = Field(default=True, description="Notify when budget reaches 80%")
+    weekly_summary: bool = Field(default=True, description="Send weekly summary every Monday")
+    insights: bool = Field(default=True, description="Send spending pattern tips")
 
     @field_validator("base_currency", "default_currency")
     @classmethod
     def upper_currency(cls, v: str) -> str:
         return v.upper()
+
+    @field_validator("budget_alerts", "weekly_summary", "insights", mode="before")
+    @classmethod
+    def coerce_bool(cls, v: object) -> bool:
+        """Accept 'TRUE'/'FALSE' strings from Sheets as well as native bools."""
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.upper() == "TRUE"
+        return bool(v)
 
     def to_registry_row(self) -> list:
         """Serialise to a flat list for the Master Registry sheet."""
@@ -153,11 +166,33 @@ class User(BaseModel):
             self.default_currency,
             self.created_at.isoformat(),
             self.status.value,
+            str(self.budget_alerts).upper(),
+            str(self.weekly_summary).upper(),
+            str(self.insights).upper(),
         ]
 
     @classmethod
     def registry_headers(cls) -> list[str]:
         """Column headers matching to_registry_row() order."""
+        return [
+            "telegram_id",
+            "username",
+            "display_name",
+            "email",
+            "spreadsheet_id",
+            "role",
+            "base_currency",
+            "default_currency",
+            "created_at",
+            "status",
+            "budget_alerts",
+            "weekly_summary",
+            "insights",
+        ]
+
+    @classmethod
+    def required_registry_headers(cls) -> list[str]:
+        """Subset of headers that must exist in every registry row (original 10 columns)."""
         return [
             "telegram_id",
             "username",

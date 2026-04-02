@@ -250,7 +250,13 @@ class SheetsService:
                     )
                     for s, lbl, b in info["subs"]
                 ]
-                categories.append(UserCategory(slug=slug, label=label, budget=info["budget"], subcategories=subs))
+                # If no category-level budget, aggregate subcategory budgets.
+                effective_budget = info["budget"]
+                if effective_budget is None:
+                    sub_total = sum(b for _, _, b in info["subs"] if b is not None)
+                    if sub_total > 0:
+                        effective_budget = sub_total
+                categories.append(UserCategory(slug=slug, label=label, budget=effective_budget, subcategories=subs))
 
             if not categories:
                 sheet_was_empty = True
@@ -299,25 +305,36 @@ class SheetsService:
     def get_budgets(self, spreadsheet_id: str) -> dict[str, float]:
         """Read category budgets from the Categories sheet.
 
+        A category budget is either the value on the category row itself, or
+        the sum of all subcategory budgets when no category-level budget is set.
+
         Returns:
             Dict mapping category slug → budget amount in base currency.
         """
-        return {
-            cat.slug: cat.budget
-            for cat in self.get_categories(spreadsheet_id)
-            if cat.budget is not None
-        }
+        result: dict[str, float] = {}
+        for cat in self.get_categories(spreadsheet_id):
+            if cat.budget is not None:
+                result[cat.slug] = cat.budget
+            else:
+                sub_total = sum(s.budget for s in cat.subcategories if s.budget is not None)
+                if sub_total > 0:
+                    result[cat.slug] = sub_total
+        return result
 
     # ── Master Registry ──────────────────────────────────────────────────────
 
     def find_user(self, telegram_id: int) -> Optional[User]:
         """Look up a user in the Master Registry by Telegram ID.
 
+        Uses only the required base headers for validation so that registries
+        that pre-date the notification columns can still be read correctly;
+        Pydantic defaults fill in any missing optional fields.
+
         Returns:
             User if found, None otherwise.
         """
         sheet = self._get_sheet(self._registry_id, "Registry")
-        rows = sheet.get_all_records(expected_headers=User.registry_headers())
+        rows = sheet.get_all_records(expected_headers=User.required_registry_headers())
         for row in rows:
             if int(row.get("telegram_id", 0)) == telegram_id:
                 try:
@@ -332,7 +349,7 @@ class SheetsService:
         from models.expense import UserStatus
 
         sheet = self._get_sheet(self._registry_id, "Registry")
-        rows = sheet.get_all_records(expected_headers=User.registry_headers())
+        rows = sheet.get_all_records(expected_headers=User.required_registry_headers())
         users: list[User] = []
         for row in rows:
             try:
@@ -374,8 +391,20 @@ class SheetsService:
         sheet.update_cell(cell.row, email_col, email)
         return True
 
-    def update_user_settings(self, telegram_id: int, base_currency: str, default_currency: str) -> bool:
-        """Update base_currency and default_currency for an existing user.
+    def update_user_settings(
+        self,
+        telegram_id: int,
+        base_currency: Optional[str] = None,
+        default_currency: Optional[str] = None,
+        budget_alerts: Optional[bool] = None,
+        weekly_summary: Optional[bool] = None,
+        insights: Optional[bool] = None,
+    ) -> bool:
+        """Update mutable settings for an existing user in the Registry.
+
+        Only the fields that are not None are written; others are left unchanged.
+        Notification columns are appended to the sheet row when they do not yet
+        exist (backward-compatible with registries created before this feature).
 
         Returns:
             True if the row was found and updated, False otherwise.
@@ -384,11 +413,33 @@ class SheetsService:
         cell = sheet.find(str(telegram_id), in_column=1)
         if cell is None:
             return False
+
         headers = User.registry_headers()
-        base_col = headers.index("base_currency") + 1
-        default_col = headers.index("default_currency") + 1
-        sheet.update_cell(cell.row, base_col, base_currency.upper())
-        sheet.update_cell(cell.row, default_col, default_currency.upper())
+        # Determine actual column count of the sheet header row to know whether
+        # notification columns need to be appended or can be updated in place.
+        header_row = sheet.row_values(1)
+        actual_col_count = len(header_row)
+
+        updates: dict[str, object] = {}
+        if base_currency is not None:
+            updates["base_currency"] = base_currency.upper()
+        if default_currency is not None:
+            updates["default_currency"] = default_currency.upper()
+        if budget_alerts is not None:
+            updates["budget_alerts"] = str(budget_alerts).upper()
+        if weekly_summary is not None:
+            updates["weekly_summary"] = str(weekly_summary).upper()
+        if insights is not None:
+            updates["insights"] = str(insights).upper()
+
+        for field_name, value in updates.items():
+            col_idx = headers.index(field_name)  # 0-based
+            col_num = col_idx + 1  # gspread is 1-based
+            if col_num > actual_col_count:
+                # Column does not exist yet — extend header row first.
+                sheet.update_cell(1, col_num, field_name)
+            sheet.update_cell(cell.row, col_num, value)
+
         return True
 
     def delete_transaction_by_id(self, spreadsheet_id: str, expense_id: str) -> Optional[ExpenseRecord]:
@@ -465,6 +516,45 @@ class SheetsService:
 
         return False
 
+    def update_subcategory_budgets(self, spreadsheet_id: str, budgets: dict[str, float]) -> None:
+        """Update budget amounts for subcategory rows in the Categories sheet.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            budgets:        Mapping of "category/subcategory" → new budget amount.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        all_values = sheet.get_all_values()
+        if not all_values or len(all_values) < 2:
+            return
+
+        raw_headers = [h.lower().strip() for h in all_values[0]]
+        cat_col = next((i for i, h in enumerate(raw_headers) if h in ("category", "slug")), None)
+        sub_col = next((i for i, h in enumerate(raw_headers) if h == "subcategory"), None)
+        budget_col = next((i for i, h in enumerate(raw_headers) if h == "budget"), None)
+
+        if cat_col is None or sub_col is None or budget_col is None:
+            logger.warning(
+                "Could not find required columns in Categories sheet for %s", spreadsheet_id
+            )
+            return
+
+        updates: list[tuple[int, int, float]] = []
+        for row_idx, row in enumerate(all_values[1:], start=2):
+            cat_slug = str(row[cat_col]).strip().lower() if len(row) > cat_col else ""
+            sub_slug = str(row[sub_col]).strip().lower() if len(row) > sub_col else ""
+            if not cat_slug or not sub_slug:
+                continue
+            key = f"{cat_slug}/{sub_slug}"
+            if key in budgets:
+                updates.append((row_idx, budget_col + 1, budgets[key]))
+
+        for row_num, col_num, value in updates:
+            sheet.update_cell(row_num, col_num, value)
+
+        _category_cache.pop(spreadsheet_id, None)
+        logger.info("Updated %d subcategory budgets for %s", len(updates), spreadsheet_id)
+
     def update_category_budgets(self, spreadsheet_id: str, budgets: dict[str, float]) -> None:
         """Update budget amounts for the given category slugs in the Categories sheet.
 
@@ -508,6 +598,56 @@ class SheetsService:
 
         _category_cache.pop(spreadsheet_id, None)
         logger.info("Updated %d category budgets for %s", len(updates), spreadsheet_id)
+
+    def add_category(
+        self,
+        spreadsheet_id: str,
+        slug: str,
+        label: str,
+        budget: float | None = None,
+    ) -> None:
+        """Append a new category row to the Categories sheet.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            slug:           URL-safe identifier (lowercase, underscores).
+            label:          Human-readable category name.
+            budget:         Optional monthly budget amount in base currency.
+
+        Raises:
+            ValueError: If a category with the same slug already exists.
+        """
+        existing = self.get_categories(spreadsheet_id)
+        if any(cat.slug == slug for cat in existing):
+            raise ValueError(f"Category '{slug}' already exists")
+
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        row = [slug, "", label, budget if budget is not None else ""]
+        sheet.append_row(row, value_input_option="RAW")
+
+        _category_cache.pop(spreadsheet_id, None)
+        logger.info("Added category '%s' to spreadsheet %s", slug, spreadsheet_id)
+
+    def clear_all_transactions(self, spreadsheet_id: str) -> int:
+        """Delete every data row from the Transactions sheet, keeping the header.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+
+        Returns:
+            Number of rows deleted.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
+        all_values = sheet.get_all_values()
+        num_data_rows = max(0, len(all_values) - 1)  # exclude header
+        if num_data_rows == 0:
+            return 0
+        # Delete from last row upward to avoid index shifting.
+        last_row = len(all_values)
+        sheet.delete_rows(2, last_row)
+        _transaction_cache.pop(spreadsheet_id, None)
+        logger.info("Cleared %d transactions from spreadsheet %s", num_data_rows, spreadsheet_id)
+        return num_data_rows
 
     # ── Spreadsheet initialisation ───────────────────────────────────────────
 

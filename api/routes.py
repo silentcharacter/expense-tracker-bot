@@ -1,7 +1,10 @@
 """REST API for Telegram Mini App, served alongside the existing webhook."""
 
+import csv
+import io
 import logging
 import os
+import re as _re
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Optional
@@ -84,7 +87,7 @@ async def handle_api_request(request: flask.Request) -> tuple:
 def _cors_preflight_response() -> tuple:
     headers = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Max-Age": "3600",
     }
@@ -111,8 +114,14 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
         return _api_settings_get(user)
     elif path == "/settings" and method == "PUT":
         return await _api_settings_update(request, user)
+    elif path == "/expenses" and method == "DELETE":
+        return await _api_expenses_clear(user)
+    elif path == "/export" and method == "GET":
+        return await _api_export(request, user)
     elif path == "/categories" and method == "GET":
         return _api_categories_get(user)
+    elif path == "/categories" and method == "POST":
+        return await _api_categories_create(request, user)
     else:
         return jsonify({"error": "not found"}), 404
 
@@ -341,31 +350,56 @@ async def _api_budgets_get(user: User) -> tuple:
     since = today.replace(day=1)
 
     sheets = _get_sheets()
-    budgets_config = sheets.get_budgets(user.spreadsheet_id)
+    all_categories = sheets.get_categories(user.spreadsheet_id)
     records = sheets.get_transactions(user.spreadsheet_id, since=since, until=today)
 
+    # Aggregate spending at both category and subcategory level
     spent_by_cat: dict[str, float] = defaultdict(float)
+    spent_by_subcat: dict[tuple[str, str], float] = defaultdict(float)
     for r in records:
         spent_by_cat[r.category] += r.amount_base
+        if r.subcategory:
+            spent_by_subcat[(r.category, r.subcategory)] += r.amount_base
+
+    def _status(pct: float) -> str:
+        if pct > 100:
+            return "exceeded"
+        if pct >= 80:
+            return "warning"
+        return "normal"
 
     result_budgets = []
-    for slug, budget_amount in budgets_config.items():
-        spent = round(spent_by_cat.get(slug, 0.0), 4)
-        remaining = round(budget_amount - spent, 4)
-        pct = round(spent / budget_amount * 100, 1) if budget_amount > 0 else 0.0
-        if pct < 80:
-            status = "normal"
-        elif pct <= 100:
-            status = "warning"
-        else:
-            status = "exceeded"
+    for cat in all_categories:
+        sub_entries = []
+        cat_budget = 0.0
+        for sub in cat.subcategories:
+            sub_budget = sub.budget or 0.0
+            cat_budget += sub_budget
+            sub_spent = round(spent_by_subcat.get((cat.slug, sub.slug), 0.0), 4)
+            sub_remaining = round(sub_budget - sub_spent, 4)
+            sub_pct = round(sub_spent / sub_budget * 100, 1) if sub_budget > 0 else 0.0
+            sub_entries.append({
+                "slug": sub.slug,
+                "label": sub.label,
+                "budget": sub_budget,
+                "spent": sub_spent,
+                "remaining": sub_remaining,
+                "percentage": sub_pct,
+                "status": _status(sub_pct),
+            })
+
+        cat_spent = round(spent_by_cat.get(cat.slug, 0.0), 4)
+        cat_remaining = round(cat_budget - cat_spent, 4)
+        cat_pct = round(cat_spent / cat_budget * 100, 1) if cat_budget > 0 else 0.0
         result_budgets.append({
-            "category": slug,
-            "budget": budget_amount,
-            "spent": spent,
-            "remaining": remaining,
-            "percentage": pct,
-            "status": status,
+            "category": cat.slug,
+            "label": cat.label,
+            "budget": cat_budget,
+            "spent": cat_spent,
+            "remaining": cat_remaining,
+            "percentage": cat_pct,
+            "status": _status(cat_pct),
+            "subcategories": sub_entries,
         })
 
     return jsonify({
@@ -385,14 +419,16 @@ async def _api_budgets_update(request: flask.Request, user: User) -> tuple:
         return jsonify({"error": "budgets must be an object"}), 400
 
     validated: dict[str, float] = {}
-    for slug, amount in raw_budgets.items():
+    for key, amount in raw_budgets.items():
+        if "/" not in str(key):
+            return jsonify({"error": f"budget key must be 'category/subcategory', got {key!r}"}), 400
         try:
-            validated[str(slug)] = float(amount)
+            validated[str(key)] = float(amount)
         except (TypeError, ValueError):
-            return jsonify({"error": f"invalid budget amount for {slug!r}"}), 400
+            return jsonify({"error": f"invalid budget amount for {key!r}"}), 400
 
     sheets = _get_sheets()
-    sheets.update_category_budgets(user.spreadsheet_id, validated)
+    sheets.update_subcategory_budgets(user.spreadsheet_id, validated)
     return await _api_budgets_get(user)
 
 
@@ -403,12 +439,16 @@ def _api_settings_get(user: User) -> tuple:
     return jsonify({
         "telegram_id": user.telegram_id,
         "display_name": user.display_name,
+        "username": user.username,
         "email": user.email,
         "base_currency": user.base_currency,
         "default_currency": user.default_currency,
         "spreadsheet_id": user.spreadsheet_id,
         "role": user.role.value,
         "created_at": user.created_at.isoformat(),
+        "budget_alerts": user.budget_alerts,
+        "weekly_summary": user.weekly_summary,
+        "insights": user.insights,
     }), 200
 
 
@@ -417,19 +457,108 @@ def _api_settings_get(user: User) -> tuple:
 
 async def _api_settings_update(request: flask.Request, user: User) -> tuple:
     body = request.get_json(silent=True) or {}
-    base = str(body.get("base_currency", "")).upper()
-    default = str(body.get("default_currency", "")).upper()
 
-    if not base or not default:
-        return jsonify({"error": "base_currency and default_currency are required"}), 400
+    base: Optional[str] = None
+    default: Optional[str] = None
+    budget_alerts: Optional[bool] = None
+    weekly_summary: Optional[bool] = None
+    insights: Optional[bool] = None
+
+    if "base_currency" in body:
+        base = str(body["base_currency"]).upper()
+        if not base:
+            return jsonify({"error": "base_currency must not be empty"}), 400
+    if "default_currency" in body:
+        default = str(body["default_currency"]).upper()
+        if not default:
+            return jsonify({"error": "default_currency must not be empty"}), 400
+    if "budget_alerts" in body:
+        budget_alerts = bool(body["budget_alerts"])
+    if "weekly_summary" in body:
+        weekly_summary = bool(body["weekly_summary"])
+    if "insights" in body:
+        insights = bool(body["insights"])
+
+    if all(v is None for v in (base, default, budget_alerts, weekly_summary, insights)):
+        return jsonify({"error": "no updatable fields provided"}), 400
 
     registry = _get_registry()
     try:
-        updated_user = await registry.update_settings(user.telegram_id, base, default)
+        updated_user = await registry.update_settings(
+            user.telegram_id,
+            base_currency=base,
+            default_currency=default,
+            budget_alerts=budget_alerts,
+            weekly_summary=weekly_summary,
+            insights=insights,
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
     return _api_settings_get(updated_user)
+
+
+# ── DELETE /api/expenses ─────────────────────────────────────────────────────
+
+
+async def _api_expenses_clear(user: User) -> tuple:
+    """Delete all transactions from the user's sheet (keeps the header row)."""
+    sheets = _get_sheets()
+    deleted_count = sheets.clear_all_transactions(user.spreadsheet_id)
+    return jsonify({"deleted": deleted_count}), 200
+
+
+# ── GET /api/export ──────────────────────────────────────────────────────────
+
+
+async def _api_export(request: flask.Request, user: User) -> tuple:
+    """Export transactions as a CSV file.
+
+    Query params:
+        start (YYYY-MM-DD): inclusive start date; defaults to first day of current month.
+        end   (YYYY-MM-DD): inclusive end date;   defaults to today.
+    """
+    today = date.today()
+    start_str = request.args.get("start")
+    end_str = request.args.get("end")
+
+    try:
+        since = date.fromisoformat(start_str) if start_str else today.replace(day=1)
+        until = date.fromisoformat(end_str) if end_str else today
+    except ValueError:
+        return jsonify({"error": "start and end must be ISO dates (YYYY-MM-DD)"}), 400
+
+    sheets = _get_sheets()
+    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "id", "timestamp", "amount_local", "local_currency",
+        "amount_base", "base_currency", "fx_rate",
+        "category", "subcategory", "description", "source",
+    ])
+    for r in records:
+        writer.writerow([
+            r.id,
+            r.timestamp.isoformat(),
+            r.amount_local,
+            r.local_currency,
+            r.amount_base,
+            r.base_currency,
+            r.fx_rate,
+            r.category,
+            r.subcategory,
+            r.description,
+            r.source.value,
+        ])
+
+    filename = f"expenses_{since.isoformat()}_{until.isoformat()}.csv"
+    csv_bytes = buf.getvalue().encode("utf-8")
+    response = flask.make_response(csv_bytes)
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response, 200
 
 
 # ── GET /api/categories ──────────────────────────────────────────────────────
@@ -452,3 +581,26 @@ def _api_categories_get(user: User) -> tuple:
             for cat in categories
         ]
     }), 200
+
+
+# ── POST /api/categories ─────────────────────────────────────────────────────
+
+
+async def _api_categories_create(request: flask.Request, user: User) -> tuple:
+    """Create a new custom category and add it to the user's Categories sheet."""
+    body = request.get_json(silent=True) or {}
+    label = str(body.get("label", "")).strip()
+    if not label:
+        return jsonify({"error": "label is required"}), 400
+
+    slug = _re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
+    if not slug:
+        return jsonify({"error": "label must contain at least one alphanumeric character"}), 400
+
+    sheets = _get_sheets()
+    try:
+        sheets.add_category(user.spreadsheet_id, slug, label)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+    return _api_categories_get(user)

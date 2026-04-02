@@ -72,13 +72,25 @@ export interface DeleteExpenseResponse {
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
 
-export interface BudgetEntry {
-  category: string;
+export interface SubcategoryBudgetEntry {
+  slug: string;
+  label: string;
   budget: number;
   spent: number;
   remaining: number;
   percentage: number;
   status: "normal" | "warning" | "exceeded";
+}
+
+export interface BudgetEntry {
+  category: string;
+  label: string;
+  budget: number;
+  spent: number;
+  remaining: number;
+  percentage: number;
+  status: "normal" | "warning" | "exceeded";
+  subcategories: SubcategoryBudgetEntry[];
 }
 
 export interface BudgetsResponse {
@@ -92,17 +104,29 @@ export interface BudgetsResponse {
 export interface UserSettings {
   telegram_id: number;
   display_name: string;
+  username: string;
   email: string;
   base_currency: string;
   default_currency: string;
   spreadsheet_id: string;
-  owner: string;
+  role: string;
   created_at: string;
+  budget_alerts: boolean;
+  weekly_summary: boolean;
+  insights: boolean;
 }
 
 export interface UpdateSettingsRequest {
   base_currency?: string;
   default_currency?: string;
+  budget_alerts?: boolean;
+  weekly_summary?: boolean;
+  insights?: boolean;
+}
+
+export interface ExportParams {
+  start?: string;
+  end?: string;
 }
 
 export interface UpdateBudgetsRequest {
@@ -124,4 +148,8 @@ export interface CategoryInfo {
 
 export interface CategoriesResponse {
   categories: CategoryInfo[];
+}
+
+export interface CreateCategoryRequest {
+  label: string;
 }

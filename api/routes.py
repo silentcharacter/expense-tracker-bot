@@ -260,7 +260,19 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         {"date": d, "amount_base": round(amt, 4)} for d, amt in sorted(daily.items())
     ]
 
-    days_remaining = max((until - date.today()).days, 0)
+    today = date.today()
+    if period == "today":
+        period_end = today
+    elif period == "week":
+        period_end = today - timedelta(days=today.weekday()) + timedelta(days=6)
+    elif period == "month":
+        import calendar as _cal
+        period_end = today.replace(day=_cal.monthrange(today.year, today.month)[1])
+    elif period == "year":
+        period_end = today.replace(month=12, day=31)
+    else:
+        period_end = until
+    days_remaining = max((period_end - today).days, 0)
 
     result: dict = {
         "period": period,

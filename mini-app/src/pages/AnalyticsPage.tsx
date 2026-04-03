@@ -144,10 +144,18 @@ function SectionLabel({ children }: { children: string }) {
 
 // ── Daily spending section ───────────────────────────────────────────────────
 
-function monthName(dateRange: { start: string; end: string }): string {
-  return new Date(dateRange.start + "T12:00:00").toLocaleDateString(undefined, {
-    month: "long",
-  }).toUpperCase();
+function periodLabel(dateRange: { start: string; end: string }, period: Period): string {
+  const start = new Date(dateRange.start + "T12:00:00");
+  const end = new Date(dateRange.end + "T12:00:00");
+  if (period === "today") {
+    return start.toLocaleDateString(undefined, { day: "numeric", month: "long" }).toUpperCase();
+  }
+  if (period === "week") {
+    const startStr = start.toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase();
+    const endStr = end.toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase();
+    return `${startStr} – ${endStr}`;
+  }
+  return start.toLocaleDateString(undefined, { month: "long" }).toUpperCase();
 }
 
 interface DailySpendingSectionProps {
@@ -166,7 +174,7 @@ function DailySpendingSection({ summary, currency, period }: DailySpendingSectio
 
   return (
     <div className="card mb-3">
-      <SectionLabel>{`DAILY SPENDING — ${monthName(summary.date_range)}`}</SectionLabel>
+      <SectionLabel>{`DAILY SPENDING — ${periodLabel(summary.date_range, period)}`}</SectionLabel>
       {period !== "today" && <DailyChart data={summary.daily_totals} currency={currency} dateRange={summary.date_range} period={period} />}
       <div className="grid grid-cols-4 gap-2 mt-3">
         {tiles.map(({ label, value }) => (

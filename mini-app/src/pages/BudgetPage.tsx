@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import type { BudgetEntry, SubcategoryBudgetEntry } from "../api/types";
 import { fetchBudgets, updateBudgets } from "../api/budgets";
 import { createCategory, createSubcategory, deleteCategory, deleteSubcategory } from "../api/categories";
@@ -14,6 +14,33 @@ interface BudgetDonutEntry {
   budget: number;
   percentage: number;
   color: string;
+}
+
+interface BudgetTooltipProps {
+  active?: boolean;
+  payload?: { payload: BudgetDonutEntry }[];
+}
+
+function BudgetTooltip({ active, payload }: BudgetTooltipProps) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0].payload;
+  return (
+    <div
+      className="px-3 py-2 rounded-lg text-sm shadow-lg"
+      style={{
+        backgroundColor: "var(--tg-theme-bg-color, #1a1a2e)",
+        border: "1px solid var(--app-border)",
+        color: "var(--app-text-primary)",
+        zIndex: 50,
+        position: "relative",
+      }}
+    >
+      <p className="font-medium">{item.displayName}</p>
+      <p className="amount" style={{ color: "var(--app-text-secondary)" }}>
+        {formatAmount(item.budget, "USD", 0)} · {formatPercent(item.percentage)}
+      </p>
+    </div>
+  );
 }
 
 function BudgetDonut({ entries, currency, total, onTrack, warning, exceeded }: { entries: BudgetEntry[]; currency: string; total: number; onTrack: number; warning: number; exceeded: number }) {
@@ -52,6 +79,7 @@ function BudgetDonut({ entries, currency, total, onTrack, warning, exceeded }: {
                   <Cell key={entry.key} fill={entry.color} />
                 ))}
               </Pie>
+              <Tooltip content={<BudgetTooltip />} wrapperStyle={{ zIndex: 50 }} />
             </PieChart>
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">

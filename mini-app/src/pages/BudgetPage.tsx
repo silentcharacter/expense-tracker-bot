@@ -642,7 +642,9 @@ export function BudgetPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showDrawer, setShowDrawer] = useState(false);
   const [drawerView, setDrawerView] = useState<"list" | "create">("list");
-  const [hideUnbudgeted, setHideUnbudgeted] = useState(false);
+  const [hideUnbudgeted, setHideUnbudgeted] = useState<boolean>(
+    () => localStorage.getItem("budget_hide_unset") === "true"
+  );
   const [addSubForCat, setAddSubForCat] = useState<{ slug: string; label: string } | null>(null);
   const categoriesEndRef = useRef<HTMLDivElement>(null);
 
@@ -771,7 +773,11 @@ export function BudgetPage() {
             </p>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setHideUnbudgeted((v) => !v)}
+                onClick={() => setHideUnbudgeted((v) => {
+                  const next = !v;
+                  localStorage.setItem("budget_hide_unset", String(next));
+                  return next;
+                })}
                 className="text-xs px-2 py-1 rounded-lg"
                 style={{
                   background: hideUnbudgeted ? "var(--app-accent)" : "var(--app-secondary-bg)",

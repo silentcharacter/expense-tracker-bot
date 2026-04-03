@@ -1,6 +1,7 @@
 """REST API for Telegram Mini App, served alongside the existing webhook."""
 
 import csv
+import hashlib
 import io
 import logging
 import os
@@ -122,6 +123,9 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
         return _api_categories_get(user)
     elif path == "/categories" and method == "POST":
         return await _api_categories_create(request, user)
+    elif path.startswith("/categories/") and path.endswith("/subcategories") and method == "POST":
+        cat_slug = path.split("/")[2]
+        return await _api_subcategory_create(request, user, cat_slug)
     else:
         return jsonify({"error": "not found"}), 404
 
@@ -595,11 +599,34 @@ async def _api_categories_create(request: flask.Request, user: User) -> tuple:
 
     slug = _re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
     if not slug:
-        return jsonify({"error": "label must contain at least one alphanumeric character"}), 400
+        slug = "cat_" + hashlib.sha1(label.encode()).hexdigest()[:8]
 
     sheets = _get_sheets()
     try:
         sheets.add_category(user.spreadsheet_id, slug, label)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+    return _api_categories_get(user)
+
+
+# ── POST /api/categories/<slug>/subcategories ────────────────────────────────
+
+
+async def _api_subcategory_create(request: flask.Request, user: User, cat_slug: str) -> tuple:
+    """Create a new subcategory under an existing category."""
+    body = request.get_json(silent=True) or {}
+    label = str(body.get("label", "")).strip()
+    if not label:
+        return jsonify({"error": "label is required"}), 400
+
+    sub_slug = _re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
+    if not sub_slug:
+        sub_slug = "sub_" + hashlib.sha1(label.encode()).hexdigest()[:8]
+
+    sheets = _get_sheets()
+    try:
+        sheets.add_subcategory(user.spreadsheet_id, cat_slug, sub_slug, label)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
 

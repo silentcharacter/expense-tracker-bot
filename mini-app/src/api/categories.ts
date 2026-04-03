@@ -9,3 +9,7 @@ export function createCategory(label: string): Promise<CategoriesResponse> {
   const body: CreateCategoryRequest = { label };
   return api.post<CategoriesResponse>("/categories", body);
 }
+
+export function createSubcategory(catSlug: string, label: string): Promise<CategoriesResponse> {
+  return api.post<CategoriesResponse>(`/categories/${catSlug}/subcategories`, { label });
+}

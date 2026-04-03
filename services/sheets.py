@@ -628,6 +628,37 @@ class SheetsService:
         _category_cache.pop(spreadsheet_id, None)
         logger.info("Added category '%s' to spreadsheet %s", slug, spreadsheet_id)
 
+    def add_subcategory(
+        self,
+        spreadsheet_id: str,
+        cat_slug: str,
+        sub_slug: str,
+        label: str,
+    ) -> None:
+        """Append a new subcategory row to the Categories sheet.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            cat_slug:       Parent category slug.
+            sub_slug:       URL-safe subcategory identifier.
+            label:          Human-readable subcategory name.
+
+        Raises:
+            ValueError: If the parent category is not found or the subcategory slug already exists.
+        """
+        existing = self.get_categories(spreadsheet_id)
+        cat = next((c for c in existing if c.slug == cat_slug), None)
+        if cat is None:
+            raise ValueError(f"Category '{cat_slug}' not found")
+        if any(s.slug == sub_slug for s in cat.subcategories):
+            raise ValueError(f"Subcategory '{sub_slug}' already exists in '{cat_slug}'")
+
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        sheet.append_row([cat_slug, sub_slug, label, ""], value_input_option="RAW")
+
+        _category_cache.pop(spreadsheet_id, None)
+        logger.info("Added subcategory '%s/%s' to spreadsheet %s", cat_slug, sub_slug, spreadsheet_id)
+
     def clear_all_transactions(self, spreadsheet_id: str) -> int:
         """Delete every data row from the Transactions sheet, keeping the header.
 

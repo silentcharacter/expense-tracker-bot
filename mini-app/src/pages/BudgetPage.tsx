@@ -1,9 +1,102 @@
 import { useState, useEffect, useRef } from "react";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import type { BudgetEntry, SubcategoryBudgetEntry } from "../api/types";
 import { fetchBudgets, updateBudgets } from "../api/budgets";
-import { createCategory } from "../api/categories";
-import { getCategoryEmoji } from "../utils/categories";
-import { formatAmount } from "../utils/format";
+import { createCategory, createSubcategory } from "../api/categories";
+import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../utils/categories";
+import { formatAmount, formatPercent } from "../utils/format";
+
+// ── Budget donut chart ────────────────────────────────────────────────────────
+
+interface BudgetDonutEntry {
+  key: string;
+  displayName: string;
+  budget: number;
+  percentage: number;
+  color: string;
+}
+
+function BudgetDonut({ entries, currency, total, onTrack, warning, exceeded }: { entries: BudgetEntry[]; currency: string; total: number; onTrack: number; warning: number; exceeded: number }) {
+  const chartData: BudgetDonutEntry[] = entries
+    .filter((e) => e.budget > 0)
+    .sort((a, b) => b.budget - a.budget)
+    .map((e) => ({
+      key: e.category,
+      displayName: getCategoryLabel(e.category),
+      budget: e.budget,
+      percentage: total > 0 ? (e.budget / total) * 100 : 0,
+      color: getCategoryColor(e.category),
+    }));
+
+  if (!chartData.length) return null;
+
+  return (
+    <div className="card">
+      <p className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--app-text-secondary)" }}>
+        By Category
+      </p>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-shrink-0" style={{ width: 130, height: 130 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                dataKey="budget"
+                nameKey="key"
+                innerRadius="55%"
+                outerRadius="85%"
+                paddingAngle={2}
+                stroke="none"
+              >
+                {chartData.map((entry) => (
+                  <Cell key={entry.key} fill={entry.color} />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="amount text-[13px] font-bold leading-tight" style={{ color: "var(--app-text-primary)" }}>
+              {formatAmount(total, currency, 0)}
+            </span>
+            <span className="text-[9px] leading-tight" style={{ color: "var(--app-text-secondary)" }}>
+              budget
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+          {chartData.map((entry) => (
+            <div key={entry.key} className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.color }} />
+              <span className="text-xs truncate flex-1" style={{ color: "var(--app-text-primary)" }}>
+                {getCategoryEmoji(entry.key)} {entry.displayName}
+              </span>
+              <span className="amount text-xs font-medium flex-shrink-0" style={{ color: "var(--app-text-primary)" }}>
+                {formatAmount(entry.budget, currency, 0)}
+              </span>
+              <span className="text-[11px] w-9 text-right flex-shrink-0" style={{ color: "var(--app-text-secondary)" }}>
+                {formatPercent(entry.percentage)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-2 mt-3">
+        <div className="flex flex-col items-center px-3 py-1.5 rounded-xl flex-1" style={{ background: "var(--app-secondary-bg)" }}>
+          <span className="text-base font-bold" style={{ color: "var(--app-accent)" }}>{onTrack}</span>
+          <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>On track</span>
+        </div>
+        <div className="flex flex-col items-center px-3 py-1.5 rounded-xl flex-1" style={{ background: "var(--app-secondary-bg)" }}>
+          <span className="text-base font-bold" style={{ color: "#fbbf24" }}>{warning}</span>
+          <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>Warning</span>
+        </div>
+        <div className="flex flex-col items-center px-3 py-1.5 rounded-xl flex-1" style={{ background: "var(--app-secondary-bg)" }}>
+          <span className="text-base font-bold" style={{ color: "var(--app-danger)" }}>{exceeded}</span>
+          <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>Over limit</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Summary ring ─────────────────────────────────────────────────────────────
 
@@ -75,7 +168,10 @@ function SubRow({ catSlug, entry, currency, onEdit }: SubRowProps) {
   }
 
   return (
-    <div className="py-2 pl-5 cursor-pointer" onClick={() => !editing && startEdit()}>
+    <div
+      className="py-2 pl-5 cursor-pointer"
+      onClick={() => !editing && !hasBudget && startEdit()}
+    >
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm" style={{ color: "var(--app-text-primary)" }}>
           {entry.label}
@@ -100,12 +196,25 @@ function SubRow({ catSlug, entry, currency, onEdit }: SubRowProps) {
             />
           ) : hasBudget ? (
             <>
+              <span className="text-xs" style={{ color: barColor }}>
+                {Math.round(entry.percentage)}%
+              </span>
               <span className="text-xs font-medium" style={{ color: barColor }}>
                 {formatAmount(entry.spent, currency, 0)}
               </span>
               <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
                 / {formatAmount(entry.budget, currency, 0)}
               </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); startEdit(); }}
+                className="ml-1 p-0.5 rounded opacity-50 hover:opacity-100"
+                title="Edit budget"
+                style={{ color: "var(--app-text-secondary)" }}
+              >
+                <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                  <path d="M11.5 2.5l2 2-9 9H2.5v-2l9-9z" />
+                </svg>
+              </button>
             </>
           ) : (
             <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
@@ -136,16 +245,22 @@ function SubRow({ catSlug, entry, currency, onEdit }: SubRowProps) {
 interface CategorySectionProps {
   entry: BudgetEntry;
   currency: string;
+  hideUnbudgeted: boolean;
   onEdit: (catSlug: string, subSlug: string, value: string) => void;
+  onAddSubcategory: (catSlug: string, catLabel: string) => void;
 }
 
-function CategorySection({ entry, currency, onEdit }: CategorySectionProps) {
+function CategorySection({ entry, currency, hideUnbudgeted, onEdit, onAddSubcategory }: CategorySectionProps) {
   const emoji = getCategoryEmoji(entry.category);
   const hasBudget = entry.budget > 0;
   const fillPct = Math.min(entry.percentage, 100);
   const barColor =
     entry.status === "exceeded" ? "var(--app-danger)" :
     entry.status === "warning" ? "#fbbf24" : "var(--app-accent)";
+
+  const visibleSubs = hideUnbudgeted
+    ? entry.subcategories.filter((s) => s.budget > 0)
+    : entry.subcategories;
 
   return (
     <div className="mb-1">
@@ -154,16 +269,29 @@ function CategorySection({ entry, currency, onEdit }: CategorySectionProps) {
         <span className="text-sm font-semibold" style={{ color: "var(--app-text-primary)" }}>
           {emoji} {entry.label}
         </span>
-        {hasBudget && (
-          <div className="flex items-center gap-1">
-            <span className="text-xs font-semibold" style={{ color: barColor }}>
-              {formatAmount(entry.spent, currency, 0)}
-            </span>
-            <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
-              / {formatAmount(entry.budget, currency, 0)}
-            </span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {hasBudget && (
+            <div className="flex items-center gap-1">
+              <span className="text-xs" style={{ color: barColor }}>
+                {Math.round(entry.percentage)}%
+              </span>
+              <span className="text-xs font-semibold" style={{ color: barColor }}>
+                {formatAmount(entry.spent, currency, 0)}
+              </span>
+              <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+                / {formatAmount(entry.budget, currency, 0)}
+              </span>
+            </div>
+          )}
+          <button
+            onClick={() => onAddSubcategory(entry.category, entry.label)}
+            className="flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold"
+            style={{ background: "var(--app-secondary-bg)", color: "var(--app-accent)" }}
+            title="Add subcategory"
+          >
+            +
+          </button>
+        </div>
       </div>
       {/* Category aggregate progress bar */}
       {hasBudget && (
@@ -176,7 +304,7 @@ function CategorySection({ entry, currency, onEdit }: CategorySectionProps) {
       )}
       {/* Subcategory rows */}
       <div className="flex flex-col divide-y" style={{ borderColor: "var(--app-secondary-bg)" }}>
-        {entry.subcategories.map((sub) => (
+        {visibleSubs.map((sub) => (
           <SubRow
             key={sub.slug}
             catSlug={entry.category}
@@ -201,15 +329,16 @@ interface DrawerSubItem {
 interface DrawerProps {
   unbudgetedSubs: DrawerSubItem[];
   currency: string;
+  initialView?: "list" | "create";
   onSetBudget: (key: string, amount: number) => Promise<void>;
   onCreateCategory: (label: string) => Promise<void>;
   onClose: () => void;
 }
 
-function BudgetDrawer({ unbudgetedSubs, currency, onSetBudget, onCreateCategory, onClose }: DrawerProps) {
+function BudgetDrawer({ unbudgetedSubs, currency, initialView = "list", onSetBudget, onCreateCategory, onClose }: DrawerProps) {
   const [selected, setSelected] = useState<DrawerSubItem | null>(null);
   const [amount, setAmount] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(initialView === "create");
   const [newLabel, setNewLabel] = useState("");
   const [saving, setSaving] = useState(false);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -241,7 +370,7 @@ function BudgetDrawer({ unbudgetedSubs, currency, onSetBudget, onCreateCategory,
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end"
+      className="fixed inset-x-0 top-0 bottom-14 z-50 flex flex-col justify-end"
       style={{ background: "rgba(0,0,0,0.5)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
@@ -289,13 +418,15 @@ function BudgetDrawer({ unbudgetedSubs, currency, onSetBudget, onCreateCategory,
             >
               {saving ? "Creating…" : "Create category"}
             </button>
-            <button
-              onClick={() => setShowCreate(false)}
-              className="text-xs text-center"
-              style={{ color: "var(--app-text-secondary)" }}
-            >
-              Back
-            </button>
+            {initialView !== "create" && (
+              <button
+                onClick={() => setShowCreate(false)}
+                className="text-xs text-center"
+                style={{ color: "var(--app-text-secondary)" }}
+              >
+                Back
+              </button>
+            )}
           </div>
         ) : selected ? (
           <div className="flex flex-col gap-3">
@@ -371,6 +502,84 @@ function BudgetDrawer({ unbudgetedSubs, currency, onSetBudget, onCreateCategory,
   );
 }
 
+// ── Add subcategory mini-drawer ───────────────────────────────────────────────
+
+interface AddSubDrawerProps {
+  catSlug: string;
+  catLabel: string;
+  onConfirm: (catSlug: string, label: string) => Promise<void>;
+  onClose: () => void;
+}
+
+function AddSubDrawer({ catSlug, catLabel, onConfirm, onClose }: AddSubDrawerProps) {
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function confirm() {
+    if (!label.trim()) return;
+    setSaving(true);
+    await onConfirm(catSlug, label.trim());
+    setSaving(false);
+    onClose();
+  }
+
+  function handleKey(e: React.KeyboardEvent) {
+    if (e.key === "Enter") confirm();
+    if (e.key === "Escape") onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-x-0 top-0 bottom-14 z-50 flex flex-col justify-end"
+      style={{ background: "rgba(0,0,0,0.5)" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="rounded-t-2xl p-4 flex flex-col gap-3"
+        style={{ background: "var(--app-bg)" }}
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold" style={{ color: "var(--app-text-primary)" }}>
+            Add subcategory to {getCategoryEmoji(catSlug)} {catLabel}
+          </p>
+          <button
+            className="text-xs px-2 py-1 rounded"
+            style={{ color: "var(--app-text-secondary)" }}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+        <input
+          type="text"
+          placeholder="Subcategory name"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={handleKey}
+          autoFocus
+          className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+          style={{
+            background: "var(--app-secondary-bg)",
+            color: "var(--app-text-primary)",
+            border: "1px solid var(--app-border, #333)",
+          }}
+        />
+        <button
+          disabled={!label.trim() || saving}
+          onClick={confirm}
+          className="w-full py-3 rounded-xl text-sm font-semibold"
+          style={{
+            background: label.trim() ? "var(--app-accent)" : "var(--app-secondary-bg)",
+            color: label.trim() ? "#fff" : "var(--app-text-secondary)",
+          }}
+        >
+          {saving ? "Adding…" : "Add subcategory"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function BudgetPage() {
@@ -378,6 +587,10 @@ export function BudgetPage() {
   const [currency, setCurrency] = useState("USD");
   const [isLoading, setIsLoading] = useState(true);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [drawerView, setDrawerView] = useState<"list" | "create">("list");
+  const [hideUnbudgeted, setHideUnbudgeted] = useState(false);
+  const [addSubForCat, setAddSubForCat] = useState<{ slug: string; label: string } | null>(null);
+  const categoriesEndRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     try {
@@ -394,23 +607,33 @@ export function BudgetPage() {
   async function handleEdit(catSlug: string, subSlug: string, value: string) {
     const amount = parseFloat(value);
     if (isNaN(amount) || amount < 0) return;
-    const data = await updateBudgets({ [`${catSlug}/${subSlug}`]: amount });
-    setBudgets(data.budgets);
-    setCurrency(data.base_currency);
+    await updateBudgets({ [`${catSlug}/${subSlug}`]: amount });
+    await load();
   }
 
   async function handleSetBudget(key: string, amount: number) {
-    const data = await updateBudgets({ [key]: amount });
-    setBudgets(data.budgets);
-    setCurrency(data.base_currency);
+    await updateBudgets({ [key]: amount });
+    await load();
   }
 
   async function handleCreateCategory(label: string) {
     await createCategory(label);
     await load();
+    setTimeout(() => categoriesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 100);
   }
 
-  // Categories with at least one budgeted subcategory
+  async function handleCreateSubcategory(catSlug: string, label: string) {
+    await createSubcategory(catSlug, label);
+    await load();
+  }
+
+  function openAddCategory() {
+    setDrawerView("create");
+    setShowDrawer(true);
+  }
+
+
+  // Categories with at least one budgeted subcategory (for summary/donut)
   const activeCats = budgets.filter((b) => b.budget > 0);
 
   // All subcategories without a budget (for the drawer)
@@ -420,7 +643,7 @@ export function BudgetPage() {
       .map((s) => ({ catSlug: cat.category, catLabel: cat.label, sub: s }))
   );
 
-  // Summary numbers (category-level aggregates for overall view)
+  // Summary numbers
   const totalBudget = activeCats.reduce((s, c) => s + c.budget, 0);
   const totalSpent = activeCats.reduce((s, c) => s + c.spent, 0);
   const totalRemaining = totalBudget - totalSpent;
@@ -446,32 +669,17 @@ export function BudgetPage() {
     <div className="page-content py-4 flex flex-col gap-4">
       {/* Summary card */}
       {activeCats.length > 0 ? (
-        <div className="card flex flex-col items-center gap-3">
-          <p className="text-xs font-medium" style={{ color: "var(--app-text-secondary)" }}>
-            Total budget {formatAmount(totalBudget, currency, 0)}
-          </p>
+        <div className="card flex items-center gap-4">
           <SummaryRing pct={overallPct} />
-          <div className="text-center">
-            <p className="text-xl font-bold" style={{ color: "var(--app-text-primary)" }}>
+          <div className="flex flex-col gap-1">
+            <p className="text-xs font-medium" style={{ color: "var(--app-text-secondary)" }}>Total budget</p>
+            <p className="text-lg font-bold" style={{ color: "var(--app-text-primary)" }}>
+              {formatAmount(totalBudget, currency, 0)}
+            </p>
+            <p className="text-xs font-medium mt-2" style={{ color: "var(--app-text-secondary)" }}>Remaining this month</p>
+            <p className="text-lg font-bold" style={{ color: "var(--app-text-primary)" }}>
               {formatAmount(totalRemaining, currency, 0)}
             </p>
-            <p className="text-xs mt-0.5" style={{ color: "var(--app-text-secondary)" }}>
-              remaining this month
-            </p>
-          </div>
-          <div className="flex gap-2 mt-1">
-            <div className="flex flex-col items-center px-3 py-1.5 rounded-xl" style={{ background: "var(--app-secondary-bg)" }}>
-              <span className="text-base font-bold" style={{ color: "var(--app-accent)" }}>{onTrack}</span>
-              <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>On track</span>
-            </div>
-            <div className="flex flex-col items-center px-3 py-1.5 rounded-xl" style={{ background: "var(--app-secondary-bg)" }}>
-              <span className="text-base font-bold" style={{ color: "#fbbf24" }}>{warning}</span>
-              <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>Warning</span>
-            </div>
-            <div className="flex flex-col items-center px-3 py-1.5 rounded-xl" style={{ background: "var(--app-secondary-bg)" }}>
-              <span className="text-base font-bold" style={{ color: "var(--app-danger)" }}>{exceeded}</span>
-              <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>Over limit</span>
-            </div>
           </div>
         </div>
       ) : (
@@ -484,42 +692,74 @@ export function BudgetPage() {
         </div>
       )}
 
-      {/* By category */}
+      {/* Budget donut */}
       {activeCats.length > 0 && (
+        <BudgetDonut entries={activeCats} currency={currency} total={totalBudget} onTrack={onTrack} warning={warning} exceeded={exceeded} />
+      )}
+
+      {/* By category */}
+      {budgets.length > 0 && (
         <div className="card">
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--app-text-secondary)" }}>
-            By category
-          </p>
+          {/* Toolbar */}
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--app-text-secondary)" }}>
+              By category
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setHideUnbudgeted((v) => !v)}
+                className="text-xs px-2 py-1 rounded-lg"
+                style={{
+                  background: hideUnbudgeted ? "var(--app-accent)" : "var(--app-secondary-bg)",
+                  color: hideUnbudgeted ? "#fff" : "var(--app-text-secondary)",
+                }}
+              >
+                {hideUnbudgeted ? "Show all" : "Hide unset"}
+              </button>
+              <button
+                onClick={openAddCategory}
+                className="text-xs px-2 py-1 rounded-lg font-medium"
+                style={{ background: "var(--app-secondary-bg)", color: "var(--app-accent)" }}
+              >
+                + Category
+              </button>
+            </div>
+          </div>
           <div className="flex flex-col divide-y" style={{ borderColor: "var(--app-secondary-bg)" }}>
-            {activeCats.map((entry) => (
+            {budgets.map((entry) => (
               <CategorySection
                 key={entry.category}
                 entry={entry}
                 currency={currency}
+                hideUnbudgeted={hideUnbudgeted}
                 onEdit={handleEdit}
+                onAddSubcategory={(slug, label) => setAddSubForCat({ slug, label })}
               />
             ))}
+            <div ref={categoriesEndRef} />
           </div>
         </div>
       )}
-
-      {/* CTA */}
-      <button
-        onClick={() => setShowDrawer(true)}
-        className="w-full py-3.5 rounded-2xl text-sm font-semibold"
-        style={{ background: "var(--app-secondary-bg)", color: "var(--app-text-primary)" }}
-      >
-        Set budget for a subcategory
-      </button>
 
       {/* Drawer */}
       {showDrawer && (
         <BudgetDrawer
           unbudgetedSubs={unbudgetedSubs}
           currency={currency}
+          initialView={drawerView}
           onSetBudget={handleSetBudget}
           onCreateCategory={handleCreateCategory}
           onClose={() => setShowDrawer(false)}
+        />
+      )}
+
+      {/* Add subcategory drawer */}
+      {addSubForCat && (
+        <AddSubDrawer
+          catSlug={addSubForCat.slug}
+          catLabel={addSubForCat.label}
+          onConfirm={handleCreateSubcategory}
+          onClose={() => setAddSubForCat(null)}
         />
       )}
     </div>

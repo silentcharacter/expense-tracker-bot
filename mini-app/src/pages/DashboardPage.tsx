@@ -1,6 +1,6 @@
 /** Overview page — summary, categories, and recent transactions. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Period } from "../api/summary";
 import type { CategoryInfo, Expense } from "../api/types";
 import { fetchExpenses } from "../api/expenses";
@@ -48,6 +48,17 @@ export function DashboardPage() {
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [excludedCategories, setExcludedCategories] = useState<Set<string>>(new Set());
+  const [showArrow, setShowArrow] = useState(false);
+
+  const toggleExclude = useCallback((slug: string) => {
+    setExcludedCategories((prev) => {
+      const next = new Set(prev);
+      next.has(slug) ? next.delete(slug) : next.add(slug);
+      return next;
+    });
+  }, []);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!summary) return;
@@ -65,13 +76,37 @@ export function DashboardPage() {
 
   const currency = summary?.base_currency ?? user?.base_currency ?? "USD";
 
+  const visibleSummary = useMemo(() => {
+    if (!summary || excludedCategories.size === 0) return summary;
+    const visibleCats = summary.by_category.filter((c) => !excludedCategories.has(c.category));
+    const visibleTotal = visibleCats.reduce((s, c) => s + c.amount_base, 0);
+    const start = new Date(summary.date_range.start + "T00:00:00");
+    const end = new Date(summary.date_range.end + "T00:00:00");
+    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+    const visibleTxCount = expenses.filter((e) => !excludedCategories.has(e.category)).length;
+    return {
+      ...summary,
+      total_base: visibleTotal,
+      daily_average: visibleTotal / days,
+      transaction_count: visibleTxCount,
+      by_category: visibleCats.map((c) => ({
+        ...c,
+        percentage: visibleTotal > 0 ? (c.amount_base / visibleTotal) * 100 : 0,
+      })),
+    };
+  }, [summary, excludedCategories, expenses]);
+
   const budgetUsedPercent = useMemo(() => {
     if (!budgets?.budgets.length) return undefined;
-    const totalBudget = budgets.budgets.reduce((s, b) => s + b.budget, 0);
-    const totalSpent = budgets.budgets.reduce((s, b) => s + b.spent, 0);
+    const visibleBudgets = excludedCategories.size > 0
+      ? budgets.budgets.filter((b) => !excludedCategories.has(b.category))
+      : budgets.budgets;
+    if (!visibleBudgets.length) return undefined;
+    const totalBudget = visibleBudgets.reduce((s, b) => s + b.budget, 0);
+    const totalSpent = visibleBudgets.reduce((s, b) => s + b.spent, 0);
     if (totalBudget <= 0) return undefined;
     return (totalSpent / totalBudget) * 100;
-  }, [budgets]);
+  }, [budgets, excludedCategories]);
 
   const filteredExpenses = useMemo(() => {
     let result = expenses;
@@ -89,8 +124,19 @@ export function DashboardPage() {
     return result;
   }, [expenses, categoryFilter, search]);
 
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => {
+      setShowArrow(el.scrollHeight - el.scrollTop - el.clientHeight > 40);
+    };
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    return () => el.removeEventListener("scroll", check);
+  }, [filteredExpenses]);
+
   return (
-    <div className="page-content py-4">
+    <div className="page-content py-4" ref={scrollRef}>
       <PeriodSelector value={period} onChange={setPeriod} />
 
       {error && (
@@ -122,23 +168,27 @@ export function DashboardPage() {
           ) : (
             <>
               <TotalCard
-                total={summary.total_base}
+                total={visibleSummary?.total_base ?? summary.total_base}
                 currency={currency}
-                transactionCount={summary.transaction_count}
-                dailyAverage={summary.daily_average}
+                transactionCount={visibleSummary?.transaction_count ?? summary.transaction_count}
+                dailyAverage={visibleSummary?.daily_average ?? summary.daily_average}
                 budgetUsedPercent={budgetUsedPercent}
                 dateRange={summary.date_range}
                 period={period}
                 comparison={summary.comparison}
+                excludedCount={excludedCategories.size}
               />
               <CategoryDonut
-                data={summary.by_category}
+                data={visibleSummary?.by_category ?? summary.by_category}
+                allCategories={summary.by_category}
                 expenses={expenses}
                 categories={categories}
                 currency={currency}
-                total={summary.total_base}
+                total={visibleSummary?.total_base ?? summary.total_base}
                 selectedCategory={categoryFilter}
                 onCategoryChange={setCategoryFilter}
+                excludedCategories={excludedCategories}
+                onToggleExclude={toggleExclude}
               />
               <SearchBar value={search} onChange={setSearch} />
               <CategoryFilter categories={summary.by_category} selected={categoryFilter} onChange={setCategoryFilter} />
@@ -147,6 +197,35 @@ export function DashboardPage() {
           )}
         </>
       )}
+      <div
+        style={{
+          position: "fixed",
+          bottom: "72px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          opacity: showArrow ? 1 : 0,
+          transition: "opacity 300ms",
+          pointerEvents: "none",
+          zIndex: 10,
+        }}
+      >
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            backgroundColor: "var(--app-accent)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: 0.85,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4 6l4 4 4-4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </div>
     </div>
   );
 }

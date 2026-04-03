@@ -10,6 +10,7 @@ interface TotalCardProps {
   dateRange: { start: string; end: string };
   period: string;
   comparison?: PeriodComparison;
+  excludedCount?: number;
 }
 
 function periodLabel(period: string, dateRange: { start: string; end: string }): string {
@@ -51,6 +52,7 @@ export function TotalCard({
   dateRange,
   period,
   comparison,
+  excludedCount,
 }: TotalCardProps) {
   const comparisonText = comparison
     ? `${formatPercent(Math.abs(comparison.change_percent), false, 0)} ${comparison.direction === "up" ? "more" : "less"} than ${previousPeriodName(period, dateRange)}`
@@ -66,6 +68,7 @@ export function TotalCard({
     >
       <p className="text-xs opacity-80 mb-1">
         {periodLabel(period, dateRange)}
+        {excludedCount ? <span className="opacity-60"> · excl. {excludedCount} {excludedCount === 1 ? "category" : "categories"}</span> : null}
       </p>
       <p className="amount text-3xl font-bold mb-1">
         {formatAmount(total, currency, 0)}

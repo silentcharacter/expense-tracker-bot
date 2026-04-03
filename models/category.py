@@ -64,6 +64,7 @@ CATEGORIES: tuple[Category, ...] = (
             Subcategory("medical", "Doctor / Lab Tests"),
             Subcategory("insurance", "Insurance"),
             Subcategory("dental", "Dental"),
+            Subcategory("massage", "Massage"),
         ),
     ),
     Category(

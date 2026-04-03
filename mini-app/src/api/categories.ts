@@ -13,3 +13,11 @@ export function createCategory(label: string): Promise<CategoriesResponse> {
 export function createSubcategory(catSlug: string, label: string): Promise<CategoriesResponse> {
   return api.post<CategoriesResponse>(`/categories/${catSlug}/subcategories`, { label });
 }
+
+export function deleteCategory(catSlug: string): Promise<CategoriesResponse> {
+  return api.delete<CategoriesResponse>(`/categories/${catSlug}`);
+}
+
+export function deleteSubcategory(catSlug: string, subSlug: string): Promise<CategoriesResponse> {
+  return api.delete<CategoriesResponse>(`/categories/${catSlug}/subcategories/${subSlug}`);
+}

@@ -659,6 +659,53 @@ class SheetsService:
         _category_cache.pop(spreadsheet_id, None)
         logger.info("Added subcategory '%s/%s' to spreadsheet %s", cat_slug, sub_slug, spreadsheet_id)
 
+    def delete_category(self, spreadsheet_id: str, cat_slug: str) -> bool:
+        """Delete a category and all its subcategories from the Categories sheet.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            cat_slug:       Slug of the category to delete.
+
+        Returns:
+            True if any rows were deleted, False if category not found.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        all_values = sheet.get_all_values()
+        rows_to_delete = [
+            i + 1  # 1-based row index
+            for i, row in enumerate(all_values)
+            if len(row) > 0 and row[0] == cat_slug
+        ]
+        if not rows_to_delete:
+            return False
+        # Delete in reverse order to keep row indices valid
+        for row_num in reversed(rows_to_delete):
+            sheet.delete_rows(row_num)
+        _category_cache.pop(spreadsheet_id, None)
+        logger.info("Deleted category '%s' (%d rows) from %s", cat_slug, len(rows_to_delete), spreadsheet_id)
+        return True
+
+    def delete_subcategory(self, spreadsheet_id: str, cat_slug: str, sub_slug: str) -> bool:
+        """Delete a single subcategory row from the Categories sheet.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            cat_slug:       Parent category slug.
+            sub_slug:       Subcategory slug to delete.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        all_values = sheet.get_all_values()
+        for i, row in enumerate(all_values):
+            if len(row) >= 2 and row[0] == cat_slug and row[1] == sub_slug:
+                sheet.delete_rows(i + 1)
+                _category_cache.pop(spreadsheet_id, None)
+                logger.info("Deleted subcategory '%s/%s' from %s", cat_slug, sub_slug, spreadsheet_id)
+                return True
+        return False
+
     def clear_all_transactions(self, spreadsheet_id: str) -> int:
         """Delete every data row from the Transactions sheet, keeping the header.
 

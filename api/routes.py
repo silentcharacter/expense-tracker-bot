@@ -126,6 +126,13 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
     elif path.startswith("/categories/") and path.endswith("/subcategories") and method == "POST":
         cat_slug = path.split("/")[2]
         return await _api_subcategory_create(request, user, cat_slug)
+    elif path.startswith("/categories/") and "/subcategories/" in path and method == "DELETE":
+        parts = path.split("/")  # ['', 'categories', cat_slug, 'subcategories', sub_slug]
+        cat_slug, sub_slug = parts[2], parts[4]
+        return await _api_subcategory_delete(user, cat_slug, sub_slug)
+    elif path.startswith("/categories/") and method == "DELETE":
+        cat_slug = path.split("/")[2]
+        return await _api_category_delete(user, cat_slug)
     else:
         return jsonify({"error": "not found"}), 404
 
@@ -607,6 +614,30 @@ async def _api_categories_create(request: flask.Request, user: User) -> tuple:
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 409
 
+    return _api_categories_get(user)
+
+
+# ── DELETE /api/categories/<slug> ───────────────────────────────────────────
+
+
+async def _api_category_delete(user: User, cat_slug: str) -> tuple:
+    """Delete a category and all its subcategories."""
+    sheets = _get_sheets()
+    deleted = sheets.delete_category(user.spreadsheet_id, cat_slug)
+    if not deleted:
+        return jsonify({"error": "category not found"}), 404
+    return _api_categories_get(user)
+
+
+# ── DELETE /api/categories/<slug>/subcategories/<sub_slug> ───────────────────
+
+
+async def _api_subcategory_delete(user: User, cat_slug: str, sub_slug: str) -> tuple:
+    """Delete a single subcategory."""
+    sheets = _get_sheets()
+    deleted = sheets.delete_subcategory(user.spreadsheet_id, cat_slug, sub_slug)
+    if not deleted:
+        return jsonify({"error": "subcategory not found"}), 404
     return _api_categories_get(user)
 
 

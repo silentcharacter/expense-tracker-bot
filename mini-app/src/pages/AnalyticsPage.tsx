@@ -167,7 +167,7 @@ function DailySpendingSection({ summary, currency, period }: DailySpendingSectio
   return (
     <div className="card mb-3">
       <SectionLabel>{`DAILY SPENDING — ${monthName(summary.date_range)}`}</SectionLabel>
-      <DailyChart data={summary.daily_totals} currency={currency} dateRange={summary.date_range} period={period} />
+      {period !== "today" && <DailyChart data={summary.daily_totals} currency={currency} dateRange={summary.date_range} period={period} />}
       <div className="grid grid-cols-4 gap-2 mt-3">
         {tiles.map(({ label, value }) => (
           <div key={label} className="text-center">

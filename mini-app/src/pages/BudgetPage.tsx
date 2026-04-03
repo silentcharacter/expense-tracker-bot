@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import type { BudgetEntry, SubcategoryBudgetEntry } from "../api/types";
 import { fetchBudgets, updateBudgets } from "../api/budgets";
-import { createCategory, createSubcategory } from "../api/categories";
+import { createCategory, createSubcategory, deleteCategory, deleteSubcategory } from "../api/categories";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../utils/categories";
 import { formatAmount, formatPercent } from "../utils/format";
 
@@ -135,9 +135,10 @@ interface SubRowProps {
   entry: SubcategoryBudgetEntry;
   currency: string;
   onEdit: (catSlug: string, subSlug: string, value: string) => void;
+  onDelete: (catSlug: string, subSlug: string) => void;
 }
 
-function SubRow({ catSlug, entry, currency, onEdit }: SubRowProps) {
+function SubRow({ catSlug, entry, currency, onEdit, onDelete }: SubRowProps) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(entry.budget > 0 ? String(entry.budget) : "");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -221,6 +222,18 @@ function SubRow({ catSlug, entry, currency, onEdit }: SubRowProps) {
               tap to set
             </span>
           )}
+          {!editing && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(catSlug, entry.slug); }}
+              className="ml-1 p-0.5 rounded opacity-30 hover:opacity-100"
+              title="Delete subcategory"
+              style={{ color: "var(--app-danger)" }}
+            >
+              <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 9h8l1-9" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
       {hasBudget && (
@@ -248,9 +261,11 @@ interface CategorySectionProps {
   hideUnbudgeted: boolean;
   onEdit: (catSlug: string, subSlug: string, value: string) => void;
   onAddSubcategory: (catSlug: string, catLabel: string) => void;
+  onDeleteCategory: (catSlug: string) => void;
+  onDeleteSubcategory: (catSlug: string, subSlug: string) => void;
 }
 
-function CategorySection({ entry, currency, hideUnbudgeted, onEdit, onAddSubcategory }: CategorySectionProps) {
+function CategorySection({ entry, currency, hideUnbudgeted, onEdit, onAddSubcategory, onDeleteCategory, onDeleteSubcategory }: CategorySectionProps) {
   const emoji = getCategoryEmoji(entry.category);
   const hasBudget = entry.budget > 0;
   const fillPct = Math.min(entry.percentage, 100);
@@ -291,6 +306,16 @@ function CategorySection({ entry, currency, hideUnbudgeted, onEdit, onAddSubcate
           >
             +
           </button>
+          <button
+            onClick={() => onDeleteCategory(entry.category)}
+            className="flex items-center justify-center w-5 h-5 rounded opacity-30 hover:opacity-100"
+            title="Delete category"
+            style={{ color: "var(--app-danger)" }}
+          >
+            <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 9h8l1-9" />
+            </svg>
+          </button>
         </div>
       </div>
       {/* Category aggregate progress bar */}
@@ -311,6 +336,7 @@ function CategorySection({ entry, currency, hideUnbudgeted, onEdit, onAddSubcate
             entry={sub}
             currency={currency}
             onEdit={onEdit}
+            onDelete={onDeleteSubcategory}
           />
         ))}
       </div>
@@ -627,6 +653,16 @@ export function BudgetPage() {
     await load();
   }
 
+  async function handleDeleteCategory(catSlug: string) {
+    await deleteCategory(catSlug);
+    await load();
+  }
+
+  async function handleDeleteSubcategory(catSlug: string, subSlug: string) {
+    await deleteSubcategory(catSlug, subSlug);
+    await load();
+  }
+
   function openAddCategory() {
     setDrawerView("create");
     setShowDrawer(true);
@@ -734,6 +770,8 @@ export function BudgetPage() {
                 hideUnbudgeted={hideUnbudgeted}
                 onEdit={handleEdit}
                 onAddSubcategory={(slug, label) => setAddSubForCat({ slug, label })}
+                onDeleteCategory={handleDeleteCategory}
+                onDeleteSubcategory={handleDeleteSubcategory}
               />
             ))}
             <div ref={categoriesEndRef} />

@@ -74,6 +74,7 @@ def _build_application() -> Application:
     app.bot_data["registry"] = UserRegistry(
         sheets_service=app.bot_data["sheets"]
     )
+    app.bot_data["sheets"].ensure_registry_header()
 
     # ── Command handlers ────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", commands.start))

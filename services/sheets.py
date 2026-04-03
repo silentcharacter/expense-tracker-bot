@@ -661,7 +661,14 @@ class SheetsService:
             sheet.insert_row(ExpenseRecord.sheet_headers(), index=1)
 
     def ensure_registry_header(self) -> None:
-        """Write column headers to Master Registry if it is empty."""
+        """Write column headers to Master Registry; append any missing columns."""
         sheet = self._get_sheet(self._registry_id, "Registry")
+        expected = User.registry_headers()
         if sheet.row_count == 0 or not sheet.row_values(1):
-            sheet.insert_row(User.registry_headers(), index=1)
+            sheet.insert_row(expected, index=1)
+        else:
+            existing = sheet.row_values(1)
+            for i, col_name in enumerate(expected):
+                col_num = i + 1
+                if col_num > len(existing):
+                    sheet.update_cell(1, col_num, col_name)

@@ -12,7 +12,7 @@ interface UseSummaryResult {
   refetch: () => void;
 }
 
-export function useSummary(period: Period): UseSummaryResult {
+export function useSummary(period: Period, offset = 0): UseSummaryResult {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [budgets, setBudgets] = useState<BudgetsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -22,7 +22,7 @@ export function useSummary(period: Period): UseSummaryResult {
     setIsLoading(true);
     setError(null);
 
-    Promise.all([fetchSummary(period, true), fetchBudgets()])
+    Promise.all([fetchSummary(period, true, offset), fetchBudgets()])
       .then(([summaryData, budgetsData]) => {
         setSummary(summaryData);
         setBudgets(budgetsData);
@@ -33,7 +33,7 @@ export function useSummary(period: Period): UseSummaryResult {
       .finally(() => {
         setIsLoading(false);
       });
-  }, [period]);
+  }, [period, offset]);
 
   useEffect(() => {
     fetch();

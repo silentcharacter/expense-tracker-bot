@@ -163,6 +163,26 @@ async def _handle_awaiting_input(
         )
         return
 
+    if awaiting.startswith("edit_description:"):
+        record_id = awaiting.split(":", 1)[1]
+        context.user_data.pop("awaiting", None)
+        from services.sheets import SheetsService
+        sheets: SheetsService = context.bot_data["sheets"]
+        user = await registry.get_user(update.effective_user.id)
+        if not user:
+            await update.message.reply_text("User not found.")
+            return
+        ok = sheets.update_transaction_description(user.spreadsheet_id, record_id, text)
+        if ok:
+            last = context.user_data.get("last_expense", {})
+            rec = last.get("record")
+            if rec and rec.id == record_id:
+                rec.description = text
+            await update.message.reply_text(f"Description updated: {text}")
+        else:
+            await update.message.reply_text("Could not find the expense to update.")
+        return
+
     if awaiting == "feedback_text":
         context.user_data.pop("awaiting", None)
         user = await registry.get_user(update.effective_user.id)

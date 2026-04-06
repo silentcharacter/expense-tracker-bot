@@ -41,7 +41,13 @@ function DashboardSkeleton() {
 
 export function DashboardPage() {
   const [period, setPeriod] = useState<Period>("month");
-  const { summary, budgets, isLoading, error, refetch } = useSummary(period);
+  const [offset, setOffset] = useState(0);
+  const { summary, budgets, isLoading, error, refetch } = useSummary(period, offset);
+
+  function handlePeriodChange(p: Period) {
+    setPeriod(p);
+    setOffset(0);
+  }
   const { user } = useUser();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -137,7 +143,13 @@ export function DashboardPage() {
 
   return (
     <div className="page-content py-4" ref={scrollRef}>
-      <PeriodSelector value={period} onChange={setPeriod} />
+      <PeriodSelector
+        value={period}
+        onChange={handlePeriodChange}
+        offset={offset}
+        onOffsetChange={setOffset}
+        dateRange={summary?.date_range}
+      />
 
       {error && (
         <div className="card text-center">

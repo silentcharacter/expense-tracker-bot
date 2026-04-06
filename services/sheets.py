@@ -516,6 +516,42 @@ class SheetsService:
 
         return False
 
+    def update_transaction_description(
+        self, spreadsheet_id: str, record_id: str, description: str
+    ) -> bool:
+        """Find a transaction by ID and update its description cell.
+
+        Args:
+            spreadsheet_id: User's Spreadsheet ID.
+            record_id:      UUID of the expense to update.
+            description:    New description text.
+
+        Returns:
+            True if the row was found and updated, False otherwise.
+        """
+        sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
+        all_values = sheet.get_all_values(value_render_option=ValueRenderOption.unformatted)
+        if len(all_values) <= 1:
+            return False
+
+        headers = ExpenseRecord.sheet_headers()
+        id_col = headers.index("id")
+        desc_col = headers.index("description") + 1  # 1-based for gspread
+
+        for row_idx, row in enumerate(all_values):
+            if row_idx == 0:  # skip header
+                continue
+            if len(row) > id_col and str(row[id_col]) == record_id:
+                sheet.update_cell(row_idx + 1, desc_col, description)
+                _transaction_cache.pop(spreadsheet_id, None)
+                logger.info(
+                    "Updated description for transaction %s in %s",
+                    record_id, spreadsheet_id,
+                )
+                return True
+
+        return False
+
     def update_subcategory_budgets(self, spreadsheet_id: str, budgets: dict[str, float]) -> None:
         """Update budget amounts for subcategory rows in the Categories sheet.
 

@@ -219,7 +219,13 @@ function VsLastMonthSection({ categories }: { categories: CategorySummary[] }) {
 
 export function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>("month");
-  const { summary, budgets, isLoading, error, refetch } = useSummary(period);
+  const [offset, setOffset] = useState(0);
+  const { summary, budgets, isLoading, error, refetch } = useSummary(period, offset);
+
+  function handlePeriodChange(p: Period) {
+    setPeriod(p);
+    setOffset(0);
+  }
   const { user } = useUser();
 
   const currency = summary?.base_currency ?? user?.base_currency ?? "USD";
@@ -231,7 +237,13 @@ export function AnalyticsPage() {
 
   return (
     <div className="page-content py-4">
-      <PeriodSelector value={period} onChange={setPeriod} />
+      <PeriodSelector
+        value={period}
+        onChange={handlePeriodChange}
+        offset={offset}
+        onOffsetChange={setOffset}
+        dateRange={summary?.date_range}
+      />
 
       {error && (
         <div className="card text-center">

@@ -28,6 +28,7 @@ CB_SETTINGS_BASE = "set_base"
 CB_SETTINGS_DEFAULT = "set_default"
 CB_SHOW_SETTINGS_BASE = "show_settings_base"
 CB_SHOW_SETTINGS_DEFAULT = "show_settings_default"
+CB_EDIT_DESCRIPTION = "edit_desc"
 
 # Popular currencies shown on inline keyboards
 POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
@@ -36,13 +37,16 @@ POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
 # ── Keyboard builders ────────────────────────────────────────────────────────
 
 def saved_keyboard(record_id: str) -> InlineKeyboardMarkup:
-    """Build the undo / edit-category keyboard for a just-saved expense."""
+    """Build the undo / edit-category / edit-description keyboard for a just-saved expense."""
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton("↩ Undo", callback_data=f"{CB_UNDO}:{record_id}"),
                 InlineKeyboardButton("✎ Category", callback_data=f"{CB_EDIT_CATEGORY}:{record_id}"),
-            ]
+            ],
+            [
+                InlineKeyboardButton("✏ Description", callback_data=f"{CB_EDIT_DESCRIPTION}:{record_id}"),
+            ],
         ]
     )
 
@@ -122,6 +126,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         CB_SETTINGS_DEFAULT: _handle_settings_default_currency,
         CB_SHOW_SETTINGS_BASE: _handle_show_settings_base,
         CB_SHOW_SETTINGS_DEFAULT: _handle_show_settings_default,
+        CB_EDIT_DESCRIPTION: _handle_edit_description,
     }
 
     handler = handlers.get(prefix)
@@ -459,6 +464,20 @@ async def _apply_settings_currency(
         f"Default currency: *{updated.default_currency}*",
         parse_mode="Markdown",
     )
+
+
+# ── Edit description flow ────────────────────────────────────────────────────
+
+async def _handle_edit_description(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
+) -> None:
+    """Prompt the user to type a new description for the expense."""
+    query = update.callback_query
+    record_id = parts[1] if len(parts) > 1 else ""
+
+    context.user_data["awaiting"] = f"edit_description:{record_id}"
+    await query.edit_message_reply_markup(reply_markup=None)
+    await query.message.reply_text("Send the new description for this expense:")
 
 
 # ── Formatting helpers ───────────────────────────────────────────────────

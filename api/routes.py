@@ -140,17 +140,46 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
 # ── Period helpers ──────────────────────────────────────────────────────────
 
 
-def _period_dates(period: str) -> tuple[date, date]:
-    """Return inclusive (since, until) dates for the named period."""
+def _period_dates(period: str, offset: int = 0) -> tuple[date, date]:
+    """Return inclusive (since, until) dates for the named period.
+
+    offset=0 → current period (until capped at today).
+    offset=-1 → one period back (full range), offset=-2 → two periods back, etc.
+    """
+    import calendar as _cal
+
     today = date.today()
+
+    if offset == 0:
+        if period == "today":
+            return today, today
+        elif period == "week":
+            return today - timedelta(days=today.weekday()), today
+        elif period == "month":
+            return today.replace(day=1), today
+        elif period == "year":
+            return today.replace(month=1, day=1), today
+        else:
+            raise ValueError(f"Unknown period {period!r}; must be today|week|month|year")
+
+    # Past periods (offset < 0): return full period range
+    n = abs(offset)
     if period == "today":
-        return today, today
+        anchor = today - timedelta(days=n)
+        return anchor, anchor
     elif period == "week":
-        return today - timedelta(days=today.weekday()), today
+        monday = today - timedelta(days=today.weekday()) - timedelta(weeks=n)
+        return monday, monday + timedelta(days=6)
     elif period == "month":
-        return today.replace(day=1), today
+        # Go back n months
+        month = today.month - n
+        year = today.year + (month - 1) // 12
+        month = ((month - 1) % 12) + 1
+        last_day = _cal.monthrange(year, month)[1]
+        return date(year, month, 1), date(year, month, last_day)
     elif period == "year":
-        return today.replace(month=1, day=1), today
+        y = today.year - n
+        return date(y, 1, 1), date(y, 12, 31)
     else:
         raise ValueError(f"Unknown period {period!r}; must be today|week|month|year")
 
@@ -201,9 +230,13 @@ def _record_to_dict(r: ExpenseRecord) -> dict:
 async def _api_summary(request: flask.Request, user: User) -> tuple:
     period = request.args.get("period", "week")
     compare = request.args.get("compare", "false").lower() == "true"
+    try:
+        offset = int(request.args.get("offset", "0"))
+    except ValueError:
+        offset = 0
 
     try:
-        since, until = _period_dates(period)
+        since, until = _period_dates(period, offset)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -261,18 +294,21 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     ]
 
     today = date.today()
-    if period == "today":
-        period_end = today
-    elif period == "week":
-        period_end = today - timedelta(days=today.weekday()) + timedelta(days=6)
-    elif period == "month":
-        import calendar as _cal
-        period_end = today.replace(day=_cal.monthrange(today.year, today.month)[1])
-    elif period == "year":
-        period_end = today.replace(month=12, day=31)
+    if offset < 0:
+        days_remaining = 0
     else:
-        period_end = until
-    days_remaining = max((period_end - today).days, 0)
+        if period == "today":
+            period_end = today
+        elif period == "week":
+            period_end = today - timedelta(days=today.weekday()) + timedelta(days=6)
+        elif period == "month":
+            import calendar as _cal
+            period_end = today.replace(day=_cal.monthrange(today.year, today.month)[1])
+        elif period == "year":
+            period_end = today.replace(month=12, day=31)
+        else:
+            period_end = until
+        days_remaining = max((period_end - today).days, 0)
 
     result: dict = {
         "period": period,

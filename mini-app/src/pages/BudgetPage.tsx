@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
-import type { BudgetEntry, SubcategoryBudgetEntry } from "../api/types";
+import type { BudgetEntry, SubcategoryBudgetEntry, RecurringResponse, AddRecurringRequest } from "../api/types";
 import { fetchBudgets, updateBudgets } from "../api/budgets";
 import { createCategory, createSubcategory, deleteCategory, deleteSubcategory } from "../api/categories";
+import { fetchRecurring, addRecurring, deleteRecurring } from "../api/recurring";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../utils/categories";
 import { formatAmount, formatPercent } from "../utils/format";
 
@@ -634,6 +635,257 @@ function AddSubDrawer({ catSlug, catLabel, onConfirm, onClose }: AddSubDrawerPro
   );
 }
 
+// ── Add recurring drawer ──────────────────────────────────────────────────────
+
+function ordinalSuffix(n: number): string {
+  if (n >= 11 && n <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+interface AddRecurringDrawerProps {
+  defaultCurrency: string;
+  categories: { slug: string; label: string; subcategories: { slug: string; label: string }[] }[];
+  onConfirm: (entry: AddRecurringRequest) => Promise<void>;
+  onClose: () => void;
+}
+
+function AddRecurringDrawer({ defaultCurrency, categories, onConfirm, onClose }: AddRecurringDrawerProps) {
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dayOfMonth, setDayOfMonth] = useState("1");
+  const [category, setCategory] = useState("");
+  const [subcategory, setSubcategory] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const subcategories = categories.find((c) => c.slug === category)?.subcategories ?? [];
+
+  function handleCategoryChange(slug: string) {
+    setCategory(slug);
+    setSubcategory("");
+  }
+
+  async function confirm() {
+    const amt = parseFloat(amount);
+    if (!description.trim() || isNaN(amt) || amt <= 0) return;
+    setSaving(true);
+    await onConfirm({
+      description: description.trim(),
+      amount: amt,
+      amount_local: amt,
+      local_currency: defaultCurrency,
+      day_of_month: parseInt(dayOfMonth, 10) || 1,
+      category,
+      subcategory,
+    });
+    setSaving(false);
+    onClose();
+  }
+
+  const valid = description.trim().length > 0 && parseFloat(amount) > 0;
+
+  return (
+    <div
+      className="fixed inset-x-0 top-0 bottom-14 z-50 flex flex-col justify-end"
+      style={{ background: "rgba(0,0,0,0.5)" }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="rounded-t-2xl p-4 flex flex-col gap-3"
+        style={{ background: "var(--app-bg)" }}
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold" style={{ color: "var(--app-text-primary)" }}>
+            Add recurring expense
+          </p>
+          <button
+            className="text-xs px-2 py-1 rounded"
+            style={{ color: "var(--app-text-secondary)" }}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        </div>
+
+        <input
+          type="text"
+          placeholder="Description (e.g. Netflix)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          autoFocus
+          className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+          style={{
+            background: "var(--app-secondary-bg)",
+            color: "var(--app-text-primary)",
+            border: "1px solid var(--app-border, #333)",
+          }}
+        />
+
+        <div className="flex gap-2">
+          <div className="flex-1 flex items-center rounded-xl overflow-hidden" style={{ background: "var(--app-secondary-bg)", border: "1px solid var(--app-border, #333)" }}>
+            <input
+              type="number"
+              min={0}
+              placeholder="Amount"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="flex-1 px-3 py-2.5 text-sm outline-none bg-transparent"
+              style={{ color: "var(--app-text-primary)" }}
+            />
+            <span className="pr-3 text-xs font-medium" style={{ color: "var(--app-text-secondary)" }}>
+              {defaultCurrency}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 rounded-xl px-3" style={{ background: "var(--app-secondary-bg)", border: "1px solid var(--app-border, #333)" }}>
+            <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>Day</span>
+            <input
+              type="number"
+              min={1}
+              max={31}
+              value={dayOfMonth}
+              onChange={(e) => setDayOfMonth(e.target.value)}
+              className="w-10 text-center text-sm outline-none bg-transparent"
+              style={{ color: "var(--app-text-primary)" }}
+            />
+          </div>
+        </div>
+
+        {categories.length > 0 && (
+          <select
+            value={category}
+            onChange={(e) => handleCategoryChange(e.target.value)}
+            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+            style={{
+              background: "var(--app-secondary-bg)",
+              color: category ? "var(--app-text-primary)" : "var(--app-text-secondary)",
+              border: "1px solid var(--app-border, #333)",
+            }}
+          >
+            <option value="">Category (optional)</option>
+            {categories.map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {getCategoryEmoji(c.slug)} {c.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {category && subcategories.length > 0 && (
+          <select
+            value={subcategory}
+            onChange={(e) => setSubcategory(e.target.value)}
+            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+            style={{
+              background: "var(--app-secondary-bg)",
+              color: subcategory ? "var(--app-text-primary)" : "var(--app-text-secondary)",
+              border: "1px solid var(--app-border, #333)",
+            }}
+          >
+            <option value="">Subcategory (optional)</option>
+            {subcategories.map((s) => (
+              <option key={s.slug} value={s.slug}>{s.label}</option>
+            ))}
+          </select>
+        )}
+
+        <button
+          disabled={!valid || saving}
+          onClick={confirm}
+          className="w-full py-3 rounded-xl text-sm font-semibold"
+          style={{
+            background: valid ? "var(--app-accent)" : "var(--app-secondary-bg)",
+            color: valid ? "#fff" : "var(--app-text-secondary)",
+          }}
+        >
+          {saving ? "Adding…" : "Add recurring"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Recurring section ─────────────────────────────────────────────────────────
+
+interface RecurringSectionProps {
+  data: RecurringResponse;
+  onDelete: (id: string) => Promise<void>;
+  onAdd: () => void;
+}
+
+function RecurringSection({ data, onDelete, onAdd }: RecurringSectionProps) {
+  const { items, default_currency } = data;
+  const localTotal = items.reduce((s, i) => s + i.amount_local, 0);
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--app-text-secondary)" }}>
+          ↺ Recurring
+        </p>
+        <button
+          onClick={onAdd}
+          className="text-xs px-2 py-1 rounded-lg font-medium"
+          style={{ background: "var(--app-secondary-bg)", color: "var(--app-accent)" }}
+        >
+          + Add
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm text-center py-4" style={{ color: "var(--app-text-secondary)" }}>
+          No recurring expenses yet
+        </p>
+      ) : (
+        <div className="flex flex-col divide-y" style={{ borderColor: "var(--app-secondary-bg)" }}>
+          {items.map((item) => (
+            <div key={item.id} className="flex items-center gap-3 py-3">
+              <span className="text-2xl flex-shrink-0">
+                {item.category ? getCategoryEmoji(item.category) : "🔄"}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate" style={{ color: "var(--app-text-primary)" }}>
+                  {item.description}
+                </p>
+                <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+                  Monthly · {ordinalSuffix(item.day_of_month)}
+                </p>
+              </div>
+              <span className="text-sm font-semibold flex-shrink-0 amount" style={{ color: "var(--app-text-primary)" }}>
+                {formatAmount(item.amount_local, item.local_currency)}
+              </span>
+              <button
+                onClick={() => onDelete(item.id)}
+                className="p-1.5 rounded opacity-40 hover:opacity-100 flex-shrink-0"
+                title="Delete"
+                style={{ color: "var(--app-danger)" }}
+              >
+                <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                  <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 9h8l1-9" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--app-secondary-bg)" }}>
+          <p className="text-xs text-center" style={{ color: "var(--app-text-secondary)" }}>
+            Total recurring:{" "}
+            <span className="font-semibold amount" style={{ color: "var(--app-accent)" }}>
+              {formatAmount(localTotal, default_currency)}/mo
+            </span>
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function BudgetPage() {
@@ -646,16 +898,19 @@ export function BudgetPage() {
     () => localStorage.getItem("budget_hide_unset") === "true"
   );
   const [addSubForCat, setAddSubForCat] = useState<{ slug: string; label: string } | null>(null);
+  const [recurringData, setRecurringData] = useState<RecurringResponse>({ base_currency: "USD", default_currency: "USD", items: [], total: 0 });
+  const [showAddRecurring, setShowAddRecurring] = useState(false);
   const categoriesEndRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     try {
-      const data = await fetchBudgets();
-      setBudgets(data.budgets);
-      setCurrency(data.base_currency);
+      const budgetData = await fetchBudgets();
+      setBudgets(budgetData.budgets);
+      setCurrency(budgetData.base_currency);
     } finally {
       setIsLoading(false);
     }
+    fetchRecurring().then(setRecurringData).catch((e) => console.warn("fetchRecurring failed:", e));
   }
 
   useEffect(() => { load(); }, []);
@@ -696,6 +951,16 @@ export function BudgetPage() {
   function openAddCategory() {
     setDrawerView("create");
     setShowDrawer(true);
+  }
+
+  async function handleAddRecurring(entry: AddRecurringRequest) {
+    const data = await addRecurring(entry);
+    setRecurringData(data);
+  }
+
+  async function handleDeleteRecurring(id: string) {
+    const data = await deleteRecurring(id);
+    setRecurringData(data);
   }
 
 
@@ -813,6 +1078,13 @@ export function BudgetPage() {
         </div>
       )}
 
+      {/* Recurring section */}
+      <RecurringSection
+        data={recurringData}
+        onDelete={handleDeleteRecurring}
+        onAdd={() => setShowAddRecurring(true)}
+      />
+
       {/* Drawer */}
       {showDrawer && (
         <BudgetDrawer
@@ -832,6 +1104,16 @@ export function BudgetPage() {
           catLabel={addSubForCat.label}
           onConfirm={handleCreateSubcategory}
           onClose={() => setAddSubForCat(null)}
+        />
+      )}
+
+      {/* Add recurring drawer */}
+      {showAddRecurring && (
+        <AddRecurringDrawer
+          defaultCurrency={recurringData.default_currency}
+          categories={budgets.map((b) => ({ slug: b.category, label: b.label, subcategories: b.subcategories.map((s) => ({ slug: s.slug, label: s.label })) }))}
+          onConfirm={handleAddRecurring}
+          onClose={() => setShowAddRecurring(false)}
         />
       )}
     </div>

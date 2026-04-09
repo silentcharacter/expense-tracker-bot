@@ -45,6 +45,9 @@ SHEET_TRANSACTIONS = "Transactions"
 SHEET_DASHBOARD = "Dashboard"
 SHEET_CATEGORIES = "Categories"
 SHEET_RATES = "Exchange Rates"
+SHEET_RECURRING = "Reccuring"  # Note: intentional typo to match existing tab name
+
+RECURRING_HEADERS = ["id", "category", "subcategory", "description", "amount", "amount_local", "local_currency", "day_of_month"]
 
 
 class SheetsError(Exception):
@@ -739,6 +742,46 @@ class SheetsService:
                 sheet.delete_rows(i + 1)
                 _category_cache.pop(spreadsheet_id, None)
                 logger.info("Deleted subcategory '%s/%s' from %s", cat_slug, sub_slug, spreadsheet_id)
+                return True
+        return False
+
+    # ── Recurring expenses ───────────────────────────────────────────────────
+
+    def get_recurring(self, spreadsheet_id: str) -> list[dict]:
+        """Return all rows from the Recurring sheet as a list of dicts."""
+        sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
+        header = sheet.row_values(1)
+        if not header:
+            return []
+        return sheet.get_all_records()
+
+    def add_recurring(self, spreadsheet_id: str, entry: dict) -> None:
+        """Append one recurring entry. Writes headers first if the sheet is empty."""
+        import uuid
+        sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
+        if not sheet.row_values(1):
+            sheet.append_row(RECURRING_HEADERS)
+        row = [
+            entry.get("id") or str(uuid.uuid4()),
+            entry.get("category", ""),
+            entry.get("subcategory", ""),
+            entry.get("description", ""),
+            entry.get("amount", ""),
+            entry.get("amount_local", ""),
+            entry.get("local_currency", ""),
+            entry.get("day_of_month", 1),
+        ]
+        sheet.append_row(row)
+
+    def delete_recurring(self, spreadsheet_id: str, entry_id: str) -> bool:
+        """Delete a recurring entry by its id value. Returns True if found and deleted."""
+        sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
+        all_values = sheet.get_all_values()
+        for i, row in enumerate(all_values):
+            if i == 0:
+                continue  # skip header
+            if row and row[0] == entry_id:
+                sheet.delete_rows(i + 1)
                 return True
         return False
 

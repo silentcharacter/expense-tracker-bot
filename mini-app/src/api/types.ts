@@ -153,3 +153,33 @@ export interface CategoriesResponse {
 export interface CreateCategoryRequest {
   label: string;
 }
+
+// ── Recurring ─────────────────────────────────────────────────────────────────
+
+export interface RecurringItem {
+  id: string;
+  category: string;
+  subcategory: string;
+  description: string;
+  amount: number;
+  amount_local: number;
+  local_currency: string;
+  day_of_month: number;
+}
+
+export interface RecurringResponse {
+  base_currency: string;
+  default_currency: string;
+  items: RecurringItem[];
+  total: number;
+}
+
+export interface AddRecurringRequest {
+  description: string;
+  amount: number;
+  amount_local?: number;
+  local_currency?: string;
+  day_of_month?: number;
+  category?: string;
+  subcategory?: string;
+}

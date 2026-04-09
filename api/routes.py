@@ -133,6 +133,13 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
     elif path.startswith("/categories/") and method == "DELETE":
         cat_slug = path.split("/")[2]
         return await _api_category_delete(user, cat_slug)
+    elif path == "/recurring" and method == "GET":
+        return _api_recurring_get(user)
+    elif path == "/recurring" and method == "POST":
+        return await _api_recurring_add(request, user)
+    elif path.startswith("/recurring/") and method == "DELETE":
+        entry_id = path[len("/recurring/"):]
+        return _api_recurring_delete(user, entry_id)
     else:
         return jsonify({"error": "not found"}), 404
 
@@ -710,3 +717,70 @@ async def _api_subcategory_create(request: flask.Request, user: User, cat_slug: 
         return jsonify({"error": str(exc)}), 409
 
     return _api_categories_get(user)
+
+
+# ── GET /api/recurring ───────────────────────────────────────────────────────
+
+
+def _api_recurring_get(user: User) -> tuple:
+    """Return all recurring expense entries."""
+    sheets = _get_sheets()
+    rows = sheets.get_recurring(user.spreadsheet_id)
+    items = []
+    for row in rows:
+        items.append({
+            "id": str(row.get("id", "")),
+            "category": row.get("category", ""),
+            "subcategory": row.get("subcategory", ""),
+            "description": row.get("description", ""),
+            "amount": float(row.get("amount", 0) or 0),
+            "amount_local": float(row.get("amount_local", 0) or 0),
+            "local_currency": row.get("local_currency", user.default_currency),
+            "day_of_month": int(row.get("day_of_month", 1) or 1),
+        })
+    total = sum(item["amount"] for item in items)
+    return jsonify({
+        "base_currency": user.base_currency,
+        "default_currency": user.default_currency,
+        "items": items,
+        "total": total,
+    }), 200
+
+
+# ── POST /api/recurring ──────────────────────────────────────────────────────
+
+
+async def _api_recurring_add(request: flask.Request, user: User) -> tuple:
+    """Add a new recurring expense entry."""
+    body = request.get_json(silent=True) or {}
+    description = str(body.get("description", "")).strip()
+    if not description:
+        return jsonify({"error": "description is required"}), 400
+    amount = body.get("amount")
+    if amount is None:
+        return jsonify({"error": "amount is required"}), 400
+
+    entry = {
+        "category": body.get("category", ""),
+        "subcategory": body.get("subcategory", ""),
+        "description": description,
+        "amount": float(amount),
+        "amount_local": float(body.get("amount_local", amount)),
+        "local_currency": body.get("local_currency", user.default_currency),
+        "day_of_month": int(body.get("day_of_month", 1)),
+    }
+    sheets = _get_sheets()
+    sheets.add_recurring(user.spreadsheet_id, entry)
+    return _api_recurring_get(user)
+
+
+# ── DELETE /api/recurring/<entry_id> ────────────────────────────────────────
+
+
+def _api_recurring_delete(user: User, entry_id: str) -> tuple:
+    """Delete a recurring expense entry by id."""
+    sheets = _get_sheets()
+    deleted = sheets.delete_recurring(user.spreadsheet_id, entry_id)
+    if not deleted:
+        return jsonify({"error": "entry not found"}), 404
+    return _api_recurring_get(user)

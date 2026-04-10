@@ -1,19 +1,37 @@
+/** Purple gradient summary card: total spent + comparison + 3 stats.
+ *
+ * In the new MainPage layout this always shows the current month and pulls
+ * its formatting from CurrencyContext (so amounts follow the base/default
+ * toggle). Legacy DashboardPage still passes `currency`, `period`, and
+ * `dateRange` explicitly — those remain supported as a fallback so the old
+ * page compiles until it is removed in Phase 7.
+ */
+
 import type { PeriodComparison } from "../../api/types";
-import { formatAmount, formatPercent } from "../../utils/format";
+import { useCurrencyOptional } from "../../context/CurrencyContext";
+import { fmt, formatPercent } from "../../utils/format";
 
 interface TotalCardProps {
   total: number;
-  currency: string;
   transactionCount: number;
   dailyAverage: number;
   budgetUsedPercent?: number;
-  dateRange: { start: string; end: string };
-  period: string;
   comparison?: PeriodComparison;
+  /** Legacy DashboardPage only — ignored when CurrencyProvider is mounted. */
+  currency?: string;
+  /** Legacy DashboardPage only — when omitted, the card shows the current month. */
+  period?: string;
+  /** Legacy DashboardPage only. */
+  dateRange?: { start: string; end: string };
+  /** Legacy DashboardPage only — count of excluded categories, if any. */
   excludedCount?: number;
 }
 
-function periodLabel(period: string, dateRange: { start: string; end: string }): string {
+function periodLabel(period?: string, dateRange?: { start: string; end: string }): string {
+  if (!period || !dateRange) {
+    const now = new Date();
+    return `Total · ${now.toLocaleDateString(undefined, { month: "long", year: "numeric" })}`;
+  }
   const start = new Date(dateRange.start + "T12:00:00");
   if (period === "month") {
     return `Total · ${start.toLocaleDateString(undefined, { month: "long", year: "numeric" })}`;
@@ -27,35 +45,46 @@ function periodLabel(period: string, dateRange: { start: string; end: string }):
   return "Total · This week";
 }
 
-function previousPeriodName(period: string, dateRange: { start: string; end: string }): string {
-  const start = new Date(dateRange.start + "T12:00:00");
-  if (period === "today") {
-    return "yesterday";
+function previousPeriodName(period?: string, dateRange?: { start: string; end: string }): string {
+  if (!period || !dateRange) {
+    const now = new Date();
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return prev.toLocaleDateString(undefined, { month: "long" });
   }
+  const start = new Date(dateRange.start + "T12:00:00");
+  if (period === "today") return "yesterday";
   if (period === "month") {
     const prev = new Date(start);
     prev.setMonth(prev.getMonth() - 1);
     return prev.toLocaleDateString(undefined, { month: "long" });
   }
-  if (period === "year") {
-    return String(start.getFullYear() - 1);
-  }
+  if (period === "year") return String(start.getFullYear() - 1);
   return "last week";
 }
 
 export function TotalCard({
   total,
-  currency,
   transactionCount,
   dailyAverage,
   budgetUsedPercent,
-  dateRange,
-  period,
   comparison,
+  currency,
+  period,
+  dateRange,
   excludedCount,
 }: TotalCardProps) {
+  const currencyCtx = useCurrencyOptional();
+
+  // Prefer CurrencyContext when mounted; fall back to the legacy prop.
+  const formatMoney = (amount: number, decimals = 2): string => {
+    if (currencyCtx) return currencyCtx.format(amount, decimals);
+    return fmt(amount, currency ?? "USD", decimals);
+  };
+
   const comparisonText = comparison
-    ? `${formatPercent(Math.abs(comparison.change_percent), false, 0)} ${comparison.direction === "up" ? "more" : "less"} than ${previousPeriodName(period, dateRange)}`
+    ? `${formatPercent(Math.abs(comparison.change_percent), false, 0)} ${
+        comparison.direction === "up" ? "more" : "less"
+      } than ${previousPeriodName(period, dateRange)}`
     : null;
 
   return (
@@ -68,11 +97,14 @@ export function TotalCard({
     >
       <p className="text-xs opacity-80 mb-1">
         {periodLabel(period, dateRange)}
-        {excludedCount ? <span className="opacity-60"> · excl. {excludedCount} {excludedCount === 1 ? "category" : "categories"}</span> : null}
+        {excludedCount ? (
+          <span className="opacity-60">
+            {" "}
+            · excl. {excludedCount} {excludedCount === 1 ? "category" : "categories"}
+          </span>
+        ) : null}
       </p>
-      <p className="amount text-3xl font-bold mb-1">
-        {formatAmount(total, currency, 0)}
-      </p>
+      <p className="amount text-3xl font-bold mb-1">{formatMoney(total, 0)}</p>
       {comparisonText && (
         <p className="text-xs opacity-70 mb-3">
           {comparison!.direction === "up" ? "↑" : "↓"} {comparisonText}
@@ -83,7 +115,7 @@ export function TotalCard({
       <div className="flex justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-wide opacity-60">Daily avg</p>
-          <p className="amount text-sm font-semibold">{formatAmount(dailyAverage, currency)}</p>
+          <p className="amount text-sm font-semibold">{formatMoney(dailyAverage)}</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] uppercase tracking-wide opacity-60">Transactions</p>

@@ -15,6 +15,7 @@ from flask import jsonify
 
 from models.expense import ExpenseRecord, User
 from services.auth import validate_init_data
+from services.currency import CurrencyService
 from services.sheets import SheetsService
 from services.user_registry import UserRegistry
 
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 _sheets_singleton: Optional[SheetsService] = None
 _registry_singleton: Optional[UserRegistry] = None
+_currency_singleton: Optional[CurrencyService] = None
 
 
 def _get_sheets() -> SheetsService:
@@ -39,6 +41,13 @@ def _get_registry() -> UserRegistry:
     if _registry_singleton is None:
         _registry_singleton = UserRegistry(sheets_service=_get_sheets())
     return _registry_singleton
+
+
+def _get_currency() -> CurrencyService:
+    global _currency_singleton
+    if _currency_singleton is None:
+        _currency_singleton = CurrencyService()
+    return _currency_singleton
 
 
 # ── Authentication ──────────────────────────────────────────────────────────
@@ -228,6 +237,85 @@ def _record_to_dict(r: ExpenseRecord) -> dict:
         "subcategory": r.subcategory,
         "description": r.description,
         "source": r.source.value,
+        "is_recurring": bool(r.recurring),
+    }
+
+
+# ── Spending pace ───────────────────────────────────────────────────────────
+
+
+def _compute_spending_pace(
+    sheets: SheetsService,
+    user: User,
+    records: list[ExpenseRecord],
+    total_base: float,
+    since: date,
+    until: date,
+) -> dict:
+    """Build the spending_pace block for the current-month summary.
+
+    Splits spending into recurring (templates materialised by the cron) and
+    discretionary (everything else). Projects discretionary forward linearly
+    using ``projected = (spent / days_elapsed) × days_in_month`` per spec §1.2.
+    Recurring is excluded from the projection because it does not scale
+    linearly with time.
+    """
+    import calendar as _cal
+
+    today = date.today()
+    days_in_month = _cal.monthrange(today.year, today.month)[1]
+    days_elapsed = max(today.day, 1)
+    days_remaining = max(days_in_month - today.day, 0)
+
+    recurring_spent = round(sum(r.amount_base for r in records if r.recurring), 4)
+    discretionary_spent = round(total_base - recurring_spent, 4)
+
+    # Recurring template total for the month (sum of "amount" cells in Reccuring sheet).
+    try:
+        recurring_items = sheets.get_recurring(user.spreadsheet_id)
+        recurring_total = round(
+            sum(float(it.get("amount", 0) or 0) for it in recurring_items), 4
+        )
+    except Exception as exc:
+        logger.warning("Could not read recurring sheet for pace calc: %s", exc)
+        recurring_total = 0.0
+
+    # Total budget = sum of all category budgets.
+    try:
+        budgets_map = sheets.get_budgets(user.spreadsheet_id)
+        budget_total = round(sum(budgets_map.values()), 4)
+    except Exception as exc:
+        logger.warning("Could not read budgets for pace calc: %s", exc)
+        budget_total = 0.0
+
+    discretionary_budget = round(max(budget_total - recurring_total, 0.0), 4)
+
+    projected_discretionary = round(
+        discretionary_spent / days_elapsed * days_in_month, 4
+    )
+
+    available_per_day = round(
+        max(discretionary_budget - discretionary_spent, 0.0) / max(days_remaining, 1),
+        4,
+    )
+
+    if discretionary_budget > 0:
+        status = "on_track" if projected_discretionary <= discretionary_budget * 1.1 else "over_pace"
+    else:
+        status = "on_track"
+
+    return {
+        "days_elapsed": days_elapsed,
+        "days_in_month": days_in_month,
+        "total_spent": round(total_base, 4),
+        "recurring_spent": recurring_spent,
+        "discretionary_spent": discretionary_spent,
+        "recurring_total": recurring_total,
+        "discretionary_budget": discretionary_budget,
+        "budget_total": budget_total,
+        "projected_discretionary": projected_discretionary,
+        "available_per_day": available_per_day,
+        "status": status,
     }
 
 
@@ -329,6 +417,24 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "by_currency": by_currency,
         "daily_totals": daily_totals,
     }
+
+    # ── default_currency_rate (1 base = X default) ──────────────────────────
+    result["default_currency"] = user.default_currency
+    if user.default_currency.upper() == user.base_currency.upper():
+        result["default_currency_rate"] = 1.0
+    else:
+        try:
+            rate = await _get_currency().get_rate(user.base_currency, user.default_currency)
+            result["default_currency_rate"] = round(rate, 6)
+        except Exception as exc:
+            logger.warning("Could not fetch default_currency_rate: %s", exc)
+            result["default_currency_rate"] = None
+
+    # ── spending_pace (current month only) ──────────────────────────────────
+    if period == "month" and offset == 0:
+        result["spending_pace"] = _compute_spending_pace(
+            sheets, user, records, total_base, since, until
+        )
 
     if compare:
         prev_since, prev_until = _previous_period_dates(period, since, until)

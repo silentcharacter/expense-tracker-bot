@@ -28,6 +28,20 @@ export interface PeriodComparison {
   direction: "up" | "down";
 }
 
+export interface SpendingPace {
+  days_elapsed: number;
+  days_in_month: number;
+  total_spent: number;
+  recurring_spent: number;
+  discretionary_spent: number;
+  recurring_total: number;
+  discretionary_budget: number;
+  budget_total: number;
+  projected_discretionary: number;
+  available_per_day: number;
+  status: "on_track" | "over_pace";
+}
+
 export interface SummaryResponse {
   period: string;
   date_range: { start: string; end: string };
@@ -40,6 +54,9 @@ export interface SummaryResponse {
   daily_totals: DailyTotal[];
   comparison?: PeriodComparison;
   days_remaining?: number;
+  spending_pace?: SpendingPace;
+  default_currency?: string;
+  default_currency_rate?: number | null;
 }
 
 // ── Expenses ─────────────────────────────────────────────────────────────────
@@ -56,6 +73,7 @@ export interface Expense {
   subcategory: string;
   description: string;
   source: "voice" | "text" | "photo";
+  is_recurring?: boolean;
 }
 
 export interface ExpensesResponse {

@@ -1,23 +1,40 @@
 /** Formatting helpers for amounts, dates, and percentages. */
 
+/**
+ * Single amount-formatting helper. Every JSX currency render should go through
+ * this function (or `CurrencyContext.format`) — never hardcode `$` or `฿`.
+ */
+export function fmt(amount: number, currency: string, decimals = 2): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(amount);
+  } catch {
+    // Fallback for non-ISO codes: show the code after the number.
+    return `${amount.toLocaleString(undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })} ${currency}`;
+  }
+}
+
+/** @deprecated Use `fmt()` or `CurrencyContext.format()` instead. */
 export function formatAmount(amount: number, currency: string, decimals = 2): string {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-    currencyDisplay: "narrowSymbol",
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(amount);
+  return fmt(amount, currency, decimals);
 }
 
 export function formatAmountCompact(amount: number, currency: string): string {
   if (amount >= 1_000_000) {
-    return `${formatAmount(amount / 1_000_000, currency, 1)}M`;
+    return `${fmt(amount / 1_000_000, currency, 1)}M`;
   }
   if (amount >= 1_000) {
-    return `${formatAmount(amount / 1_000, currency, 1)}K`;
+    return `${fmt(amount / 1_000, currency, 1)}K`;
   }
-  return formatAmount(amount, currency);
+  return fmt(amount, currency);
 }
 
 export function formatPercent(value: number, showSign = false, decimals = 1): string {

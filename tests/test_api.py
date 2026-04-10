@@ -53,6 +53,14 @@ def mock_registry(user: User) -> AsyncMock:
     return m
 
 
+@pytest.fixture
+def mock_currency() -> MagicMock:
+    """Stub CurrencyService that returns a fixed FX rate without HTTP calls."""
+    m = MagicMock()
+    m.get_rate = AsyncMock(return_value=33.5)
+    return m
+
+
 def _make_record(**kwargs) -> ExpenseRecord:
     """Build an ExpenseRecord with sensible defaults, overridable via kwargs."""
     defaults: dict = dict(
@@ -83,6 +91,7 @@ async def _call(
     json_body: dict | None = None,
     args: dict | None = None,
     valid_auth: bool = True,
+    mock_currency: MagicMock | None = None,
 ) -> tuple[dict | bytes, int]:
     """Call handle_api_request inside a Flask test context and return (body, status).
 
@@ -93,9 +102,14 @@ async def _call(
     auth_return = {"id": TG_ID} if valid_auth else None
     all_headers = {"Authorization": "tma test", **(headers or {})}
 
+    if mock_currency is None:
+        mock_currency = MagicMock()
+        mock_currency.get_rate = AsyncMock(return_value=1.0)
+
     with (
         patch("api.routes._get_sheets", return_value=mock_sheets),
         patch("api.routes._get_registry", return_value=mock_registry),
+        patch("api.routes._get_currency", return_value=mock_currency),
         patch("api.routes.validate_init_data", return_value=auth_return),
         _flask_app.test_request_context(
             path,
@@ -193,6 +207,57 @@ async def test_summary_compare(mock_sheets, mock_registry) -> None:
     assert cmp["previous_total"] == pytest.approx(200.0)
     assert cmp["change_percent"] == pytest.approx(-50.0)
     assert cmp["direction"] == "down"
+
+
+async def test_summary_includes_default_currency_rate(mock_sheets, mock_registry, mock_currency) -> None:
+    """Summary always includes default_currency and default_currency_rate fields."""
+    mock_sheets.get_transactions.return_value = []
+    body, status = await _call(
+        "GET", "/api/summary", mock_sheets, mock_registry,
+        args={"period": "week"}, mock_currency=mock_currency,
+    )
+    assert status == 200
+    assert body["default_currency"] == "THB"
+    assert body["default_currency_rate"] == pytest.approx(33.5)
+
+
+async def test_summary_month_includes_spending_pace(mock_sheets, mock_registry, mock_currency) -> None:
+    """Monthly summary at offset=0 includes a spending_pace block (spec §1.2)."""
+    mock_sheets.get_transactions.return_value = [
+        _make_record(amount_base=200.0, category="food"),
+        _make_record(amount_base=500.0, category="housing", recurring=True, recurring_template_id="t1"),
+    ]
+    mock_sheets.get_recurring.return_value = [
+        {"id": "t1", "amount": 500.0, "day_of_month": 1},
+    ]
+    mock_sheets.get_budgets.return_value = {"food": 600.0, "housing": 500.0}
+
+    body, status = await _call(
+        "GET", "/api/summary", mock_sheets, mock_registry,
+        args={"period": "month"}, mock_currency=mock_currency,
+    )
+    assert status == 200
+    assert "spending_pace" in body
+    pace = body["spending_pace"]
+    assert pace["recurring_spent"] == pytest.approx(500.0)
+    assert pace["discretionary_spent"] == pytest.approx(200.0)
+    assert pace["recurring_total"] == pytest.approx(500.0)
+    assert pace["budget_total"] == pytest.approx(1100.0)
+    assert pace["discretionary_budget"] == pytest.approx(600.0)
+    assert pace["status"] in ("on_track", "over_pace")
+    assert pace["days_in_month"] >= 28
+    assert pace["days_elapsed"] >= 1
+
+
+async def test_summary_week_omits_spending_pace(mock_sheets, mock_registry, mock_currency) -> None:
+    """Spending pace only attached for current month — not for week/today."""
+    mock_sheets.get_transactions.return_value = []
+    body, status = await _call(
+        "GET", "/api/summary", mock_sheets, mock_registry,
+        args={"period": "week"}, mock_currency=mock_currency,
+    )
+    assert status == 200
+    assert "spending_pace" not in body
 
 
 async def test_summary_invalid_period(mock_sheets, mock_registry) -> None:
@@ -303,6 +368,17 @@ async def test_expenses_record_fields(mock_sheets, mock_registry) -> None:
     assert exp["category"] == "food"
     assert exp["source"] == "text"
     assert "timestamp" in exp
+    # is_recurring defaults to False for plain records
+    assert exp["is_recurring"] is False
+
+
+async def test_expenses_is_recurring_flag(mock_sheets, mock_registry) -> None:
+    """Records materialised by the recurring cron expose is_recurring=True."""
+    r = _make_record(recurring=True, recurring_template_id="tpl-1")
+    mock_sheets.get_transactions.return_value = [r]
+    body, status = await _call("GET", "/api/expenses", mock_sheets, mock_registry)
+    assert status == 200
+    assert body["expenses"][0]["is_recurring"] is True
 
 
 # ── DELETE /api/expenses/:id ──────────────────────────────────────────────────

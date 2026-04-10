@@ -84,6 +84,20 @@ class ExpenseRecord(BaseModel):
     description: str
     source: ExpenseSource
     raw_input: str = Field(default="", description="Original voice transcript or text")
+    recurring: bool = Field(default=False, description="True if materialised by the recurring cron job")
+    recurring_template_id: str = Field(default="", description="Source recurring template id (for cron idempotency)")
+
+    @field_validator("recurring", mode="before")
+    @classmethod
+    def coerce_recurring(cls, v: object) -> bool:
+        """Accept 'TRUE'/'FALSE' strings from Sheets, native bools, and empty cells."""
+        if isinstance(v, bool):
+            return v
+        if v is None or v == "":
+            return False
+        if isinstance(v, str):
+            return v.strip().upper() == "TRUE"
+        return bool(v)
 
     def to_sheet_row(self) -> list:
         """Serialise record to a flat list for Google Sheets append."""
@@ -100,11 +114,37 @@ class ExpenseRecord(BaseModel):
             self.description,
             self.source.value,
             self.raw_input,
+            "TRUE" if self.recurring else "FALSE",
+            self.recurring_template_id,
         ]
 
     @classmethod
     def sheet_headers(cls) -> list[str]:
         """Column headers matching to_sheet_row() order."""
+        return [
+            "id",
+            "timestamp",
+            "amount_local",
+            "local_currency",
+            "amount_base",
+            "base_currency",
+            "fx_rate",
+            "category",
+            "subcategory",
+            "description",
+            "source",
+            "raw_input",
+            "recurring",
+            "recurring_template_id",
+        ]
+
+    @classmethod
+    def required_sheet_headers(cls) -> list[str]:
+        """Subset of headers that must exist in every transactions sheet (original 12 columns).
+
+        Used for backward-compatible reads of spreadsheets created before the
+        recurring columns were introduced.
+        """
         return [
             "id",
             "timestamp",

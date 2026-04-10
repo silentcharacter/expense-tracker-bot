@@ -5,13 +5,30 @@
 /* ── App tokens (derived from Telegram theme) ─────────────────────────── */
 :root {
   --app-card-bg: var(--tg-theme-section-bg-color, #ffffff);
+  --app-card-alt-bg: color-mix(in srgb, var(--tg-theme-section-bg-color, #ffffff) 80%, var(--tg-theme-button-color, #2481cc));
   --app-text-primary: var(--tg-theme-text-color, #000000);
   --app-text-secondary: var(--tg-theme-hint-color, #999999);
   --app-accent: var(--tg-theme-button-color, #2481cc);
+  --app-success: #3cb371;
+  --app-warning: #e8a33a;
   --app-danger: var(--tg-theme-destructive-text-color, #e53935);
   --app-border: color-mix(in srgb, var(--tg-theme-hint-color, #999999) 20%, transparent);
   --app-bg: var(--tg-theme-bg-color, #f0f0f0);
   --app-secondary-bg: var(--tg-theme-secondary-bg-color, #efeff4);
+
+  /* ── Heatmap (Less → More) gradient + recurring swatch ───────────────── */
+  --heatmap-0: color-mix(in srgb, var(--app-secondary-bg) 70%, transparent);
+  --heatmap-1: color-mix(in srgb, var(--app-accent) 20%, var(--app-secondary-bg));
+  --heatmap-2: color-mix(in srgb, var(--app-accent) 45%, var(--app-secondary-bg));
+  --heatmap-3: color-mix(in srgb, var(--app-accent) 70%, var(--app-secondary-bg));
+  --heatmap-4: var(--app-accent);
+  --heatmap-recurring: #8b5cf6;
+
+  /* ── Spending pace bar ────────────────────────────────────────────────── */
+  --pace-track: color-mix(in srgb, var(--app-secondary-bg) 80%, transparent);
+  --pace-fill: var(--app-accent);
+  --pace-projection: #f5c542;
+  --pace-limit: var(--app-text-secondary);
 }
 
 /* ── Base styles ──────────────────────────────────────────────────────── */
@@ -35,7 +52,7 @@ body {
 .page-content {
   position: fixed;
   top: 0;
-  bottom: 56px; /* tab bar height */
+  bottom: 0;
   left: 0;
   right: 0;
   overflow-y: auto;
@@ -127,4 +144,109 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Heatmap grid ──────────────────────────────────────────────────────── */
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 4px;
+  background-color: var(--heatmap-0);
+  transition: transform 120ms ease, outline-color 120ms ease;
+  cursor: pointer;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+
+.heatmap-cell[data-level="0"] { background-color: var(--heatmap-0); }
+.heatmap-cell[data-level="1"] { background-color: var(--heatmap-1); }
+.heatmap-cell[data-level="2"] { background-color: var(--heatmap-2); }
+.heatmap-cell[data-level="3"] { background-color: var(--heatmap-3); }
+.heatmap-cell[data-level="4"] { background-color: var(--heatmap-4); }
+.heatmap-cell[data-recurring="true"] { background-color: var(--heatmap-recurring); }
+
+.heatmap-cell[data-future="true"] {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+.heatmap-cell[data-selected="true"] {
+  transform: scale(1.25);
+  outline-color: #ffffff;
+  z-index: 1;
+  position: relative;
+}
+
+/* ── Spending pace bar ─────────────────────────────────────────────────── */
+.pace-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background-color: var(--pace-track);
+  overflow: visible;
+}
+
+.pace-bar__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background-color: var(--pace-fill);
+  transition: width 300ms ease;
+}
+
+.pace-bar__fill[data-status="over_pace"] {
+  background-color: var(--app-danger);
+}
+
+.pace-bar__projection {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background-color: var(--pace-projection);
+  transform: translateX(-1px);
+}
+
+.pace-bar__limit {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  right: 0;
+  width: 2px;
+  background-color: var(--pace-limit);
+}
+
+/* ── Status badges ─────────────────────────────────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.status-badge[data-tone="success"] {
+  background-color: color-mix(in srgb, var(--app-success) 20%, transparent);
+  color: var(--app-success);
+}
+
+.status-badge[data-tone="danger"] {
+  background-color: color-mix(in srgb, var(--app-danger) 20%, transparent);
+  color: var(--app-danger);
+}
+
+.status-badge[data-tone="warning"] {
+  background-color: color-mix(in srgb, var(--app-warning) 20%, transparent);
+  color: var(--app-warning);
 }

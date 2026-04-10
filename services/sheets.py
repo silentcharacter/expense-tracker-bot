@@ -23,6 +23,9 @@ _CATEGORY_TTL = 300.0  # 5 minutes
 _transaction_cache: dict[str, tuple[list["ExpenseRecord"], float]] = {}
 _TRANSACTION_TTL = 30.0  # 30 seconds
 
+# Spreadsheets whose Transactions header has already been migrated this process lifetime.
+_migrated_transactions_headers: set[str] = set()
+
 
 def _parse_budget(raw) -> float | None:
     """Parse a raw cell value into a float budget, or None if empty/invalid."""
@@ -104,6 +107,7 @@ class SheetsService:
             spreadsheet_id: User's personal Spreadsheet ID.
             record:         Fully populated ExpenseRecord.
         """
+        self._ensure_transactions_columns(spreadsheet_id)
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
         sheet.append_row(record.to_sheet_row(), value_input_option="RAW")
         _transaction_cache.pop(spreadsheet_id, None)
@@ -133,6 +137,30 @@ class SheetsService:
             logger.warning("Could not parse deleted row into ExpenseRecord: %s", exc)
             return None
 
+    def _ensure_transactions_columns(self, spreadsheet_id: str) -> None:
+        """Append any missing Transactions header columns introduced after the
+        original schema (e.g. ``recurring``, ``recurring_template_id``).
+
+        Idempotent and cached per process — only the first call per spreadsheet
+        actually touches the API.
+        """
+        if spreadsheet_id in _migrated_transactions_headers:
+            return
+        try:
+            sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
+            existing = sheet.row_values(1)
+            expected = ExpenseRecord.sheet_headers()
+            if not existing:
+                sheet.insert_row(expected, index=1)
+            else:
+                for i, col_name in enumerate(expected):
+                    col_num = i + 1
+                    if col_num > len(existing):
+                        sheet.update_cell(1, col_num, col_name)
+        except Exception as exc:
+            logger.warning("Could not migrate transactions header for %s: %s", spreadsheet_id, exc)
+        _migrated_transactions_headers.add(spreadsheet_id)
+
     def _get_all_transactions(self, spreadsheet_id: str) -> list[ExpenseRecord]:
         """Return every parsed record for a spreadsheet, with 30s TTL cache."""
         now = time.monotonic()
@@ -140,6 +168,7 @@ class SheetsService:
         if cached and now < cached[1]:
             return cached[0]
 
+        self._ensure_transactions_columns(spreadsheet_id)
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
         rows = sheet.get_all_records(
             expected_headers=ExpenseRecord.sheet_headers(),
@@ -809,13 +838,22 @@ class SheetsService:
     # ── Spreadsheet initialisation ───────────────────────────────────────────
 
     def ensure_transactions_header(self, spreadsheet_id: str) -> None:
-        """Write column headers to Transactions sheet if it is empty.
+        """Write column headers to Transactions sheet, appending any missing columns.
 
-        Safe to call on new or existing spreadsheets.
+        Safe to call on new or existing spreadsheets — preserves existing data
+        and only adds columns that are not already present in row 1.
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        if sheet.row_count == 0 or not sheet.row_values(1):
-            sheet.insert_row(ExpenseRecord.sheet_headers(), index=1)
+        expected = ExpenseRecord.sheet_headers()
+        existing = sheet.row_values(1) if sheet.row_count > 0 else []
+        if not existing:
+            sheet.insert_row(expected, index=1)
+        else:
+            for i, col_name in enumerate(expected):
+                col_num = i + 1
+                if col_num > len(existing):
+                    sheet.update_cell(1, col_num, col_name)
+        _migrated_transactions_headers.add(spreadsheet_id)
 
     def ensure_registry_header(self) -> None:
         """Write column headers to Master Registry; append any missing columns."""

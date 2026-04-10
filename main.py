@@ -121,6 +121,33 @@ def _cors_preflight() -> tuple:
     return "", 204, headers
 
 
+def _handle_cron_route(request, path: str):
+    """Authenticate and dispatch /cron/* invocations from Cloud Scheduler.
+
+    Authentication: a shared secret in the ``X-Cron-Secret`` header that must
+    match the ``CRON_SECRET`` env var. If ``CRON_SECRET`` is unset the route
+    returns 503 — fail-closed rather than running unauthenticated.
+    """
+    from flask import jsonify as _jsonify
+
+    expected = os.environ.get("CRON_SECRET", "")
+    if not expected:
+        return _jsonify({"error": "cron disabled"}), 503
+    if request.headers.get("X-Cron-Secret", "") != expected:
+        return _jsonify({"error": "forbidden"}), 403
+
+    if path == "/cron/recurring":
+        from jobs.recurring_cron import run_recurring_cron
+        try:
+            summary = asyncio.run(run_recurring_cron())
+        except Exception as exc:
+            logger.exception("Recurring cron failed: %s", exc)
+            return _jsonify({"error": "internal error"}), 500
+        return _jsonify(summary), 200
+
+    return _jsonify({"error": "not found"}), 404
+
+
 def _handle_api_route(request):
     """Run the async Mini App API handler and add CORS headers to the response."""
     from api.routes import handle_api_request
@@ -163,6 +190,10 @@ def webhook(request) -> tuple:
     # Mini App REST API — uses its own initData auth, not the webhook secret
     if path.startswith("/api/"):
         return _handle_api_route(request)
+
+    # Cron-triggered jobs (Cloud Scheduler) — authenticated via shared secret header
+    if path.startswith("/cron/"):
+        return _handle_cron_route(request, path)
 
     # Optional: verify Telegram secret token header
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")

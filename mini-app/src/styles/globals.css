@@ -120,6 +120,10 @@ body {
   animation: slideInRight 200ms ease-out forwards;
 }
 
+.subtab-enter {
+  animation: fadeIn 180ms ease-out forwards;
+}
+
 /* ── List item stagger ─────────────────────────────────────────────────── */
 @keyframes staggerFadeIn {
   from {

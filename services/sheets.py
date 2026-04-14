@@ -2,11 +2,13 @@
 
 import logging
 import os
+import random
 import time
 from datetime import datetime, date
 from typing import Optional
 
 import gspread
+from gspread.exceptions import APIError
 from gspread.utils import ValueRenderOption
 from google.auth import default as google_auth_default
 from google.oauth2.service_account import Credentials
@@ -25,6 +27,24 @@ _TRANSACTION_TTL = 30.0  # 30 seconds
 
 # Spreadsheets whose Transactions header has already been migrated this process lifetime.
 _migrated_transactions_headers: set[str] = set()
+
+# Module-level worksheet cache: (spreadsheet_id, sheet_name) → gspread.Worksheet.
+# Avoids the metadata fetch that `Spreadsheet.worksheet()` performs on every call.
+_worksheet_cache: dict[tuple[str, str], gspread.Worksheet] = {}
+
+
+def _with_retry(fn, *, attempts: int = 4, base_delay: float = 0.5):
+    """Call a Sheets API function, retrying on transient 429/5xx with jittered backoff."""
+    for i in range(attempts):
+        try:
+            return fn()
+        except APIError as exc:
+            status = getattr(exc.response, "status_code", None)
+            if status not in (429, 500, 503) or i == attempts - 1:
+                raise
+            delay = base_delay * (2 ** i) + random.uniform(0, 0.25)
+            logger.warning("Sheets API %s — retry %d/%d in %.2fs", status, i + 1, attempts, delay)
+            time.sleep(delay)
 
 
 def _parse_budget(raw) -> float | None:
@@ -95,8 +115,14 @@ class SheetsService:
         return self._spreadsheet_cache[spreadsheet_id]
 
     def _get_sheet(self, spreadsheet_id: str, sheet_name: str) -> gspread.Worksheet:
-        """Return a named worksheet from a spreadsheet."""
-        return self._get_spreadsheet(spreadsheet_id).worksheet(sheet_name)
+        """Return a named worksheet, cached at module level to skip the per-call metadata fetch."""
+        key = (spreadsheet_id, sheet_name)
+        ws = _worksheet_cache.get(key)
+        if ws is not None:
+            return ws
+        ws = _with_retry(lambda: self._get_spreadsheet(spreadsheet_id).worksheet(sheet_name))
+        _worksheet_cache[key] = ws
+        return ws
 
     # ── Transactions ────────────────────────────────────────────────────────
 
@@ -170,10 +196,10 @@ class SheetsService:
 
         self._ensure_transactions_columns(spreadsheet_id)
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        rows = sheet.get_all_records(
+        rows = _with_retry(lambda: sheet.get_all_records(
             expected_headers=ExpenseRecord.sheet_headers(),
             value_render_option=ValueRenderOption.unformatted,
-        )
+        ))
 
         records: list[ExpenseRecord] = []
         for row in rows:

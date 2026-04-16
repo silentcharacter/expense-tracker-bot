@@ -64,7 +64,7 @@ export function useMainData(monthOffset = 0): UseMainDataResult {
     try {
       const [summary, budgets, expenses, categories, recurring] = await Promise.all([
         fetchSummary("month", true, monthOffset),
-        fetchBudgets(),
+        fetchBudgets(monthOffset),
         fetchExpenses({ since, until, limit: 200 }),
         fetchCategories(),
         fetchRecurring(),

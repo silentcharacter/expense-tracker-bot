@@ -10,6 +10,8 @@ import { useCurrency } from "../../context/CurrencyContext";
 
 interface BudgetSummaryCardProps {
   budgets: BudgetEntry[];
+  totalBudget: number;
+  totalSpent: number;
 }
 
 function ArcGauge({ pct }: { pct: number }) {
@@ -72,15 +74,13 @@ function ArcGauge({ pct }: { pct: number }) {
   );
 }
 
-export function BudgetSummaryCard({ budgets }: BudgetSummaryCardProps) {
+export function BudgetSummaryCard({ budgets, totalBudget, totalSpent }: BudgetSummaryCardProps) {
   const { format } = useCurrency();
 
   const activeSubs = budgets
     .flatMap((c) => c.subcategories)
     .filter((s) => s.budget > 0);
 
-  const totalBudget = budgets.reduce((s, c) => s + c.budget, 0);
-  const totalSpent = budgets.reduce((s, c) => s + c.spent, 0);
   const totalRemaining = totalBudget - totalSpent;
   const overallPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
 

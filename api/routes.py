@@ -117,7 +117,7 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
         expense_id = path.split("/")[-1]
         return await _api_expense_delete(expense_id, user)
     elif path == "/budgets" and method == "GET":
-        return await _api_budgets_get(user)
+        return await _api_budgets_get(request, user)
     elif path == "/budgets" and method == "PUT":
         return await _api_budgets_update(request, user)
     elif path == "/settings" and method == "GET":
@@ -519,13 +519,20 @@ async def _api_expense_delete(expense_id: str, user: User) -> tuple:
 # ── GET /api/budgets ────────────────────────────────────────────────────────
 
 
-async def _api_budgets_get(user: User) -> tuple:
-    today = date.today()
-    since = today.replace(day=1)
+async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
+    try:
+        offset = int(request.args.get("offset", "0"))
+    except ValueError:
+        offset = 0
+
+    try:
+        since, until = _period_dates("month", offset)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     sheets = _get_sheets()
     all_categories = sheets.get_categories(user.spreadsheet_id)
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=today)
+    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
 
     # Aggregate spending at both category and subcategory level
     spent_by_cat: dict[str, float] = defaultdict(float)
@@ -576,9 +583,14 @@ async def _api_budgets_get(user: User) -> tuple:
             "subcategories": sub_entries,
         })
 
+    total_budget = round(sum(b["budget"] for b in result_budgets), 4)
+    total_spent = round(sum(r.amount_base for r in records), 4)
+
     return jsonify({
         "base_currency": user.base_currency,
-        "month": today.strftime("%Y-%m"),
+        "month": since.strftime("%Y-%m"),
+        "total_budget": total_budget,
+        "total_spent": total_spent,
         "budgets": result_budgets,
     }), 200
 
@@ -603,7 +615,7 @@ async def _api_budgets_update(request: flask.Request, user: User) -> tuple:
 
     sheets = _get_sheets()
     sheets.update_subcategory_budgets(user.spreadsheet_id, validated)
-    return await _api_budgets_get(user)
+    return await _api_budgets_get(request, user)
 
 
 # ── GET /api/settings ───────────────────────────────────────────────────────

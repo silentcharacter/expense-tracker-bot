@@ -118,7 +118,7 @@ export function TransactionList({
                   )}
                 </p>
                 <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
-                  {getCategoryLabel(expense.category)} · {formatShortDate(expense.timestamp)}
+                  {(expense.subcategory || getCategoryLabel(expense.category))} · {formatShortDate(expense.timestamp)}
                 </p>
               </div>
 

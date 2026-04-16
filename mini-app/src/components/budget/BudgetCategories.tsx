@@ -100,7 +100,7 @@ export function BudgetCategories({
       )}
 
       <div className="flex flex-col">
-        {budgets.map((entry) => {
+        {[...budgets].sort((a, b) => b.spent - a.spent).map((entry) => {
           const visibleSubs = hideUnset
             ? entry.subcategories.filter((s) => s.budget > 0)
             : entry.subcategories;
@@ -243,7 +243,8 @@ interface SubRowProps {
 }
 
 function SubRow({ catSlug, sub, onEdit, onDelete }: SubRowProps) {
-  const { format } = useCurrency();
+  const { format, displayMode } = useCurrency();
+  const canEdit = displayMode === "base";
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(sub.budget > 0 ? String(sub.budget) : "");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -310,18 +311,20 @@ function SubRow({ catSlug, sub, onEdit, onDelete }: SubRowProps) {
                 {" / "}
                 <span className="amount">{format(sub.budget, 0)}</span>
               </span>
-              <button
-                onClick={startEdit}
-                className="p-0.5 opacity-60"
-                style={{ color: "var(--app-text-secondary)", border: "none", background: "transparent" }}
-                title="Edit budget"
-              >
-                <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                  <path d="M11.5 2.5l2 2-9 9H2.5v-2l9-9z" />
-                </svg>
-              </button>
+              {canEdit && (
+                <button
+                  onClick={startEdit}
+                  className="p-0.5 opacity-60"
+                  style={{ color: "var(--app-text-secondary)", border: "none", background: "transparent" }}
+                  title="Edit budget"
+                >
+                  <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                    <path d="M11.5 2.5l2 2-9 9H2.5v-2l9-9z" />
+                  </svg>
+                </button>
+              )}
             </>
-          ) : (
+          ) : canEdit ? (
             <button
               onClick={startEdit}
               className="text-xs"
@@ -329,6 +332,10 @@ function SubRow({ catSlug, sub, onEdit, onDelete }: SubRowProps) {
             >
               no budget
             </button>
+          ) : (
+            <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+              no budget
+            </span>
           )}
           <button
             onClick={() => onDelete(catSlug, sub.slug)}

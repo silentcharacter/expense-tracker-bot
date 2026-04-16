@@ -114,6 +114,8 @@ export interface BudgetEntry {
 export interface BudgetsResponse {
   base_currency: string;
   month: string;
+  total_budget: number;
+  total_spent: number;
   budgets: BudgetEntry[];
 }
 

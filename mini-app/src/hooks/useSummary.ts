@@ -22,7 +22,7 @@ export function useSummary(period: Period, offset = 0): UseSummaryResult {
     setIsLoading(true);
     setError(null);
 
-    Promise.all([fetchSummary(period, true, offset), fetchBudgets()])
+    Promise.all([fetchSummary(period, true, offset), fetchBudgets(period === "month" ? offset : 0)])
       .then(([summaryData, budgetsData]) => {
         setSummary(summaryData);
         setBudgets(budgetsData);

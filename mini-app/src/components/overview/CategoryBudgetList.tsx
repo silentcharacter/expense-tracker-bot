@@ -119,9 +119,9 @@ export function CategoryBudgetList({
     }
   }
 
-  // Sort: in month mode keep API order; in day mode sort by day spend desc.
+  // Sort by spent desc: by day spend in day mode, by month spend in month mode.
   const sorted = useMemo(() => {
-    if (!isDay) return budgets;
+    if (!isDay) return [...budgets].sort((a, b) => b.spent - a.spent);
     return [...budgets].sort(
       (a, b) => (dayTotals.byCategory.get(b.category) ?? 0) - (dayTotals.byCategory.get(a.category) ?? 0),
     );

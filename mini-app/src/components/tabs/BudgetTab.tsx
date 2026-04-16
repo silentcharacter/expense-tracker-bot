@@ -76,7 +76,11 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
 
   return (
     <div className="flex flex-col">
-      <BudgetSummaryCard budgets={entries} />
+      <BudgetSummaryCard
+        budgets={entries}
+        totalBudget={budgets?.total_budget ?? 0}
+        totalSpent={budgets?.total_spent ?? 0}
+      />
       <BudgetAllocationChart budgets={entries} />
       <BudgetCategories
         budgets={entries}

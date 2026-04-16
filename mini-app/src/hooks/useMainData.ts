@@ -33,11 +33,12 @@ export interface UseMainDataResult extends MainData {
   refetch: () => Promise<void>;
 }
 
-function monthBounds(now: Date): { since: string; until: string } {
+function monthBounds(offset: number): { since: string; until: string } {
+  const now = new Date();
   const y = now.getFullYear();
-  const m = now.getMonth();
+  const m = now.getMonth() + offset;
   const start = new Date(y, m, 1);
-  const end = new Date(y, m + 1, 0); // last day of this month
+  const end = new Date(y, m + 1, 0); // last day of target month
   const iso = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
       d.getDate(),
@@ -45,7 +46,7 @@ function monthBounds(now: Date): { since: string; until: string } {
   return { since: iso(start), until: iso(end) };
 }
 
-export function useMainData(): UseMainDataResult {
+export function useMainData(monthOffset = 0): UseMainDataResult {
   const [data, setData] = useState<MainData>({
     summary: null,
     budgets: null,
@@ -59,10 +60,10 @@ export function useMainData(): UseMainDataResult {
   const refetch = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    const { since, until } = monthBounds(new Date());
+    const { since, until } = monthBounds(monthOffset);
     try {
       const [summary, budgets, expenses, categories, recurring] = await Promise.all([
-        fetchSummary("month", true, 0),
+        fetchSummary("month", true, monthOffset),
         fetchBudgets(),
         fetchExpenses({ since, until, limit: 200 }),
         fetchCategories(),
@@ -74,7 +75,7 @@ export function useMainData(): UseMainDataResult {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [monthOffset]);
 
   useEffect(() => {
     void refetch();

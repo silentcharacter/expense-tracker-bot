@@ -1,6 +1,7 @@
 /** Donut chart showing how the total budget is split across categories. */
 
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { useState } from "react";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import type { BudgetEntry } from "../../api/types";
 import { useCurrency } from "../../context/CurrencyContext";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../../utils/categories";
@@ -18,36 +19,9 @@ interface Entry {
   color: string;
 }
 
-function AllocationTooltip({
-  active,
-  payload,
-  format,
-}: {
-  active?: boolean;
-  payload?: { payload: Entry }[];
-  format: (amount: number, decimals?: number) => string;
-}) {
-  if (!active || !payload?.length) return null;
-  const item = payload[0].payload;
-  return (
-    <div
-      className="px-3 py-2 rounded-lg text-sm shadow-lg"
-      style={{
-        backgroundColor: "var(--tg-theme-bg-color, #1a1a2e)",
-        border: "1px solid var(--app-border)",
-        color: "var(--app-text-primary)",
-      }}
-    >
-      <p className="font-medium">{item.label}</p>
-      <p className="amount" style={{ color: "var(--app-text-secondary)" }}>
-        {format(item.budget, 0)} · {formatPercent(item.percentage)}
-      </p>
-    </div>
-  );
-}
-
 export function BudgetAllocationChart({ budgets }: BudgetAllocationChartProps) {
   const { format } = useCurrency();
+  const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const total = budgets.reduce((s, b) => s + b.budget, 0);
   if (total === 0) return null;
@@ -65,6 +39,8 @@ export function BudgetAllocationChart({ budgets }: BudgetAllocationChartProps) {
 
   if (data.length === 0) return null;
 
+  const activeEntry = activeKey ? data.find((d) => d.key === activeKey) ?? null : null;
+
   return (
     <div className="card">
       <p
@@ -74,35 +50,66 @@ export function BudgetAllocationChart({ budgets }: BudgetAllocationChartProps) {
         Allocation
       </p>
       <div className="flex items-center gap-3">
-        <div className="relative flex-shrink-0" style={{ width: 130, height: 130 }}>
+        <div className="relative flex-shrink-0" style={{ width: 160, height: 160 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
                 data={data}
                 dataKey="budget"
                 nameKey="key"
-                innerRadius="55%"
-                outerRadius="85%"
+                innerRadius="60%"
+                outerRadius="90%"
                 paddingAngle={2}
                 stroke="none"
+                isAnimationActive={false}
+                onMouseEnter={(_, index) => setActiveKey(data[index]?.key ?? null)}
+                onMouseLeave={() => setActiveKey(null)}
               >
                 {data.map((entry) => (
-                  <Cell key={entry.key} fill={entry.color} />
+                  <Cell
+                    key={entry.key}
+                    fill={entry.color}
+                    fillOpacity={activeKey && activeKey !== entry.key ? 0.35 : 1}
+                  />
                 ))}
               </Pie>
-              <Tooltip content={<AllocationTooltip format={format} />} />
             </PieChart>
           </ResponsiveContainer>
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span
-              className="amount text-[13px] font-bold leading-tight"
-              style={{ color: "var(--app-text-primary)" }}
-            >
-              {format(total, 0)}
-            </span>
-            <span className="text-[9px] leading-tight" style={{ color: "var(--app-text-secondary)" }}>
-              budget
-            </span>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 text-center">
+            {activeEntry ? (
+              <>
+                <span
+                  className="text-[10px] font-medium leading-tight truncate max-w-full"
+                  style={{ color: "var(--app-text-secondary)" }}
+                >
+                  {activeEntry.label}
+                </span>
+                <span
+                  className="amount text-[12px] font-bold leading-tight"
+                  style={{ color: "var(--app-text-primary)" }}
+                >
+                  {format(activeEntry.budget, 0)}
+                </span>
+                <span
+                  className="text-[10px] leading-tight"
+                  style={{ color: "var(--app-text-secondary)" }}
+                >
+                  {formatPercent(activeEntry.percentage, false, 0)}
+                </span>
+              </>
+            ) : (
+              <>
+                <span
+                  className="amount text-[13px] font-bold leading-tight"
+                  style={{ color: "var(--app-text-primary)" }}
+                >
+                  {format(total, 0)}
+                </span>
+                <span className="text-[9px] leading-tight" style={{ color: "var(--app-text-secondary)" }}>
+                  budget
+                </span>
+              </>
+            )}
           </div>
         </div>
         <div className="flex flex-col gap-1.5 flex-1 min-w-0">

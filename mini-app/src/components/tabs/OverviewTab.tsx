@@ -11,6 +11,10 @@ interface OverviewTabProps {
   summary: SummaryResponse | null;
   budgets: BudgetsResponse | null;
   expenses: ExpensesResponse | null;
+  /** 4-digit year of the viewed month. */
+  referenceYear: number;
+  /** Month index (0-11) of the viewed month. */
+  referenceMonth: number;
   filterDay: string | null;
   filterCategory: CategoryFilter | null;
   onSelectDay: (day: string | null) => void;
@@ -21,6 +25,8 @@ export function OverviewTab({
   summary,
   budgets,
   expenses,
+  referenceYear,
+  referenceMonth,
   filterDay,
   filterCategory,
   onSelectDay,
@@ -34,6 +40,8 @@ export function OverviewTab({
     <div className="flex flex-col">
       <DailyHeatmap
         expenses={expenseList}
+        referenceYear={referenceYear}
+        referenceMonth={referenceMonth}
         selectedDay={filterDay}
         onDaySelect={onSelectDay}
       />

@@ -45,6 +45,12 @@ function periodLabel(period?: string, dateRange?: { start: string; end: string }
 }
 
 function previousPeriodName(period?: string, dateRange?: { start: string; end: string }): string {
+  if (dateRange && (!period || period === "month")) {
+    const start = new Date(dateRange.start + "T12:00:00");
+    const prev = new Date(start);
+    prev.setMonth(prev.getMonth() - 1);
+    return prev.toLocaleDateString(undefined, { month: "long" });
+  }
   if (!period || !dateRange) {
     const now = new Date();
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -52,11 +58,6 @@ function previousPeriodName(period?: string, dateRange?: { start: string; end: s
   }
   const start = new Date(dateRange.start + "T12:00:00");
   if (period === "today") return "yesterday";
-  if (period === "month") {
-    const prev = new Date(start);
-    prev.setMonth(prev.getMonth() - 1);
-    return prev.toLocaleDateString(undefined, { month: "long" });
-  }
   if (period === "year") return String(start.getFullYear() - 1);
   return "last week";
 }

@@ -13,6 +13,10 @@ interface NewHeaderProps {
   dayOfMonth: number;
   /** Total days in the current month. */
   daysInMonth: number;
+  /** 0 = current month, -1 = previous, etc. */
+  monthOffset: number;
+  /** Change the viewed month. */
+  onMonthOffsetChange: (offset: number) => void;
   /** Opens the settings modal. */
   onOpenSettings: () => void;
 }
@@ -35,12 +39,23 @@ function GearIcon() {
   );
 }
 
-export function NewHeader({ dayOfMonth, daysInMonth, onOpenSettings }: NewHeaderProps) {
+export function NewHeader({
+  dayOfMonth,
+  daysInMonth,
+  monthOffset,
+  onMonthOffsetChange,
+  onOpenSettings,
+}: NewHeaderProps) {
   const { displayMode, baseCurrency, defaultCurrency, setMode } = useCurrency();
   const { hapticFeedback } = useTelegram();
 
   const now = new Date();
-  const monthLabel = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const viewed = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  const monthLabel = viewed.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+  const isCurrentMonth = monthOffset === 0;
 
   const sameCurrency = baseCurrency.toUpperCase() === defaultCurrency.toUpperCase();
 
@@ -55,16 +70,75 @@ export function NewHeader({ dayOfMonth, daysInMonth, onOpenSettings }: NewHeader
     onOpenSettings();
   }
 
+  function handlePrev() {
+    hapticFeedback?.impactOccurred("light");
+    onMonthOffsetChange(monthOffset - 1);
+  }
+
+  function handleNext() {
+    if (monthOffset >= 0) return;
+    hapticFeedback?.impactOccurred("light");
+    onMonthOffsetChange(monthOffset + 1);
+  }
+
   return (
     <header
       className="flex items-center justify-between pt-3 pb-2"
       style={{ color: "var(--app-text-primary)" }}
     >
-      <div>
-        <h1 className="text-lg font-semibold leading-tight">{monthLabel}</h1>
-        <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
-          Day {dayOfMonth} of {daysInMonth}
-        </p>
+      <div className="flex items-center gap-1 min-w-0">
+        <button
+          type="button"
+          onClick={handlePrev}
+          className="flex items-center justify-center rounded-full"
+          style={{
+            width: 28,
+            height: 28,
+            background: "transparent",
+            color: "var(--app-text-secondary)",
+            border: "none",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+          aria-label="Previous month"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold leading-tight truncate">{monthLabel}</h1>
+          {isCurrentMonth ? (
+            <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+              Day {dayOfMonth} of {daysInMonth}
+            </p>
+          ) : (
+            <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+              Full month
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleNext}
+          disabled={monthOffset >= 0}
+          className="flex items-center justify-center rounded-full"
+          style={{
+            width: 28,
+            height: 28,
+            background: "transparent",
+            color: "var(--app-text-secondary)",
+            border: "none",
+            cursor: monthOffset < 0 ? "pointer" : "default",
+            opacity: monthOffset < 0 ? 1 : 0.3,
+            flexShrink: 0,
+          }}
+          aria-label="Next month"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
       </div>
 
       <div className="flex items-center gap-2">

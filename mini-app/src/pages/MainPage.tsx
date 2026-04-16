@@ -74,6 +74,7 @@ function BudgetSkeleton() {
 
 export function MainPage() {
   const { user } = useUser();
+  const [monthOffset, setMonthOffset] = useState(0);
   const {
     summary,
     budgets,
@@ -82,12 +83,19 @@ export function MainPage() {
     isLoading,
     error,
     refetch,
-  } = useMainData();
+  } = useMainData(monthOffset);
 
   const [activeTab, setActiveTab] = useState<SubTab>("overview");
   const [showSettings, setShowSettings] = useState(false);
   const [filterDay, setFilterDay] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<CategoryFilter | null>(null);
+
+  function handleMonthChange(next: number) {
+    if (next === monthOffset) return;
+    setMonthOffset(next);
+    setFilterDay(null);
+    setFilterCategory(null);
+  }
 
   const baseCurrency = summary?.base_currency ?? user?.base_currency ?? "USD";
   const defaultCurrency =
@@ -95,7 +103,10 @@ export function MainPage() {
   const rate = summary?.default_currency_rate ?? 1;
 
   const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const viewedMonth = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  const viewedYear = viewedMonth.getFullYear();
+  const viewedMonthIndex = viewedMonth.getMonth();
+  const daysInMonth = new Date(viewedYear, viewedMonthIndex + 1, 0).getDate();
   const dayOfMonth = now.getDate();
 
   const budgetTotal = (budgets?.budgets ?? []).reduce((s, b) => s + b.budget, 0);
@@ -115,6 +126,8 @@ export function MainPage() {
         <NewHeader
           dayOfMonth={dayOfMonth}
           daysInMonth={daysInMonth}
+          monthOffset={monthOffset}
+          onMonthOffsetChange={handleMonthChange}
           onOpenSettings={() => setShowSettings(true)}
         />
 
@@ -146,6 +159,7 @@ export function MainPage() {
                 dailyAverage={summary.daily_average}
                 budgetUsedPercent={budgetUsedPercent}
                 comparison={summary.comparison}
+                dateRange={summary.date_range}
               />
             ) : (
               <TotalCardSkeleton />
@@ -162,6 +176,8 @@ export function MainPage() {
                     summary={summary}
                     budgets={budgets}
                     expenses={expenses}
+                    referenceYear={viewedYear}
+                    referenceMonth={viewedMonthIndex}
                     filterDay={filterDay}
                     filterCategory={filterCategory}
                     onSelectDay={setFilterDay}

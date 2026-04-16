@@ -13,6 +13,10 @@ import { useTelegram } from "../../hooks/useTelegram";
 
 interface DailyHeatmapProps {
   expenses: Expense[];
+  /** 4-digit year of the month to render. */
+  referenceYear: number;
+  /** Month index (0-11) of the month to render. */
+  referenceMonth: number;
   /** ISO date string "YYYY-MM-DD" or null. */
   selectedDay: string | null;
   onDaySelect: (date: string | null) => void;
@@ -31,12 +35,13 @@ function isoDate(y: number, m: number, d: number): string {
   return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-function computeDays(expenses: Expense[]): DayStats[] {
+function computeDays(expenses: Expense[], y: number, m: number): DayStats[] {
   const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
-  const todayDay = now.getDate();
+  const isCurrentMonth = y === now.getFullYear() && m === now.getMonth();
+  const isPastMonth =
+    y < now.getFullYear() || (y === now.getFullYear() && m < now.getMonth());
+  const todayDay = isCurrentMonth ? now.getDate() : isPastMonth ? daysInMonth : 0;
 
   const byDay = new Map<number, { total: number; recurring: number; count: number }>();
   for (const e of expenses) {
@@ -94,11 +99,20 @@ function formatBannerDate(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function DailyHeatmap({ expenses, selectedDay, onDaySelect }: DailyHeatmapProps) {
+export function DailyHeatmap({
+  expenses,
+  referenceYear,
+  referenceMonth,
+  selectedDay,
+  onDaySelect,
+}: DailyHeatmapProps) {
   const { format } = useCurrency();
   const { hapticFeedback } = useTelegram();
 
-  const days = useMemo(() => computeDays(expenses), [expenses]);
+  const days = useMemo(
+    () => computeDays(expenses, referenceYear, referenceMonth),
+    [expenses, referenceYear, referenceMonth],
+  );
   const thresholds = useMemo(() => computeThresholds(days), [days]);
   const selected = selectedDay ? days.find((d) => d.iso === selectedDay) ?? null : null;
 
@@ -150,7 +164,9 @@ export function DailyHeatmap({ expenses, selectedDay, onDaySelect }: DailyHeatma
               aria-label={`${formatBannerDate(d.iso)} ${format(d.total, 0)}`}
               onClick={() => handleClick(d)}
               disabled={d.isFuture}
-            />
+            >
+              <span className="heatmap-cell__day">{d.day}</span>
+            </button>
           );
         })}
       </div>

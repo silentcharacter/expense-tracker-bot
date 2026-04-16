@@ -3,10 +3,14 @@
  * MainPage renders Overview / Trends / Budget sub-tabs from the same data set,
  * so it's cheaper (and simpler) to load everything once on mount instead of
  * each sub-tab re-fetching what it needs.
+ *
+ * Bundles are cached per-monthOffset in sessionStorage (10-min TTL). Any
+ * mutation calls `refetch()` which clears every cached month before reloading.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchBudgets } from "../api/budgets";
+import { clearCache, getCached, setCached } from "../api/cache";
 import { fetchCategories } from "../api/categories";
 import { fetchExpenses } from "../api/expenses";
 import { fetchRecurring } from "../api/recurring";
@@ -33,6 +37,14 @@ export interface UseMainDataResult extends MainData {
   refetch: () => Promise<void>;
 }
 
+const EMPTY: MainData = {
+  summary: null,
+  budgets: null,
+  expenses: null,
+  categories: null,
+  recurring: null,
+};
+
 function monthBounds(offset: number): { since: string; until: string } {
   const now = new Date();
   const y = now.getFullYear();
@@ -46,30 +58,34 @@ function monthBounds(offset: number): { since: string; until: string } {
   return { since: iso(start), until: iso(end) };
 }
 
+function cacheKey(offset: number): string {
+  return `main:${offset}`;
+}
+
+async function fetchBundle(monthOffset: number): Promise<MainData> {
+  const { since, until } = monthBounds(monthOffset);
+  const [summary, budgets, expenses, categories, recurring] = await Promise.all([
+    fetchSummary("month", true, monthOffset),
+    fetchBudgets(monthOffset),
+    fetchExpenses({ since, until, limit: 200 }),
+    fetchCategories(),
+    fetchRecurring(),
+  ]);
+  return { summary, budgets, expenses, categories, recurring };
+}
+
 export function useMainData(monthOffset = 0): UseMainDataResult {
-  const [data, setData] = useState<MainData>({
-    summary: null,
-    budgets: null,
-    expenses: null,
-    categories: null,
-    recurring: null,
-  });
+  const [data, setData] = useState<MainData>(EMPTY);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refetch = useCallback(async () => {
+  const loadFresh = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    const { since, until } = monthBounds(monthOffset);
     try {
-      const [summary, budgets, expenses, categories, recurring] = await Promise.all([
-        fetchSummary("month", true, monthOffset),
-        fetchBudgets(monthOffset),
-        fetchExpenses({ since, until, limit: 200 }),
-        fetchCategories(),
-        fetchRecurring(),
-      ]);
-      setData({ summary, budgets, expenses, categories, recurring });
+      const bundle = await fetchBundle(monthOffset);
+      setData(bundle);
+      setCached(cacheKey(monthOffset), bundle);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
@@ -77,9 +93,22 @@ export function useMainData(monthOffset = 0): UseMainDataResult {
     }
   }, [monthOffset]);
 
+  const refetch = useCallback(async () => {
+    clearCache();
+    await loadFresh();
+  }, [loadFresh]);
+
   useEffect(() => {
-    void refetch();
-  }, [refetch]);
+    const cached = getCached<MainData>(cacheKey(monthOffset));
+    if (cached) {
+      setData(cached);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+    setData(EMPTY);
+    void loadFresh();
+  }, [monthOffset, loadFresh]);
 
   return { ...data, isLoading, error, refetch };
 }

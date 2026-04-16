@@ -72,9 +72,17 @@ export function CategoryBudgetList({
 
   const isDay = filterDay !== null;
 
+  const getVisibleSubs = (cat: BudgetEntry) =>
+    cat.subcategories.filter((sub) =>
+      isDay
+        ? (dayTotals.bySub.get(`${cat.category}/${sub.slug}`) ?? 0) > 0
+        : sub.spent > 0,
+    );
+
   const expandable = useMemo(
-    () => budgets.filter((b) => b.subcategories.length > 0).map((b) => b.category),
-    [budgets],
+    () => budgets.filter((b) => getVisibleSubs(b).length > 0).map((b) => b.category),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [budgets, isDay, dayTotals],
   );
   const allExpanded = expandable.length > 0 && expandable.every((c) => expanded.has(c));
 
@@ -121,7 +129,7 @@ export function CategoryBudgetList({
 
   const visible = isDay
     ? sorted.filter((b) => (dayTotals.byCategory.get(b.category) ?? 0) > 0)
-    : sorted;
+    : sorted.filter((b) => b.spent > 0);
 
   return (
     <div className="card">
@@ -155,14 +163,15 @@ export function CategoryBudgetList({
 
       {visible.length === 0 && (
         <p className="text-sm text-center py-4" style={{ color: "var(--app-text-secondary)" }}>
-          {isDay ? "No spending this day" : "No categories yet"}
+          {isDay ? "No spending this day" : "No spending this period"}
         </p>
       )}
 
       {/* Rows */}
       <div className="flex flex-col">
         {visible.map((cat) => {
-          const hasSubs = cat.subcategories.length > 0;
+          const visibleSubs = getVisibleSubs(cat);
+          const hasSubs = visibleSubs.length > 0;
           const isExpanded = expanded.has(cat.category);
           const isSelected = selected?.category === cat.category && !selected.subcategory;
 
@@ -251,7 +260,7 @@ export function CategoryBudgetList({
                   className="ml-6 pl-3 mb-1"
                   style={{ borderLeft: "2px solid var(--app-border)" }}
                 >
-                  {cat.subcategories.map((sub) => (
+                  {visibleSubs.map((sub) => (
                     <SubRow
                       key={sub.slug}
                       sub={sub}

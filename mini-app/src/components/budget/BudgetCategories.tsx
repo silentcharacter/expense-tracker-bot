@@ -27,6 +27,8 @@ function pctColor(pct: number): string {
   return "var(--app-success)";
 }
 
+const HIDE_UNSET_STORAGE_KEY = "budget_hide_unset";
+
 export function BudgetCategories({
   budgets,
   onEditSubcategory,
@@ -37,6 +39,18 @@ export function BudgetCategories({
 }: BudgetCategoriesProps) {
   const { hapticFeedback } = useTelegram();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [hideUnset, setHideUnset] = useState<boolean>(
+    () => localStorage.getItem(HIDE_UNSET_STORAGE_KEY) === "true",
+  );
+
+  function toggleHideUnset() {
+    hapticFeedback?.selectionChanged();
+    setHideUnset((prev) => {
+      const next = !prev;
+      localStorage.setItem(HIDE_UNSET_STORAGE_KEY, String(next));
+      return next;
+    });
+  }
 
   function toggleExpand(catSlug: string) {
     hapticFeedback?.selectionChanged();
@@ -57,13 +71,26 @@ export function BudgetCategories({
         >
           Categories
         </p>
-        <button
-          onClick={onAddCategory}
-          className="text-xs px-3 py-1 rounded-full font-medium"
-          style={{ background: "var(--app-secondary-bg)", color: "var(--app-accent)", border: "none" }}
-        >
-          + Add
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleHideUnset}
+            className="text-xs px-3 py-1 rounded-full font-medium"
+            style={{
+              background: hideUnset ? "var(--app-accent)" : "var(--app-secondary-bg)",
+              color: hideUnset ? "#fff" : "var(--app-text-secondary)",
+              border: "none",
+            }}
+          >
+            {hideUnset ? "Show all" : "Hide unset"}
+          </button>
+          <button
+            onClick={onAddCategory}
+            className="text-xs px-3 py-1 rounded-full font-medium"
+            style={{ background: "var(--app-secondary-bg)", color: "var(--app-accent)", border: "none" }}
+          >
+            + Add
+          </button>
+        </div>
       </div>
 
       {budgets.length === 0 && (
@@ -74,7 +101,11 @@ export function BudgetCategories({
 
       <div className="flex flex-col">
         {budgets.map((entry) => {
-          const hasSubs = entry.subcategories.length > 0;
+          const visibleSubs = hideUnset
+            ? entry.subcategories.filter((s) => s.budget > 0)
+            : entry.subcategories;
+          if (hideUnset && entry.budget === 0 && visibleSubs.length === 0) return null;
+          const hasSubs = visibleSubs.length > 0;
           const isExpanded = expanded.has(entry.category);
           const hasBudget = entry.budget > 0;
           const pct = hasBudget ? entry.percentage : 0;
@@ -172,7 +203,7 @@ export function BudgetCategories({
                   className="ml-6 pl-3 py-2 rounded-lg"
                   style={{ background: "var(--app-secondary-bg)" }}
                 >
-                  {entry.subcategories.map((sub) => (
+                  {visibleSubs.map((sub) => (
                     <SubRow
                       key={sub.slug}
                       catSlug={entry.category}

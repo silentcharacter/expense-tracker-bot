@@ -135,7 +135,7 @@ function DateRangePicker({
 
 function SettingsSkeleton() {
   return (
-    <div className="page-content py-4 flex flex-col gap-3">
+    <div className="py-4 flex flex-col gap-3">
       <div className="card flex items-center gap-4">
         <div className="rounded-full skeleton flex-shrink-0" style={{ width: 64, height: 64 }} />
         <div className="flex-1 flex flex-col gap-2">
@@ -176,7 +176,7 @@ export function SettingsPage() {
   if (isLoading && !user) return <SettingsSkeleton />;
   if (!user) {
     return (
-      <div className="page-content py-4">
+      <div className="py-4">
         <div className="card text-center py-8">
           <p className="text-sm" style={{ color: "var(--app-text-secondary)" }}>
             Could not load settings. Please try again.
@@ -258,7 +258,7 @@ export function SettingsPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="page-content py-4 flex flex-col">
+    <div className="py-4 flex flex-col">
 
       {/* ── Profile header ─────────────────────────────────────────────────── */}
       <div className="card flex items-center gap-4">

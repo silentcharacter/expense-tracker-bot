@@ -13,46 +13,58 @@ interface BudgetSummaryCardProps {
 }
 
 function ArcGauge({ pct }: { pct: number }) {
-  const r = 54;
+  const r = 60;
+  const cx = 80;
+  const cy = 75;
   const circ = 2 * Math.PI * r;
+  const arcLen = circ * 0.5; // 180° arc, top half only
   const fill = Math.min(pct, 100);
-  const offset = circ * (1 - fill / 100);
+  const fillLen = arcLen * (fill / 100);
   const color =
     pct > 90 ? "var(--app-danger)" : pct >= 70 ? "#fbbf24" : "var(--app-accent)";
   return (
-    <svg width={130} height={130} viewBox="0 0 130 130">
-      <circle cx={65} cy={65} r={r} fill="none" stroke="var(--app-secondary-bg)" strokeWidth={10} />
+    <svg width={160} height={95} viewBox="0 0 160 95">
       <circle
-        cx={65}
-        cy={65}
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill="none"
+        stroke="var(--app-secondary-bg)"
+        strokeWidth={12}
+        strokeLinecap="round"
+        strokeDasharray={`${arcLen} ${circ}`}
+        transform={`rotate(180 ${cx} ${cy})`}
+      />
+      <circle
+        cx={cx}
+        cy={cy}
         r={r}
         fill="none"
         stroke={color}
-        strokeWidth={10}
+        strokeWidth={12}
         strokeLinecap="round"
-        strokeDasharray={circ}
-        strokeDashoffset={offset}
-        transform="rotate(-90 65 65)"
-        style={{ transition: "stroke-dashoffset 0.5s ease" }}
+        strokeDasharray={`${fillLen} ${circ}`}
+        transform={`rotate(180 ${cx} ${cy})`}
+        style={{ transition: "stroke-dasharray 0.5s ease" }}
       />
       <text
-        x={65}
-        y={60}
+        x={cx}
+        y={cy - 18}
         textAnchor="middle"
         dominantBaseline="middle"
-        fill={color}
-        fontSize={20}
+        fill="var(--app-text-primary)"
+        fontSize={24}
         fontWeight={700}
       >
         {Math.round(fill)}%
       </text>
       <text
-        x={65}
-        y={80}
+        x={cx}
+        y={cy + 2}
         textAnchor="middle"
         dominantBaseline="middle"
         fill="var(--app-text-secondary)"
-        fontSize={10}
+        fontSize={11}
       >
         used
       </text>

@@ -3,6 +3,7 @@
 import logging
 import os
 import random
+import threading
 import time
 from datetime import datetime, date
 from typing import Optional
@@ -20,10 +21,29 @@ from models.category import UserCategory, UserSubcategory, default_user_categori
 _category_cache: dict[str, tuple[list[UserCategory], float]] = {}
 _CATEGORY_TTL = 300.0  # 5 minutes
 
-# Module-level transaction cache: spreadsheet_id → (list[ExpenseRecord], expiry_timestamp)
-# Short TTL to collapse burst reads from the mini app without serving very stale data.
+# Module-level transaction cache: spreadsheet_id → (list[ExpenseRecord], expiry_timestamp).
+# Writes invalidate, so a longer TTL is safe and keeps us well under Sheets'
+# 300 reads/min/user quota when the Mini App fans out across endpoints.
 _transaction_cache: dict[str, tuple[list["ExpenseRecord"], float]] = {}
-_TRANSACTION_TTL = 30.0  # 30 seconds
+_TRANSACTION_TTL = 300.0  # 5 minutes
+
+# Per-spreadsheet locks so concurrent callers coalesce onto a single fetch
+# instead of each one blowing past the cache miss into the API (thundering herd).
+_transaction_fetch_locks: dict[str, threading.Lock] = {}
+_transaction_fetch_locks_guard = threading.Lock()
+
+
+def _fetch_lock_for(spreadsheet_id: str) -> threading.Lock:
+    """Return the per-spreadsheet lock used to serialise transaction fetches."""
+    lock = _transaction_fetch_locks.get(spreadsheet_id)
+    if lock is not None:
+        return lock
+    with _transaction_fetch_locks_guard:
+        lock = _transaction_fetch_locks.get(spreadsheet_id)
+        if lock is None:
+            lock = threading.Lock()
+            _transaction_fetch_locks[spreadsheet_id] = lock
+        return lock
 
 # Spreadsheets whose Transactions header has already been migrated this process lifetime.
 _migrated_transactions_headers: set[str] = set()
@@ -188,30 +208,39 @@ class SheetsService:
         _migrated_transactions_headers.add(spreadsheet_id)
 
     def _get_all_transactions(self, spreadsheet_id: str) -> list[ExpenseRecord]:
-        """Return every parsed record for a spreadsheet, with 30s TTL cache."""
-        now = time.monotonic()
+        """Return every parsed record for a spreadsheet, with a TTL cache.
+
+        Concurrent callers that miss the cache are serialised on a per-spreadsheet
+        lock so only one of them hits the API; the rest pick up the freshly cached
+        result on their second check.
+        """
         cached = _transaction_cache.get(spreadsheet_id)
-        if cached and now < cached[1]:
+        if cached and time.monotonic() < cached[1]:
             return cached[0]
 
-        self._ensure_transactions_columns(spreadsheet_id)
-        sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        rows = _with_retry(lambda: sheet.get_all_records(
-            expected_headers=ExpenseRecord.sheet_headers(),
-            value_render_option=ValueRenderOption.unformatted,
-        ))
+        with _fetch_lock_for(spreadsheet_id):
+            cached = _transaction_cache.get(spreadsheet_id)
+            if cached and time.monotonic() < cached[1]:
+                return cached[0]
 
-        records: list[ExpenseRecord] = []
-        for row in rows:
-            try:
-                records.append(ExpenseRecord(**row))
-            except Exception:
-                continue
+            self._ensure_transactions_columns(spreadsheet_id)
+            sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
+            rows = _with_retry(lambda: sheet.get_all_records(
+                expected_headers=ExpenseRecord.sheet_headers(),
+                value_render_option=ValueRenderOption.unformatted,
+            ))
 
-        records.sort(key=lambda r: r.timestamp, reverse=True)
-        _transaction_cache[spreadsheet_id] = (records, now + _TRANSACTION_TTL)
-        logger.debug("Cached %d transactions for %s (TTL %.0fs)", len(records), spreadsheet_id, _TRANSACTION_TTL)
-        return records
+            records: list[ExpenseRecord] = []
+            for row in rows:
+                try:
+                    records.append(ExpenseRecord(**row))
+                except Exception:
+                    continue
+
+            records.sort(key=lambda r: r.timestamp, reverse=True)
+            _transaction_cache[spreadsheet_id] = (records, time.monotonic() + _TRANSACTION_TTL)
+            logger.debug("Cached %d transactions for %s (TTL %.0fs)", len(records), spreadsheet_id, _TRANSACTION_TTL)
+            return records
 
     def get_transactions(
         self,
@@ -222,8 +251,9 @@ class SheetsService:
     ) -> list[ExpenseRecord]:
         """Fetch transactions optionally filtered by date range.
 
-        Uses a short in-memory TTL cache to collapse burst reads from the
-        mini app (multiple endpoints reading the same sheet in parallel).
+        Uses an in-memory TTL cache (invalidated on write) to collapse burst
+        reads from the mini app — multiple endpoints reading the same sheet
+        in parallel share a single underlying fetch.
 
         Args:
             spreadsheet_id: User's Spreadsheet ID.

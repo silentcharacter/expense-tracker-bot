@@ -143,12 +143,12 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
         cat_slug = path.split("/")[2]
         return await _api_category_delete(user, cat_slug)
     elif path == "/recurring" and method == "GET":
-        return _api_recurring_get(user)
+        return await _api_recurring_get(user)
     elif path == "/recurring" and method == "POST":
         return await _api_recurring_add(request, user)
     elif path.startswith("/recurring/") and method == "DELETE":
         entry_id = path[len("/recurring/"):]
-        return _api_recurring_delete(user, entry_id)
+        return await _api_recurring_delete(user, entry_id)
     else:
         return jsonify({"error": "not found"}), 404
 
@@ -244,7 +244,7 @@ def _record_to_dict(r: ExpenseRecord) -> dict:
 # ── Spending pace ───────────────────────────────────────────────────────────
 
 
-def _compute_spending_pace(
+async def _compute_spending_pace(
     sheets: SheetsService,
     user: User,
     records: list[ExpenseRecord],
@@ -270,11 +270,12 @@ def _compute_spending_pace(
     recurring_spent = round(sum(r.amount_base for r in records if r.recurring), 4)
     discretionary_spent = round(total_base - recurring_spent, 4)
 
-    # Recurring template total for the month (sum of "amount" cells in Reccuring sheet).
+    # Recurring template total for the month: sum of each template's
+    # amount_local converted to base currency via the FX service.
     try:
         recurring_items = sheets.get_recurring(user.spreadsheet_id)
-        recurring_total = round(
-            sum(float(it.get("amount", 0) or 0) for it in recurring_items), 4
+        recurring_total = await _recurring_base_total(
+            recurring_items, user.base_currency, user.default_currency
         )
     except Exception as exc:
         logger.warning("Could not read recurring sheet for pace calc: %s", exc)
@@ -339,6 +340,7 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
 
     total_base = sum(r.amount_base for r in records)
+    discretionary_base = sum(r.amount_base for r in records if not r.recurring)
     days = max((until - since).days + 1, 1)
 
     # By category
@@ -411,7 +413,7 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "total_base": round(total_base, 4),
         "base_currency": user.base_currency,
         "transaction_count": len(records),
-        "daily_average": round(total_base / days, 4),
+        "daily_average": round(discretionary_base / days, 4),
         "days_remaining": days_remaining,
         "by_category": by_category,
         "by_currency": by_currency,
@@ -432,7 +434,7 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
 
     # ── spending_pace (current month only) ──────────────────────────────────
     if period == "month" and offset == 0:
-        result["spending_pace"] = _compute_spending_pace(
+        result["spending_pace"] = await _compute_spending_pace(
             sheets, user, records, total_base, since, until
         )
 
@@ -825,31 +827,99 @@ async def _api_subcategory_create(request: flask.Request, user: User, cat_slug: 
     return _api_categories_get(user)
 
 
+# ── Recurring helpers ────────────────────────────────────────────────────────
+
+
+def _parse_recurring_local_amount(row: dict) -> float:
+    """Extract amount_local from a recurring row, falling back to the legacy
+    ``amount`` column for rows written before amount_local became canonical."""
+    raw = row.get("amount_local")
+    if raw in (None, ""):
+        raw = row.get("amount")
+    try:
+        return float(raw) if raw not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def _recurring_base_total(
+    rows: list[dict], base_currency: str, default_currency: str
+) -> float:
+    """Sum recurring template amounts converted to the user's base currency.
+
+    Each row's ``amount_local`` is interpreted in its ``local_currency`` (or
+    the user's default_currency when missing) and converted via the currency
+    service. Failed conversions fall back to 1.0 to keep the endpoint working.
+    """
+    currency = _get_currency()
+    base_cur = base_currency.upper()
+    total = 0.0
+    for row in rows:
+        amount_local = _parse_recurring_local_amount(row)
+        if amount_local <= 0:
+            continue
+        local_cur = str(row.get("local_currency") or default_currency).upper()
+        if local_cur == base_cur:
+            total += amount_local
+            continue
+        try:
+            rate = await currency.get_rate(local_cur, base_cur)
+        except Exception as exc:
+            logger.warning(
+                "FX rate fetch failed for recurring row %s (%s→%s): %s",
+                row.get("id"), local_cur, base_cur, exc,
+            )
+            rate = 1.0
+        total += amount_local * rate
+    return round(total, 4)
+
+
 # ── GET /api/recurring ───────────────────────────────────────────────────────
 
 
-def _api_recurring_get(user: User) -> tuple:
-    """Return all recurring expense entries."""
+async def _api_recurring_get(user: User) -> tuple:
+    """Return all recurring expense entries with amounts converted to base currency."""
     sheets = _get_sheets()
+    currency = _get_currency()
     rows = sheets.get_recurring(user.spreadsheet_id)
+    base_cur = user.base_currency.upper()
+
     items = []
+    total_base = 0.0
     for row in rows:
+        amount_local = _parse_recurring_local_amount(row)
+        local_cur = str(row.get("local_currency") or user.default_currency).upper()
+        if amount_local <= 0:
+            amount_base = 0.0
+        elif local_cur == base_cur:
+            amount_base = amount_local
+        else:
+            try:
+                rate = await currency.get_rate(local_cur, base_cur)
+                amount_base = round(amount_local * rate, 4)
+            except Exception as exc:
+                logger.warning(
+                    "FX rate fetch failed for recurring row %s (%s→%s): %s",
+                    row.get("id"), local_cur, base_cur, exc,
+                )
+                amount_base = amount_local
+        total_base += amount_base
         items.append({
             "id": str(row.get("id", "")),
             "category": row.get("category", ""),
             "subcategory": row.get("subcategory", ""),
             "description": row.get("description", ""),
-            "amount": float(row.get("amount", 0) or 0),
-            "amount_local": float(row.get("amount_local", 0) or 0),
-            "local_currency": row.get("local_currency", user.default_currency),
+            "amount_base": round(amount_base, 4),
+            "amount_local": amount_local,
+            "local_currency": local_cur,
             "day_of_month": int(row.get("day_of_month", 1) or 1),
         })
-    total = sum(item["amount"] for item in items)
+
     return jsonify({
         "base_currency": user.base_currency,
         "default_currency": user.default_currency,
         "items": items,
-        "total": total,
+        "total": round(total_base, 4),
     }), 200
 
 
@@ -857,36 +927,54 @@ def _api_recurring_get(user: User) -> tuple:
 
 
 async def _api_recurring_add(request: flask.Request, user: User) -> tuple:
-    """Add a new recurring expense entry."""
+    """Add a new recurring expense entry.
+
+    The client sends the amount in the currency the user typed it in
+    (``amount_local`` + ``local_currency``); conversion to base currency
+    happens at read time.
+    """
     body = request.get_json(silent=True) or {}
     description = str(body.get("description", "")).strip()
     if not description:
         return jsonify({"error": "description is required"}), 400
-    amount = body.get("amount")
-    if amount is None:
-        return jsonify({"error": "amount is required"}), 400
+
+    raw_amount = body.get("amount_local")
+    if raw_amount in (None, ""):
+        raw_amount = body.get("amount")  # client backward-compat
+    if raw_amount in (None, ""):
+        return jsonify({"error": "amount_local is required"}), 400
+    try:
+        amount_local = float(raw_amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount_local must be a number"}), 400
+    if amount_local <= 0:
+        return jsonify({"error": "amount_local must be positive"}), 400
+
+    local_currency = str(body.get("local_currency") or user.default_currency).upper()
 
     entry = {
         "category": body.get("category", ""),
         "subcategory": body.get("subcategory", ""),
         "description": description,
-        "amount": float(amount),
-        "amount_local": float(body.get("amount_local", amount)),
-        "local_currency": body.get("local_currency", user.default_currency),
+        # The "amount" column is retained as a duplicate of amount_local so
+        # the spreadsheet stays readable; it is no longer interpreted as base.
+        "amount": amount_local,
+        "amount_local": amount_local,
+        "local_currency": local_currency,
         "day_of_month": int(body.get("day_of_month", 1)),
     }
     sheets = _get_sheets()
     sheets.add_recurring(user.spreadsheet_id, entry)
-    return _api_recurring_get(user)
+    return await _api_recurring_get(user)
 
 
 # ── DELETE /api/recurring/<entry_id> ────────────────────────────────────────
 
 
-def _api_recurring_delete(user: User, entry_id: str) -> tuple:
+async def _api_recurring_delete(user: User, entry_id: str) -> tuple:
     """Delete a recurring expense entry by id."""
     sheets = _get_sheets()
     deleted = sheets.delete_recurring(user.spreadsheet_id, entry_id)
     if not deleted:
         return jsonify({"error": "entry not found"}), 404
-    return _api_recurring_get(user)
+    return await _api_recurring_get(user)

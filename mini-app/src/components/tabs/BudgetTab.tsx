@@ -250,7 +250,6 @@ function AddRecurringDrawer({
     try {
       await onConfirm({
         description: description.trim(),
-        amount: amt,
         amount_local: amt,
         local_currency: defaultCurrency,
         day_of_month: parseInt(dayOfMonth, 10) || 1,

@@ -228,7 +228,12 @@ async def test_summary_month_includes_spending_pace(mock_sheets, mock_registry, 
         _make_record(amount_base=500.0, category="housing", recurring=True, recurring_template_id="t1"),
     ]
     mock_sheets.get_recurring.return_value = [
-        {"id": "t1", "amount": 500.0, "day_of_month": 1},
+        {
+            "id": "t1",
+            "amount_local": 500.0,
+            "local_currency": "USD",  # same as base → no FX conversion
+            "day_of_month": 1,
+        },
     ]
     mock_sheets.get_budgets.return_value = {"food": 600.0, "housing": 500.0}
 

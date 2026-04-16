@@ -18,9 +18,23 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
   const spentPct = Math.min(100, (pace.discretionary_spent / budget) * 100);
   const projectedPct = Math.min(100, (pace.projected_discretionary / budget) * 100);
   const isOver = pace.status === "over_pace";
+  const projectedTotal = pace.projected_discretionary + pace.recurring_total;
+  const daysRemaining = Math.max(pace.days_in_month - pace.days_elapsed, 0);
 
   return (
     <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <span
+          className="text-[11px] font-semibold uppercase"
+          style={{ color: "var(--app-text-secondary)", letterSpacing: "0.5px" }}
+        >
+          Spending pace
+        </span>
+        <span className="status-badge" data-tone="success">
+          Projected <span className="amount ml-1">{format(projectedTotal, 0)}</span>
+        </span>
+      </div>
+
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold" style={{ color: "var(--app-text-primary)" }}>
           Day-to-day
@@ -72,9 +86,14 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
         className="rounded-lg p-3 flex items-center justify-between"
         style={{ backgroundColor: "var(--app-secondary-bg)" }}
       >
-        <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
-          You can spend per day
-        </span>
+        <div className="flex flex-col">
+          <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+            You can spend per day
+          </span>
+          <span className="text-[11px]" style={{ color: "var(--app-text-secondary)" }}>
+            for the remaining {daysRemaining} {daysRemaining === 1 ? "day" : "days"}
+          </span>
+        </div>
         <span className="amount text-base font-semibold" style={{ color: "var(--app-text-primary)" }}>
           {format(pace.available_per_day, 0)}
         </span>

@@ -29,8 +29,7 @@ interface TotalCardProps {
 
 function periodLabel(period?: string, dateRange?: { start: string; end: string }): string {
   if (!period || !dateRange) {
-    const now = new Date();
-    return `Total · ${now.toLocaleDateString(undefined, { month: "long", year: "numeric" })}`;
+    return "Total Spent";
   }
   const start = new Date(dateRange.start + "T12:00:00");
   if (period === "month") {

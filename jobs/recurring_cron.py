@@ -116,43 +116,46 @@ async def _build_record(
     item: dict,
     today: date,
 ) -> Optional[ExpenseRecord]:
-    """Build an ExpenseRecord from a recurring template row."""
-    try:
-        amount_base = float(item.get("amount", 0) or 0)
-    except (TypeError, ValueError):
-        logger.warning("Recurring item %s has invalid amount: %r", item.get("id"), item.get("amount"))
-        return None
-    if amount_base <= 0:
-        return None
+    """Build an ExpenseRecord from a recurring template row.
 
+    The template stores the amount in its local currency (``amount_local`` +
+    ``local_currency``). The base-currency value is computed here via the FX
+    service so it reflects the current rate when the expense is materialised.
+    """
     local_currency = str(item.get("local_currency", "") or user.default_currency).upper()
     raw_amount_local = item.get("amount_local")
+    if raw_amount_local in (None, ""):
+        # Legacy rows without amount_local — fall back to the old amount column.
+        raw_amount_local = item.get("amount")
     try:
         amount_local = float(raw_amount_local) if raw_amount_local not in (None, "") else 0.0
     except (TypeError, ValueError):
-        amount_local = 0.0
+        logger.warning(
+            "Recurring item %s has invalid amount_local: %r",
+            item.get("id"), raw_amount_local,
+        )
+        return None
+    if amount_local <= 0:
+        return None
 
     base_currency = user.base_currency.upper()
 
     if local_currency == base_currency:
-        # Already in base currency.
-        amount_local = amount_local or amount_base
         fx_rate = 1.0
+        amount_base = amount_local
     else:
         try:
-            fx_rate = await currency.get_rate(local_currency, base_currency)
+            amount_base, fx_rate = await currency.convert(
+                amount_local, local_currency, base_currency
+            )
         except Exception as exc:
             logger.warning(
-                "FX rate fetch failed for recurring item %s (%s→%s): %s — falling back to base",
+                "FX rate fetch failed for recurring item %s (%s→%s): %s — storing in local currency",
                 item.get("id"), local_currency, base_currency, exc,
             )
             fx_rate = 1.0
+            amount_base = amount_local
             local_currency = base_currency
-            amount_local = amount_local or amount_base
-        else:
-            if not amount_local:
-                # Derive local amount from base when the template only stored base.
-                amount_local = round(amount_base / fx_rate, 6) if fx_rate else amount_base
 
     return ExpenseRecord(
         timestamp=datetime(today.year, today.month, today.day, 0, 0, 0),

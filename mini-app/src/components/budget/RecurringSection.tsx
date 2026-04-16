@@ -30,7 +30,7 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
   const { format } = useCurrency();
   const { showConfirm } = useTelegram();
   const { items, default_currency } = data;
-  const totalBase = items.reduce((s, i) => s + i.amount, 0);
+  const totalBase = items.reduce((s, i) => s + i.amount_base, 0);
   const localTotal = items.reduce((s, i) => s + i.amount_local, 0);
 
   async function handleDelete(id: string, description: string) {

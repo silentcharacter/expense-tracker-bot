@@ -13,6 +13,7 @@ from gspread.exceptions import APIError
 from gspread.utils import ValueRenderOption
 from google.auth import default as google_auth_default
 from google.oauth2.service_account import Credentials
+import requests.exceptions
 
 from models.expense import ExpenseRecord, User
 from models.category import UserCategory, UserSubcategory, default_user_categories
@@ -26,6 +27,11 @@ _CATEGORY_TTL = 300.0  # 5 minutes
 # 300 reads/min/user quota when the Mini App fans out across endpoints.
 _transaction_cache: dict[str, tuple[list["ExpenseRecord"], float]] = {}
 _TRANSACTION_TTL = 300.0  # 5 minutes
+
+# Module-level recurring cache: spreadsheet_id → (list[dict], expiry_timestamp).
+# Writes invalidate so the Mini App always sees fresh data after edits.
+_recurring_cache: dict[str, tuple[list[dict], float]] = {}
+_RECURRING_TTL = 300.0  # 5 minutes
 
 # Per-spreadsheet locks so concurrent callers coalesce onto a single fetch
 # instead of each one blowing past the cache miss into the API (thundering herd).
@@ -53,8 +59,11 @@ _migrated_transactions_headers: set[str] = set()
 _worksheet_cache: dict[tuple[str, str], gspread.Worksheet] = {}
 
 
+_SHEETS_TIMEOUT = 30  # seconds; applied to every Google Sheets HTTP call
+
+
 def _with_retry(fn, *, attempts: int = 4, base_delay: float = 0.5):
-    """Call a Sheets API function, retrying on transient 429/5xx with jittered backoff."""
+    """Call a Sheets API function, retrying on transient 429/5xx/timeouts with jittered backoff."""
     for i in range(attempts):
         try:
             return fn()
@@ -64,6 +73,12 @@ def _with_retry(fn, *, attempts: int = 4, base_delay: float = 0.5):
                 raise
             delay = base_delay * (2 ** i) + random.uniform(0, 0.25)
             logger.warning("Sheets API %s — retry %d/%d in %.2fs", status, i + 1, attempts, delay)
+            time.sleep(delay)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            if i == attempts - 1:
+                raise
+            delay = base_delay * (2 ** i) + random.uniform(0, 0.25)
+            logger.warning("Sheets network error (%s) — retry %d/%d in %.2fs", exc.__class__.__name__, i + 1, attempts, delay)
             time.sleep(delay)
 
 
@@ -124,7 +139,9 @@ class SheetsService:
             if not sa_file:
                 raise
             creds = Credentials.from_service_account_file(sa_file, scopes=_SCOPES)
-        return gspread.Client(auth=creds)
+        client = gspread.Client(auth=creds)
+        client.http_client.timeout = _SHEETS_TIMEOUT
+        return client
 
     # ── Low-level helpers ───────────────────────────────────────────────────
 
@@ -833,15 +850,29 @@ class SheetsService:
     # ── Recurring expenses ───────────────────────────────────────────────────
 
     def get_recurring(self, spreadsheet_id: str) -> list[dict]:
-        """Return all rows from the Recurring sheet as a list of dicts."""
+        """Return all rows from the Recurring sheet as a list of dicts.
+
+        Uses an in-memory TTL cache to collapse burst reads from parallel
+        Mini App endpoints (e.g. /api/summary and /api/recurring arriving together).
+        """
+        now = time.monotonic()
+        cached = _recurring_cache.get(spreadsheet_id)
+        if cached and now < cached[1]:
+            return cached[0]
+
         sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
         header = sheet.row_values(1)
         if not header:
-            return []
-        return sheet.get_all_records()
+            result: list[dict] = []
+        else:
+            result = sheet.get_all_records()
+
+        _recurring_cache[spreadsheet_id] = (result, now + _RECURRING_TTL)
+        return result
 
     def add_recurring(self, spreadsheet_id: str, entry: dict) -> None:
         """Append one recurring entry. Writes headers first if the sheet is empty."""
+        _recurring_cache.pop(spreadsheet_id, None)
         import uuid
         sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
         if not sheet.row_values(1):
@@ -859,6 +890,7 @@ class SheetsService:
 
     def delete_recurring(self, spreadsheet_id: str, entry_id: str) -> bool:
         """Delete a recurring entry by its id value. Returns True if found and deleted."""
+        _recurring_cache.pop(spreadsheet_id, None)
         sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
         all_values = sheet.get_all_values()
         for i, row in enumerate(all_values):

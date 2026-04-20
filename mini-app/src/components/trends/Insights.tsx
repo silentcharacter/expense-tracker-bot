@@ -106,7 +106,7 @@ function buildInsights(
 }
 
 export function Insights({ summary }: InsightsProps) {
-  const { format } = useCurrency();
+  const { formatLive: format } = useCurrency();
   const insights = useMemo(() => buildInsights(summary, format), [summary, format]);
 
   if (insights.length === 0) return null;

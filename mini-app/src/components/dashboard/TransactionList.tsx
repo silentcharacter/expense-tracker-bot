@@ -128,7 +128,7 @@ export function TransactionList({
                   style={{ color: "var(--app-text-primary)" }}
                 >
                   {currency
-                    ? currency.format(expense.amount_base, 0)
+                    ? currency.format({ base: expense.amount_base, default: expense.amount_default }, 0)
                     : formatAmount(expense.amount_local, expense.local_currency, 0)}
                 </p>
                 {!currency && expense.local_currency !== expense.base_currency && (

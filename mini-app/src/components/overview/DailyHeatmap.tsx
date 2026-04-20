@@ -26,6 +26,7 @@ interface DayStats {
   iso: string;
   day: number;
   total: number;
+  totalDefault: number;
   recurringTotal: number;
   count: number;
   isFuture: boolean;
@@ -43,13 +44,14 @@ function computeDays(expenses: Expense[], y: number, m: number): DayStats[] {
     y < now.getFullYear() || (y === now.getFullYear() && m < now.getMonth());
   const todayDay = isCurrentMonth ? now.getDate() : isPastMonth ? daysInMonth : 0;
 
-  const byDay = new Map<number, { total: number; recurring: number; count: number }>();
+  const byDay = new Map<number, { total: number; totalDefault: number; recurring: number; count: number }>();
   for (const e of expenses) {
     const d = new Date(e.timestamp);
     if (d.getFullYear() !== y || d.getMonth() !== m) continue;
     const day = d.getDate();
-    const entry = byDay.get(day) ?? { total: 0, recurring: 0, count: 0 };
+    const entry = byDay.get(day) ?? { total: 0, totalDefault: 0, recurring: 0, count: 0 };
     entry.total += e.amount_base;
+    entry.totalDefault += e.amount_default;
     if (e.is_recurring) entry.recurring += e.amount_base;
     entry.count += 1;
     byDay.set(day, entry);
@@ -57,11 +59,12 @@ function computeDays(expenses: Expense[], y: number, m: number): DayStats[] {
 
   return Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
-    const s = byDay.get(day) ?? { total: 0, recurring: 0, count: 0 };
+    const s = byDay.get(day) ?? { total: 0, totalDefault: 0, recurring: 0, count: 0 };
     return {
       iso: isoDate(y, m, day),
       day,
       total: s.total,
+      totalDefault: s.totalDefault,
       recurringTotal: s.recurring,
       count: s.count,
       isFuture: day > todayDay,
@@ -133,7 +136,7 @@ export function DailyHeatmap({
                 {formatBannerDate(selected.iso)}
               </p>
               <p className="amount text-lg font-semibold" style={{ color: "var(--app-text-primary)" }}>
-                {format(selected.total, 0)}
+                {format({ base: selected.total, default: selected.totalDefault }, 0)}
               </p>
             </div>
             <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>

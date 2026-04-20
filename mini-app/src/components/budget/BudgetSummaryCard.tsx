@@ -75,7 +75,7 @@ function ArcGauge({ pct }: { pct: number }) {
 }
 
 export function BudgetSummaryCard({ budgets, totalBudget, totalSpent }: BudgetSummaryCardProps) {
-  const { format } = useCurrency();
+  const { formatLive: format } = useCurrency();
 
   const activeSubs = budgets
     .flatMap((c) => c.subcategories)

@@ -12,7 +12,7 @@ interface SpendingPaceProps {
 }
 
 export function SpendingPace({ pace }: SpendingPaceProps) {
-  const { format } = useCurrency();
+  const { formatLive: format } = useCurrency();
 
   const budget = Math.max(1, pace.discretionary_budget);
   const spentPct = Math.min(100, (pace.discretionary_spent / budget) * 100);

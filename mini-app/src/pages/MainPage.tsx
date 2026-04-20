@@ -155,6 +155,7 @@ export function MainPage() {
             {summary ? (
               <TotalCard
                 total={summary.total_base}
+                totalDefault={summary.total_default}
                 transactionCount={summary.transaction_count}
                 dailyAverage={summary.daily_average}
                 budgetUsedPercent={budgetUsedPercent}

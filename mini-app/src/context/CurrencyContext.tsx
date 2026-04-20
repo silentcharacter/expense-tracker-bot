@@ -1,9 +1,8 @@
 /** Currency display context: toggles between base and default currency app-wide.
  *
- * All amounts stored in the backend live in the user's base currency. This
- * context lets the UI toggle between displaying them in the base currency or
- * converted to the default currency using the latest FX rate from the summary
- * endpoint. Components should never hardcode `$` / `฿` — use `format()`.
+ * The backend returns pre-computed amounts in both base and default currencies.
+ * This context lets the UI toggle which one to display.  Components pass
+ * ``{ base, default }`` pairs to ``pick()`` / ``format()`` — no FX math here.
  */
 
 import {
@@ -18,19 +17,28 @@ import { fmt } from "../utils/format";
 
 export type CurrencyDisplayMode = "base" | "default";
 
+export interface Amounts {
+  base: number;
+  default: number;
+}
+
 interface CurrencyContextValue {
   displayMode: CurrencyDisplayMode;
   baseCurrency: string;
   defaultCurrency: string;
-  /** 1 unit of base currency = `rate` units of default currency. */
+  /** 1 unit of base currency = `rate` units of default currency (kept for budget/pace live conversion). */
   rate: number;
   activeCurrency: string;
   toggle: () => void;
   setMode: (mode: CurrencyDisplayMode) => void;
-  /** Convert a base-currency amount to the currently active currency. */
-  convert: (amountBase: number) => number;
-  /** Format a base-currency amount in the currently active currency. */
-  format: (amountBase: number, decimals?: number) => string;
+  /** Pick the right pre-computed amount for the active display mode. */
+  pick: (amounts: Amounts) => number;
+  /** Format a pre-computed {base, default} pair in the currently active currency. */
+  format: (amounts: Amounts, decimals?: number) => string;
+  /** Convert a base-only value using the live rate (for budgets / projections that have no stored default). */
+  convertLive: (amountBase: number) => number;
+  /** Format a base-only value using live conversion (for budgets / projections). */
+  formatLive: (amountBase: number, decimals?: number) => string;
 }
 
 const CurrencyContext = createContext<CurrencyContextValue | null>(null);
@@ -93,18 +101,32 @@ export function CurrencyProvider({
 
   const activeCurrency = actualMode === "default" ? defaultCurrency : baseCurrency;
 
-  const convert = useCallback(
+  const pick = useCallback(
+    (amounts: Amounts): number => {
+      return actualMode === "default" ? amounts.default : amounts.base;
+    },
+    [actualMode],
+  );
+
+  const format = useCallback(
+    (amounts: Amounts, decimals = 2): string => {
+      return fmt(pick(amounts), activeCurrency, decimals);
+    },
+    [pick, activeCurrency],
+  );
+
+  const convertLive = useCallback(
     (amountBase: number): number => {
       return actualMode === "default" ? amountBase * effectiveRate : amountBase;
     },
     [actualMode, effectiveRate],
   );
 
-  const format = useCallback(
+  const formatLive = useCallback(
     (amountBase: number, decimals = 2): string => {
-      return fmt(convert(amountBase), activeCurrency, decimals);
+      return fmt(convertLive(amountBase), activeCurrency, decimals);
     },
-    [convert, activeCurrency],
+    [convertLive, activeCurrency],
   );
 
   const value = useMemo<CurrencyContextValue>(
@@ -116,8 +138,10 @@ export function CurrencyProvider({
       activeCurrency,
       toggle,
       setMode,
-      convert,
+      pick,
       format,
+      convertLive,
+      formatLive,
     }),
     [
       actualMode,
@@ -127,8 +151,10 @@ export function CurrencyProvider({
       activeCurrency,
       toggle,
       setMode,
-      convert,
+      pick,
       format,
+      convertLive,
+      formatLive,
     ],
   );
 

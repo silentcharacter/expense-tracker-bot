@@ -1,13 +1,14 @@
 import type { CategorySummary } from "../../api/types";
+import { useCurrency } from "../../context/CurrencyContext";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../../utils/categories";
-import { formatAmount, formatPercent } from "../../utils/format";
+import { formatPercent } from "../../utils/format";
 
 interface CategoryBreakdownProps {
   data: CategorySummary[];
-  currency: string;
 }
 
-export function CategoryBreakdown({ data, currency }: CategoryBreakdownProps) {
+export function CategoryBreakdown({ data }: CategoryBreakdownProps) {
+  const { format } = useCurrency();
   if (!data.length) return null;
 
   const sorted = [...data].sort((a, b) => b.amount_base - a.amount_base);
@@ -30,7 +31,7 @@ export function CategoryBreakdown({ data, currency }: CategoryBreakdownProps) {
               </span>
               <div className="flex items-center gap-2">
                 <span className="amount text-sm font-medium" style={{ color: "var(--app-text-primary)" }}>
-                  {formatAmount(entry.amount_base, currency, 0)}
+                  {format({ base: entry.amount_base, default: entry.amount_default }, 0)}
                 </span>
                 <span className="text-xs w-10 text-right" style={{ color: "var(--app-text-secondary)" }}>
                   {formatPercent(entry.percentage)}

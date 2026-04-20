@@ -5,6 +5,7 @@
 export interface CategorySummary {
   category: string;
   amount_base: number;
+  amount_default: number;
   percentage: number;
   transaction_count: number;
   previous_amount_base?: number;
@@ -20,6 +21,7 @@ export interface CurrencySummary {
 export interface DailyTotal {
   date: string;
   amount_base: number;
+  amount_default: number;
 }
 
 export interface PeriodComparison {
@@ -46,6 +48,7 @@ export interface SummaryResponse {
   period: string;
   date_range: { start: string; end: string };
   total_base: number;
+  total_default: number;
   base_currency: string;
   transaction_count: number;
   daily_average: number;
@@ -67,6 +70,7 @@ export interface Expense {
   amount_local: number;
   local_currency: string;
   amount_base: number;
+  amount_default: number;
   base_currency: string;
   fx_rate: number;
   category: string;

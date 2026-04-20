@@ -121,6 +121,7 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
       {showAddRecurring && recurring && (
         <AddRecurringDrawer
           defaultCurrency={recurring.default_currency}
+          baseCurrency={recurring.base_currency}
           categories={entries.map((b) => ({
             slug: b.category,
             label: b.label,
@@ -221,6 +222,7 @@ function SimpleInputDrawer({ title, placeholder, confirmLabel, onConfirm, onClos
 
 interface AddRecurringDrawerProps {
   defaultCurrency: string;
+  baseCurrency: string;
   categories: { slug: string; label: string; subcategories: { slug: string; label: string }[] }[];
   onConfirm: (entry: AddRecurringRequest) => Promise<void>;
   onClose: () => void;
@@ -228,17 +230,23 @@ interface AddRecurringDrawerProps {
 
 function AddRecurringDrawer({
   defaultCurrency,
+  baseCurrency,
   categories,
   onConfirm,
   onClose,
 }: AddRecurringDrawerProps) {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState(defaultCurrency);
   const [dayOfMonth, setDayOfMonth] = useState("1");
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
   const [saving, setSaving] = useState(false);
   const descRef = useRef<HTMLInputElement>(null);
+
+  const currencyOptions = Array.from(
+    new Set([defaultCurrency, baseCurrency, "USD", "EUR", "THB", "RUB"].map((c) => c.toUpperCase())),
+  );
 
   const subcategories = categories.find((c) => c.slug === category)?.subcategories ?? [];
 
@@ -255,7 +263,7 @@ function AddRecurringDrawer({
       await onConfirm({
         description: description.trim(),
         amount_local: amt,
-        local_currency: defaultCurrency,
+        local_currency: currency,
         day_of_month: parseInt(dayOfMonth, 10) || 1,
         category,
         subcategory,
@@ -320,9 +328,18 @@ function AddRecurringDrawer({
               className="flex-1 px-3 py-2.5 text-sm outline-none bg-transparent"
               style={{ color: "var(--app-text-primary)" }}
             />
-            <span className="pr-3 text-xs font-medium" style={{ color: "var(--app-text-secondary)" }}>
-              {defaultCurrency}
-            </span>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="pr-2 text-xs font-medium outline-none bg-transparent cursor-pointer"
+              style={{ color: "var(--app-text-secondary)", border: "none" }}
+            >
+              {currencyOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
           <div
             className="flex items-center gap-1 rounded-xl px-3"

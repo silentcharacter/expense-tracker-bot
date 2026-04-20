@@ -223,7 +223,7 @@ export function BudgetCategories({
 }
 
 function CategoryAmount({ spent, budget }: { spent: number; budget: number }) {
-  const { format } = useCurrency();
+  const { formatLive: format } = useCurrency();
   return (
     <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
       <span className="amount" style={{ color: "var(--app-text-primary)" }}>
@@ -243,7 +243,7 @@ interface SubRowProps {
 }
 
 function SubRow({ catSlug, sub, onEdit, onDelete }: SubRowProps) {
-  const { format, displayMode } = useCurrency();
+  const { formatLive: format, displayMode } = useCurrency();
   const canEdit = displayMode === "base";
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(sub.budget > 0 ? String(sub.budget) : "");

@@ -124,9 +124,6 @@ async def _build_record(
     """
     local_currency = str(item.get("local_currency", "") or user.default_currency).upper()
     raw_amount_local = item.get("amount_local")
-    if raw_amount_local in (None, ""):
-        # Legacy rows without amount_local — fall back to the old amount column.
-        raw_amount_local = item.get("amount")
     try:
         amount_local = float(raw_amount_local) if raw_amount_local not in (None, "") else 0.0
     except (TypeError, ValueError):

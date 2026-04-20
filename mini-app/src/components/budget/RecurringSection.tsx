@@ -4,7 +4,6 @@ import type { RecurringResponse } from "../../api/types";
 import { useCurrency } from "../../context/CurrencyContext";
 import { useTelegram } from "../../hooks/useTelegram";
 import { getCategoryEmoji } from "../../utils/categories";
-import { formatAmount } from "../../utils/format";
 
 interface RecurringSectionProps {
   data: RecurringResponse;
@@ -27,11 +26,10 @@ function ordinalSuffix(n: number): string {
 }
 
 export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProps) {
-  const { format } = useCurrency();
+  const { formatLive } = useCurrency();
   const { showConfirm } = useTelegram();
-  const { items, default_currency } = data;
+  const { items } = data;
   const totalBase = items.reduce((s, i) => s + i.amount_base, 0);
-  const localTotal = items.reduce((s, i) => s + i.amount_local, 0);
 
   async function handleDelete(id: string, description: string) {
     const ok = await showConfirm(`Delete "${description}"?`);
@@ -85,7 +83,7 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
                 className="amount text-sm font-semibold flex-shrink-0"
                 style={{ color: "var(--app-text-primary)" }}
               >
-                {formatAmount(item.amount_local, item.local_currency, 0)}
+                {formatLive(item.amount_base, 0)}
               </span>
               <button
                 onClick={() => handleDelete(item.id, item.description)}
@@ -105,8 +103,7 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
           <p className="text-xs text-center" style={{ color: "var(--app-text-secondary)" }}>
             Total recurring:{" "}
             <span className="font-semibold amount" style={{ color: "var(--app-accent)" }}>
-              {default_currency ? formatAmount(localTotal, default_currency, 0) : format(totalBase, 0)}
-              /mo
+              {formatLive(totalBase, 0)}/mo
             </span>
           </p>
         </div>

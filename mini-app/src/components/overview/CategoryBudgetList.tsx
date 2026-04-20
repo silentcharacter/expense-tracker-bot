@@ -30,26 +30,38 @@ interface CategoryBudgetListProps {
 interface DayTotals {
   /** base-currency totals per category slug. */
   byCategory: Map<string, number>;
+  /** default-currency totals per category slug. */
+  byCategoryDefault: Map<string, number>;
   /** base-currency totals per `${category}/${subcategory}` slug. */
   bySub: Map<string, number>;
+  /** default-currency totals per `${category}/${subcategory}` slug. */
+  bySubDefault: Map<string, number>;
   /** overall day total (base currency). */
   total: number;
+  /** overall day total (default currency). */
+  totalDefault: number;
 }
 
 function computeDayTotals(expenses: Expense[], day: string | null): DayTotals {
   const byCategory = new Map<string, number>();
+  const byCategoryDefault = new Map<string, number>();
   const bySub = new Map<string, number>();
+  const bySubDefault = new Map<string, number>();
   let total = 0;
-  if (!day) return { byCategory, bySub, total };
+  let totalDefault = 0;
+  if (!day) return { byCategory, byCategoryDefault, bySub, bySubDefault, total, totalDefault };
   for (const e of expenses) {
     const iso = e.timestamp.slice(0, 10);
     if (iso !== day) continue;
     byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + e.amount_base);
+    byCategoryDefault.set(e.category, (byCategoryDefault.get(e.category) ?? 0) + e.amount_default);
     const subKey = `${e.category}/${e.subcategory}`;
     bySub.set(subKey, (bySub.get(subKey) ?? 0) + e.amount_base);
+    bySubDefault.set(subKey, (bySubDefault.get(subKey) ?? 0) + e.amount_default);
     total += e.amount_base;
+    totalDefault += e.amount_default;
   }
-  return { byCategory, bySub, total };
+  return { byCategory, byCategoryDefault, bySub, bySubDefault, total, totalDefault };
 }
 
 function formatDayHeader(iso: string): string {
@@ -64,7 +76,7 @@ export function CategoryBudgetList({
   selected,
   onSelect,
 }: CategoryBudgetListProps) {
-  const { format } = useCurrency();
+  const { format, formatLive } = useCurrency();
   const { hapticFeedback } = useTelegram();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -141,7 +153,7 @@ export function CategoryBudgetList({
         <div className="flex items-center gap-2">
           {isDay && (
             <span className="amount text-sm font-medium" style={{ color: "var(--app-text-primary)" }}>
-              {format(dayTotals.total, 0)}
+              {format({ base: dayTotals.total, default: dayTotals.totalDefault }, 0)}
             </span>
           )}
           {expandable.length > 0 && (
@@ -176,6 +188,7 @@ export function CategoryBudgetList({
           const isSelected = selected?.category === cat.category && !selected.subcategory;
 
           const daySpend = dayTotals.byCategory.get(cat.category) ?? 0;
+          const daySpendDefault = dayTotals.byCategoryDefault.get(cat.category) ?? 0;
           const spent = isDay ? daySpend : cat.spent;
           const denom = isDay ? Math.max(1, dayTotals.total) : Math.max(1, cat.budget || 1);
           const pct = isDay ? (daySpend / denom) * 100 : cat.percentage;
@@ -231,7 +244,7 @@ export function CategoryBudgetList({
                         ) : (
                           <>
                             <span className="amount" style={{ color: "var(--app-text-primary)" }}>
-                              {format(spent, 0)}
+                              {formatLive(spent, 0)}
                             </span>
                             {cat.budget > 0 && <> · {pct.toFixed(0)}%</>}
                           </>
@@ -267,12 +280,14 @@ export function CategoryBudgetList({
                       parentColor={getCategoryColor(cat.category)}
                       isDay={isDay}
                       daySpend={dayTotals.bySub.get(`${cat.category}/${sub.slug}`) ?? 0}
+                      daySpendDefault={dayTotals.bySubDefault.get(`${cat.category}/${sub.slug}`) ?? 0}
                       dayTotal={dayTotals.total}
                       isSelected={
                         selected?.category === cat.category && selected.subcategory === sub.slug
                       }
                       onSelect={() => selectSub(cat.category, sub.slug)}
                       format={format}
+                      formatLive={formatLive}
                     />
                   ))}
                 </div>
@@ -290,10 +305,12 @@ interface SubRowProps {
   parentColor: string;
   isDay: boolean;
   daySpend: number;
+  daySpendDefault: number;
   dayTotal: number;
   isSelected: boolean;
   onSelect: () => void;
-  format: (amount: number, decimals?: number) => string;
+  format: (amounts: { base: number; default: number }, decimals?: number) => string;
+  formatLive: (amountBase: number, decimals?: number) => string;
 }
 
 function SubRow({
@@ -301,10 +318,12 @@ function SubRow({
   parentColor,
   isDay,
   daySpend,
+  daySpendDefault,
   dayTotal,
   isSelected,
   onSelect,
   format,
+  formatLive,
 }: SubRowProps) {
   const hasBudget = sub.budget > 0;
   const spent = isDay ? daySpend : sub.spent;
@@ -338,7 +357,7 @@ function SubRow({
             {isDay ? (
               <>
                 <span className="amount" style={{ color: "var(--app-text-primary)" }}>
-                  {format(spent, 0)}
+                  {format({ base: spent, default: daySpendDefault }, 0)}
                 </span>
                 {" · "}
                 {pct.toFixed(0)}%
@@ -346,10 +365,10 @@ function SubRow({
             ) : hasBudget ? (
               <>
                 <span className="amount" style={{ color: "var(--app-text-primary)" }}>
-                  {format(spent, 0)}
+                  {formatLive(spent, 0)}
                 </span>
                 {" / "}
-                {format(sub.budget, 0)}
+                {formatLive(sub.budget, 0)}
               </>
             ) : (
               "no budget"

@@ -13,6 +13,7 @@ import { fmt, formatPercent } from "../../utils/format";
 
 interface TotalCardProps {
   total: number;
+  totalDefault?: number;
   transactionCount: number;
   dailyAverage: number;
   budgetUsedPercent?: number;
@@ -64,6 +65,7 @@ function previousPeriodName(period?: string, dateRange?: { start: string; end: s
 
 export function TotalCard({
   total,
+  totalDefault,
   transactionCount,
   dailyAverage,
   budgetUsedPercent,
@@ -75,10 +77,13 @@ export function TotalCard({
 }: TotalCardProps) {
   const currencyCtx = useCurrencyOptional();
 
-  // Prefer CurrencyContext when mounted; fall back to the legacy prop.
-  const formatMoney = (amount: number, decimals = 2): string => {
-    if (currencyCtx) return currencyCtx.format(amount, decimals);
-    return fmt(amount, currency ?? "USD", decimals);
+  // Format an amount that has both base and default values (from the backend).
+  const formatMoney = (amountBase: number, amountDefault?: number, decimals = 2): string => {
+    if (currencyCtx && amountDefault != null) {
+      return currencyCtx.format({ base: amountBase, default: amountDefault }, decimals);
+    }
+    if (currencyCtx) return currencyCtx.formatLive(amountBase, decimals);
+    return fmt(amountBase, currency ?? "USD", decimals);
   };
 
   const comparisonText = comparison
@@ -104,7 +109,7 @@ export function TotalCard({
           </span>
         ) : null}
       </p>
-      <p className="amount text-3xl font-bold mb-1">{formatMoney(total, 0)}</p>
+      <p className="amount text-3xl font-bold mb-1">{formatMoney(total, totalDefault, 0)}</p>
       {comparisonText && (
         <p className="text-xs opacity-70 mb-3">
           {comparison!.direction === "up" ? "↑" : "↓"} {comparisonText}

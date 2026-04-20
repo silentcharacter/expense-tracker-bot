@@ -90,7 +90,7 @@ SHEET_CATEGORIES = "Categories"
 SHEET_RATES = "Exchange Rates"
 SHEET_RECURRING = "Reccuring"  # Note: intentional typo to match existing tab name
 
-RECURRING_HEADERS = ["id", "category", "subcategory", "description", "amount", "amount_local", "local_currency", "day_of_month"]
+RECURRING_HEADERS = ["id", "category", "subcategory", "description", "amount_local", "local_currency", "day_of_month"]
 
 
 class SheetsError(Exception):
@@ -851,7 +851,6 @@ class SheetsService:
             entry.get("category", ""),
             entry.get("subcategory", ""),
             entry.get("description", ""),
-            entry.get("amount", ""),
             entry.get("amount_local", ""),
             entry.get("local_currency", ""),
             entry.get("day_of_month", 1),

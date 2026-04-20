@@ -16,7 +16,7 @@ function previousMonthName(dateRange: { start: string }): string {
 }
 
 export function VsLastMonth({ summary }: VsLastMonthProps) {
-  const { format } = useCurrency();
+  const { formatLive: format } = useCurrency();
   const categories = summary.by_category.filter(
     (c) => c.previous_amount_base !== undefined,
   );
@@ -73,7 +73,7 @@ export function VsLastMonth({ summary }: VsLastMonthProps) {
 
 interface CategoryComparisonRowProps {
   category: CategorySummary;
-  format: (amount: number, decimals?: number) => string;
+  format: (amountBase: number, decimals?: number) => string;
 }
 
 function CategoryComparisonRow({ category, format }: CategoryComparisonRowProps) {

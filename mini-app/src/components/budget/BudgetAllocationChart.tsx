@@ -20,7 +20,7 @@ interface Entry {
 }
 
 export function BudgetAllocationChart({ budgets }: BudgetAllocationChartProps) {
-  const { format } = useCurrency();
+  const { formatLive: format } = useCurrency();
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const total = budgets.reduce((s, b) => s + b.budget, 0);

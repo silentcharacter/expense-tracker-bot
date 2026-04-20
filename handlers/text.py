@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from models.expense import ExpenseRecord, ExpenseSource
 from models.category import category_label, subcategory_label
 from handlers.callbacks import saved_keyboard, _format_confirmation, currency_keyboard, CB_ONBOARD_BASE
+from services.tracing import RequestTracer
 
 logger = logging.getLogger(__name__)
 
@@ -59,69 +60,77 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     sheets: SheetsService = context.bot_data["sheets"]
 
     tg_user = update.effective_user
-    user = await registry.get_user(tg_user.id)
-    if user is None:
-        await message.reply_text(
-            "You are not registered yet. Send /start to sign up."
+
+    async with RequestTracer("text_expense", user_id=tg_user.id) as tracer:
+        with tracer.step("user_lookup"):
+            user = await registry.get_user(tg_user.id)
+        if user is None:
+            await message.reply_text(
+                "You are not registered yet. Send /start to sign up."
+            )
+            return
+
+        with tracer.step("categories_fetch"):
+            categories = sheets.get_categories(user.spreadsheet_id)
+
+        # ── Parse with Gemini ───────────────────────────────────────────────
+        status_msg = await message.reply_text("Parsing…")
+        try:
+            with tracer.step("gemini_parse"):
+                expense = await gemini.parse_text(text, user.default_currency, categories)
+        except Exception as exc:
+            logger.exception("Gemini text parsing failed for user %s: %s", tg_user.id, exc)
+            await status_msg.edit_text(
+                "Sorry, I couldn't parse that expense. "
+                "Try: `350 baht taxi grab`",
+                parse_mode="Markdown",
+            )
+            return
+
+        # ── Currency conversion ─────────────────────────────────────────────
+        try:
+            with tracer.step("currency_convert"):
+                amount_base, fx_rate = await currency_svc.convert(
+                    expense.amount, expense.currency, user.base_currency
+                )
+        except Exception as exc:
+            logger.exception("Currency conversion failed %s→%s: %s", expense.currency, user.base_currency, exc)
+            amount_base = expense.amount
+            fx_rate = 1.0
+
+        # ── Build pending record ────────────────────────────────────────────
+        record = ExpenseRecord(
+            amount_local=expense.amount,
+            local_currency=expense.currency,
+            amount_base=amount_base,
+            base_currency=user.base_currency,
+            fx_rate=fx_rate,
+            category=expense.category,
+            subcategory=expense.subcategory,
+            description=expense.description,
+            source=ExpenseSource.text,
+            raw_input=text,
         )
-        return
+        # ── Save immediately ────────────────────────────────────────────────
+        with tracer.step("sheets_write"):
+            sheets.append_transaction(user.spreadsheet_id, record)
+        context.user_data["last_expense"] = {"record": record}
 
-    categories = sheets.get_categories(user.spreadsheet_id)
+        # ── Show saved card ─────────────────────────────────────────────────
+        cat_label = category_label(record.category)
+        sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
+        cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
 
-    # ── Parse with Gemini ───────────────────────────────────────────────────
-    status_msg = await message.reply_text("Parsing…")
-    try:
-        expense = await gemini.parse_text(text, user.default_currency, categories)
-    except Exception as exc:
-        logger.exception("Gemini text parsing failed for user %s: %s", tg_user.id, exc)
-        await status_msg.edit_text(
-            "Sorry, I couldn't parse that expense. "
-            "Try: `350 baht taxi grab`",
-            parse_mode="Markdown",
+        confirmation = (
+            f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n"
+            f"✓ Saved"
         )
-        return
-
-    # ── Currency conversion ─────────────────────────────────────────────────
-    try:
-        amount_base, fx_rate = await currency_svc.convert(
-            expense.amount, expense.currency, user.base_currency
-        )
-    except Exception as exc:
-        logger.exception("Currency conversion failed %s→%s: %s", expense.currency, user.base_currency, exc)
-        amount_base = expense.amount
-        fx_rate = 1.0
-
-    # ── Build pending record ────────────────────────────────────────────────
-    record = ExpenseRecord(
-        amount_local=expense.amount,
-        local_currency=expense.currency,
-        amount_base=amount_base,
-        base_currency=user.base_currency,
-        fx_rate=fx_rate,
-        category=expense.category,
-        subcategory=expense.subcategory,
-        description=expense.description,
-        source=ExpenseSource.text,
-        raw_input=text,
-    )
-    # ── Save immediately ────────────────────────────────────────────────────
-    sheets.append_transaction(user.spreadsheet_id, record)
-    context.user_data["last_expense"] = {"record": record}
-
-    # ── Show saved card ─────────────────────────────────────────────────────
-    cat_label = category_label(record.category)
-    sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
-    cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
-
-    confirmation = (
-        f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n"
-        f"✓ Saved"
-    )
-    await status_msg.edit_text(
-        confirmation,
-        reply_markup=saved_keyboard(record.id),
-        parse_mode="Markdown",
-    )
+        with tracer.step("send_confirmation"):
+            await status_msg.edit_text(
+                confirmation,
+                reply_markup=saved_keyboard(record.id),
+                parse_mode="Markdown",
+            )
 
 
 # ── Awaiting-state handler ───────────────────────────────────────────────────

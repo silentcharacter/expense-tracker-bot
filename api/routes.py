@@ -224,8 +224,30 @@ def _previous_period_dates(period: str, since: date, until: date) -> tuple[date,
 # ── Serialisation ───────────────────────────────────────────────────────────
 
 
-def _record_to_dict(r: ExpenseRecord) -> dict:
-    return {
+def _amount_default(
+    r: ExpenseRecord,
+    default_currency: str,
+    base_to_default_rate: float | None,
+) -> float:
+    """Return the amount in the user's default currency.
+
+    Uses the stored ``amount_local`` when the transaction's local currency
+    matches the default currency (exact sheet value).  Falls back to a live
+    base→default conversion for cross-currency transactions.
+    """
+    if r.local_currency.upper() == default_currency.upper():
+        return r.amount_local
+    if base_to_default_rate:
+        return round(r.amount_base * base_to_default_rate, 4)
+    return r.amount_local
+
+
+def _record_to_dict(
+    r: ExpenseRecord,
+    default_currency: str | None = None,
+    base_to_default_rate: float | None = None,
+) -> dict:
+    d = {
         "id": r.id,
         "timestamp": r.timestamp.isoformat(),
         "amount_local": r.amount_local,
@@ -239,6 +261,9 @@ def _record_to_dict(r: ExpenseRecord) -> dict:
         "source": r.source.value,
         "is_recurring": bool(r.recurring),
     }
+    if default_currency is not None:
+        d["amount_default"] = _amount_default(r, default_currency, base_to_default_rate)
+    return d
 
 
 # ── Spending pace ───────────────────────────────────────────────────────────
@@ -339,14 +364,35 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     sheets = _get_sheets()
     records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
 
+    # ── Fetch base→default rate up front so aggregations can use it ────────
+    default_currency = user.default_currency
+    if default_currency.upper() == user.base_currency.upper():
+        base_to_default_rate: float | None = 1.0
+    else:
+        try:
+            base_to_default_rate = round(
+                await _get_currency().get_rate(user.base_currency, default_currency), 6
+            )
+        except Exception as exc:
+            logger.warning("Could not fetch default_currency_rate: %s", exc)
+            base_to_default_rate = None
+
     total_base = sum(r.amount_base for r in records)
+    total_default = sum(
+        _amount_default(r, default_currency, base_to_default_rate) for r in records
+    )
     discretionary_base = sum(r.amount_base for r in records if not r.recurring)
     days = max((until - since).days + 1, 1)
 
     # By category
-    cat_totals: dict[str, dict] = defaultdict(lambda: {"amount_base": 0.0, "count": 0})
+    cat_totals: dict[str, dict] = defaultdict(
+        lambda: {"amount_base": 0.0, "amount_default": 0.0, "count": 0}
+    )
     for r in records:
         cat_totals[r.category]["amount_base"] += r.amount_base
+        cat_totals[r.category]["amount_default"] += _amount_default(
+            r, default_currency, base_to_default_rate
+        )
         cat_totals[r.category]["count"] += 1
 
     by_category = sorted(
@@ -354,6 +400,7 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
             {
                 "category": slug,
                 "amount_base": round(vals["amount_base"], 4),
+                "amount_default": round(vals["amount_default"], 4),
                 "percentage": (
                     round(vals["amount_base"] / total_base * 100, 1) if total_base else 0.0
                 ),
@@ -382,12 +429,22 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     ]
 
     # Daily totals
-    daily: dict[str, float] = defaultdict(float)
+    daily_base: dict[str, float] = defaultdict(float)
+    daily_default: dict[str, float] = defaultdict(float)
     for r in records:
-        daily[r.timestamp.date().isoformat()] += r.amount_base
+        day_key = r.timestamp.date().isoformat()
+        daily_base[day_key] += r.amount_base
+        daily_default[day_key] += _amount_default(
+            r, default_currency, base_to_default_rate
+        )
 
     daily_totals = [
-        {"date": d, "amount_base": round(amt, 4)} for d, amt in sorted(daily.items())
+        {
+            "date": d,
+            "amount_base": round(daily_base[d], 4),
+            "amount_default": round(daily_default[d], 4),
+        }
+        for d in sorted(daily_base)
     ]
 
     today = date.today()
@@ -411,7 +468,10 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "period": period,
         "date_range": {"start": since.isoformat(), "end": until.isoformat()},
         "total_base": round(total_base, 4),
+        "total_default": round(total_default, 4),
         "base_currency": user.base_currency,
+        "default_currency": default_currency,
+        "default_currency_rate": base_to_default_rate,
         "transaction_count": len(records),
         "daily_average": round(discretionary_base / days, 4),
         "days_remaining": days_remaining,
@@ -419,18 +479,6 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "by_currency": by_currency,
         "daily_totals": daily_totals,
     }
-
-    # ── default_currency_rate (1 base = X default) ──────────────────────────
-    result["default_currency"] = user.default_currency
-    if user.default_currency.upper() == user.base_currency.upper():
-        result["default_currency_rate"] = 1.0
-    else:
-        try:
-            rate = await _get_currency().get_rate(user.base_currency, user.default_currency)
-            result["default_currency_rate"] = round(rate, 6)
-        except Exception as exc:
-            logger.warning("Could not fetch default_currency_rate: %s", exc)
-            result["default_currency_rate"] = None
 
     # ── spending_pace (current month only) ──────────────────────────────────
     if period == "month" and offset == 0:
@@ -494,11 +542,26 @@ async def _api_expenses_list(request: flask.Request, user: User) -> tuple:
     if category_filter:
         records = [r for r in records if r.category == category_filter]
 
+    # Fetch base→default rate for amount_default computation.
+    default_currency = user.default_currency
+    if default_currency.upper() == user.base_currency.upper():
+        base_to_default_rate: float | None = 1.0
+    else:
+        try:
+            base_to_default_rate = round(
+                await _get_currency().get_rate(user.base_currency, default_currency), 6
+            )
+        except Exception as exc:
+            logger.warning("Could not fetch default_currency_rate for expenses: %s", exc)
+            base_to_default_rate = None
+
     total = len(records)
     page = records[offset: offset + limit]
 
     return jsonify({
-        "expenses": [_record_to_dict(r) for r in page],
+        "expenses": [
+            _record_to_dict(r, default_currency, base_to_default_rate) for r in page
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,

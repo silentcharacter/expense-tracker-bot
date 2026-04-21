@@ -118,7 +118,7 @@ def test_update_transaction_category_returns_false_for_unknown_id(sheets_service
 @pytest.mark.integration
 def test_ensure_categories_sheet_seeds_defaults(sheets_service, test_spreadsheet_id):
     """ensure_categories_sheet should write header + default category rows if empty."""
-    from services.sheets import _category_cache, SHEET_CATEGORIES
+    from services.sheets import _category_cache, _raw_categories_cache, SHEET_CATEGORIES
 
     sheet = sheets_service._get_sheet(test_spreadsheet_id, SHEET_CATEGORIES)
     backup = sheet.get_all_values()
@@ -126,6 +126,7 @@ def test_ensure_categories_sheet_seeds_defaults(sheets_service, test_spreadsheet
     try:
         sheet.clear()
         _category_cache.pop(test_spreadsheet_id, None)
+        _raw_categories_cache.pop(test_spreadsheet_id, None)
 
         sheets_service.ensure_categories_sheet(test_spreadsheet_id)
         cats = sheets_service.get_categories(test_spreadsheet_id)
@@ -135,8 +136,9 @@ def test_ensure_categories_sheet_seeds_defaults(sheets_service, test_spreadsheet
     finally:
         sheet.clear()
         if backup:
-            sheet.update(backup, raw=False)
+            sheet.update(backup, value_input_option="RAW")
         _category_cache.pop(test_spreadsheet_id, None)
+        _raw_categories_cache.pop(test_spreadsheet_id, None)
 
 
 @pytest.mark.integration

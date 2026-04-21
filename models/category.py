@@ -27,10 +27,10 @@ CATEGORIES: tuple[Category, ...] = (
         slug="food",
         label="Food & Drinks",
         subcategories=(
-            Subcategory("restaurant", "Cafe / Restaurant"),
+            Subcategory("restaurant", "Restaurant"),
             Subcategory("grocery", "Grocery (Makro, Lotus)"),
             Subcategory("delivery", "Delivery (GrabFood, LINE MAN)"),
-            Subcategory("coffee", "Coffee / Drinks"),
+            Subcategory("cafe", "Coffee / Drinks"),
             Subcategory("street_food", "Street Food"),
         ),
     ),
@@ -43,6 +43,7 @@ CATEGORIES: tuple[Category, ...] = (
             Subcategory("rental", "Bike / Car Rental"),
             Subcategory("flights", "Flights"),
             Subcategory("bus_train", "Bus / Train"),
+            Subcategory("bike_service", "Bike Service"),
         ),
     ),
     Category(
@@ -65,6 +66,7 @@ CATEGORIES: tuple[Category, ...] = (
             Subcategory("insurance", "Insurance"),
             Subcategory("dental", "Dental"),
             Subcategory("massage", "Massage"),
+            Subcategory("sauna", "Sauna"),
         ),
     ),
     Category(
@@ -106,6 +108,7 @@ CATEGORIES: tuple[Category, ...] = (
             Subcategory("legal", "Legal / Notary"),
             Subcategory("laundry", "Laundry"),
             Subcategory("postal", "Postal / Courier"),
+            Subcategory("mobile_service", "Mobile Service"),
         ),
     ),
     Category(
@@ -126,6 +129,7 @@ CATEGORIES: tuple[Category, ...] = (
             Subcategory("tours", "Tours / Excursions"),
             Subcategory("visa", "Visa / Border Run"),
             Subcategory("luggage", "Luggage"),
+            Subcategory("tickets", "Tickets"),
         ),
     ),
     Category(

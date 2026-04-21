@@ -19,6 +19,7 @@ interface OverviewTabProps {
   filterCategory: CategoryFilter | null;
   onSelectDay: (day: string | null) => void;
   onSelectCategory: (filter: CategoryFilter | null) => void;
+  onDeleteExpense?: (id: string) => Promise<void>;
 }
 
 export function OverviewTab({
@@ -31,6 +32,7 @@ export function OverviewTab({
   filterCategory,
   onSelectDay,
   onSelectCategory,
+  onDeleteExpense,
 }: OverviewTabProps) {
   const expenseList = expenses?.expenses ?? [];
   const budgetEntries = budgets?.budgets ?? [];
@@ -61,6 +63,7 @@ export function OverviewTab({
         filterDay={filterDay}
         filterCategory={filterCategory}
         onClearCategoryFilter={() => onSelectCategory(null)}
+        onDeleteExpense={onDeleteExpense}
         showHeader
       />
     </div>

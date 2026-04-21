@@ -117,6 +117,66 @@ Open the Mini App via the bot's menu button in Telegram to confirm everything wo
 | Bot code or API | Re-deploy Cloud Function (step 1) |
 | Mini App frontend | `./deploy_mini_app.sh` (step 2) |
 | Both | Run both commands — they are independent |
+| Cron schedule or secret | Update job via `gcloud scheduler jobs update http` |
+
+---
+
+## 4. Cloud Scheduler (Recurring Expenses)
+
+### 4.1 One-time setup
+
+Add `CRON_SECRET` to `.env.yaml` (any strong secret string), then redeploy the function:
+
+```bash
+./deploy.sh
+```
+
+Enable the API if not yet done:
+
+```bash
+gcloud services enable cloudscheduler.googleapis.com --project=expense-bot-489609
+```
+
+### 4.2 Create the job
+
+```bash
+gcloud scheduler jobs create http expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1 \
+  --schedule="0 9 * * *" \
+  --uri="https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/recurring" \
+  --http-method=POST \
+  --headers="X-Cron-Secret=your-strong-secret-here" \
+  --time-zone="Asia/Singapore" \
+  --attempt-deadline=5m
+```
+
+`0 9 * * *` — daily at 09:00 in the specified timezone.
+
+### 4.3 Verify
+
+```bash
+# Force a run
+gcloud scheduler jobs run expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1
+
+# Check logs
+gcloud functions logs read expense-bot \
+  --project=expense-bot-489609 \
+  --region=asia-southeast1 \
+  --limit=50
+```
+
+Expected log line: `Recurring cron complete: {'users': N, 'inserted': N, 'skipped': N, 'errors': 0}`
+
+### 4.4 Manage
+
+```bash
+gcloud scheduler jobs pause expense-bot-recurring --project=expense-bot-489609 --location=asia-southeast1
+gcloud scheduler jobs resume expense-bot-recurring --project=expense-bot-489609 --location=asia-southeast1
+gcloud scheduler jobs delete expense-bot-recurring --project=expense-bot-489609 --location=asia-southeast1
+```
 
 ---
 

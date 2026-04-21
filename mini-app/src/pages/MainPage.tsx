@@ -1,6 +1,7 @@
 /** Single-page shell: header, total card, sub-tabs, active tab body, settings modal. */
 
 import { useState } from "react";
+import { deleteExpense } from "../api/expenses";
 import { CurrencyProvider } from "../context/CurrencyContext";
 import { useUser } from "../context/UserContext";
 import { useMainData } from "../hooks/useMainData";
@@ -89,6 +90,11 @@ export function MainPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [filterDay, setFilterDay] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<CategoryFilter | null>(null);
+
+  async function handleDeleteExpense(id: string) {
+    await deleteExpense(id);
+    await refetch();
+  }
 
   function handleMonthChange(next: number) {
     if (next === monthOffset) return;
@@ -183,6 +189,7 @@ export function MainPage() {
                     filterCategory={filterCategory}
                     onSelectDay={setFilterDay}
                     onSelectCategory={setFilterCategory}
+                    onDeleteExpense={handleDeleteExpense}
                   />
                 ))}
 

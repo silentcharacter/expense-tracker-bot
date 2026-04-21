@@ -152,9 +152,10 @@ export function DailyHeatmap({
 
       {/* Grid */}
       <div className="heatmap-grid">
-        {days.map((d) => {
+        {days.map((d, i) => {
           const recurring = isRecurringDominant(d);
           const level = recurring ? 0 : levelFor(d, thresholds);
+          const dow = i < 7 ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][new Date(d.iso + "T00:00:00").getDay()] : null;
           return (
             <button
               key={d.iso}
@@ -169,6 +170,7 @@ export function DailyHeatmap({
               disabled={d.isFuture}
             >
               <span className="heatmap-cell__day">{d.day}</span>
+              {dow && <span className="heatmap-cell__dow">{dow}</span>}
             </button>
           );
         })}

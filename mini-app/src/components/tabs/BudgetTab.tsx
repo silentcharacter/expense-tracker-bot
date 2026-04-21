@@ -257,7 +257,11 @@ function AddRecurringDrawer({
 
   async function confirm() {
     const amt = parseFloat(amount);
+    const needsCategory = categories.length > 0;
+    const needsSubcategory = category && subcategories.length > 0;
     if (!description.trim() || isNaN(amt) || amt <= 0) return;
+    if (needsCategory && !category) return;
+    if (needsSubcategory && !subcategory) return;
     setSaving(true);
     try {
       await onConfirm({
@@ -274,7 +278,13 @@ function AddRecurringDrawer({
     }
   }
 
-  const valid = description.trim().length > 0 && parseFloat(amount) > 0;
+  const needsCategory = categories.length > 0;
+  const needsSubcategory = category && subcategories.length > 0;
+  const valid =
+    description.trim().length > 0 &&
+    parseFloat(amount) > 0 &&
+    (!needsCategory || !!category) &&
+    (!needsSubcategory || !!subcategory);
 
   return (
     <div
@@ -371,7 +381,7 @@ function AddRecurringDrawer({
               border: "1px solid var(--app-border)",
             }}
           >
-            <option value="">Category (optional)</option>
+            <option value="">Category</option>
             {categories.map((c) => (
               <option key={c.slug} value={c.slug}>
                 {getCategoryEmoji(c.slug)} {c.label}
@@ -391,7 +401,7 @@ function AddRecurringDrawer({
               border: "1px solid var(--app-border)",
             }}
           >
-            <option value="">Subcategory (optional)</option>
+            <option value="">Subcategory</option>
             {subcategories.map((s) => (
               <option key={s.slug} value={s.slug}>
                 {s.label}

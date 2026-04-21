@@ -52,9 +52,10 @@ async def run_recurring_cron(
     for user in users:
         summary["users"] += 1
         try:
-            inserted, skipped = await _process_user(sheets, currency, user, today)
+            inserted, skipped, errors = await _process_user(sheets, currency, user, today)
             summary["inserted"] += inserted
             summary["skipped"] += skipped
+            summary["errors"] += errors
         except Exception as exc:
             logger.exception("Recurring cron failed for user %s: %s", user.telegram_id, exc)
             summary["errors"] += 1
@@ -68,12 +69,12 @@ async def _process_user(
     currency: CurrencyService,
     user: User,
     today: date,
-) -> tuple[int, int]:
-    """Process one user. Returns (inserted_count, skipped_count)."""
+) -> tuple[int, int, int]:
+    """Process one user. Returns (inserted_count, skipped_count, error_count)."""
     items = sheets.get_recurring(user.spreadsheet_id)
     due = [it for it in items if int(it.get("day_of_month", 0) or 0) == today.day]
     if not due:
-        return 0, 0
+        return 0, 0, 0
 
     # Pre-fetch this month's existing transactions for idempotency check.
     month_start = today.replace(day=1)
@@ -88,26 +89,40 @@ async def _process_user(
 
     inserted = 0
     skipped = 0
+    errors = 0
     for item in due:
-        template_id = str(item.get("id", "")).strip()
-        if not template_id:
-            logger.warning("Skipping recurring item without id for user %s", user.telegram_id)
-            continue
-        if template_id in existing_template_ids:
-            skipped += 1
-            continue
+        try:
+            template_id = str(item.get("id", "")).strip()
+            if not template_id:
+                logger.warning("Skipping recurring item without id for user %s", user.telegram_id)
+                errors += 1
+                continue
+            if template_id in existing_template_ids:
+                skipped += 1
+                continue
 
-        record = await _build_record(currency, user, item, today)
-        if record is None:
-            continue
-        sheets.append_transaction(user.spreadsheet_id, record)
-        inserted += 1
-        logger.info(
-            "Inserted recurring expense %s for user %s (template %s)",
-            record.id, user.telegram_id, template_id,
-        )
+            record = await _build_record(currency, user, item, today)
+            if record is None:
+                logger.warning(
+                    "Could not build record for recurring template %s (user %s)",
+                    template_id, user.telegram_id,
+                )
+                errors += 1
+                continue
+            sheets.append_transaction(user.spreadsheet_id, record)
+            inserted += 1
+            logger.info(
+                "Inserted recurring expense %s for user %s (template %s)",
+                record.id, user.telegram_id, template_id,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Failed to process recurring template %s for user %s: %s",
+                item.get("id"), user.telegram_id, exc,
+            )
+            errors += 1
 
-    return inserted, skipped
+    return inserted, skipped, errors
 
 
 async def _build_record(

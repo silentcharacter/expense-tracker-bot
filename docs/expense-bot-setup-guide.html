@@ -985,6 +985,133 @@ gcloud functions logs read expense-bot \
 
   <div class="divider"></div>
 
+  <!-- Step 9: Cloud Scheduler -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-num">09</span>
+      <h2>Cloud Scheduler (Recurring Expenses)</h2>
+      <span class="time-badge">~5 мин</span>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🔁</span> Как работает</h3>
+      <p>Cloud Scheduler ежедневно вызывает эндпоинт <code>/cron/recurring</code> на Cloud Function. Функция проходит по всем активным пользователям, находит шаблоны с совпадающим <code>day_of_month</code> и материализует их в лист Transactions. Операция идемпотентна — повторный запуск в тот же день пропустит уже существующие записи.</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">⚙️</span> Настройка</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Добавь CRON_SECRET в .env.yaml</h4>
+          <p>Придумай любой секрет — он защищает эндпоинт от несанкционированного вызова:</p>
+          <div class="code-block"><pre><span class="type">CRON_SECRET</span>: <span class="string">"your-strong-secret-here"</span></pre>
+          </div>
+          <p style="margin-top:8px;">Передеплой функцию после изменения:</p>
+          <div class="code-block"><pre>./deploy.sh</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Включи Cloud Scheduler API</h4>
+          <div class="code-block"><pre>gcloud services enable cloudscheduler.googleapis.com \
+  --project=expense-bot-489609</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Создай задание</h4>
+          <div class="code-block"><pre>gcloud scheduler jobs create http expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1 \
+  --schedule=<span class="string">"0 9 * * *"</span> \
+  --uri=<span class="string">"https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/recurring"</span> \
+  --http-method=POST \
+  --headers=<span class="string">"X-Cron-Secret=your-strong-secret-here"</span> \
+  --time-zone=<span class="string">"Asia/Singapore"</span> \
+  --attempt-deadline=5m</pre>
+          </div>
+          <p style="margin-top:8px;"><code>0 9 * * *</code> — каждый день в 09:00. Замени часовой пояс под себя.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">✓</span>
+        <div class="step-content">
+          <h4>Проверь — запусти вручную</h4>
+          <div class="code-block"><pre><span class="comment"># Принудительный запуск</span>
+gcloud scheduler jobs run expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1
+
+<span class="comment"># Посмотреть логи</span>
+gcloud functions logs read expense-bot \
+  --project=expense-bot-489609 \
+  --region=asia-southeast1 \
+  --limit=50</pre>
+          </div>
+          <p style="margin-top:8px;">В логах появится строка вида: <code>Recurring cron complete: {'users': 2, 'inserted': 1, 'skipped': 0, 'errors': 0}</code></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🛠</span> Управление заданием</h3>
+      <div class="code-block"><pre><span class="comment"># Статус и история последних запусков</span>
+gcloud scheduler jobs describe expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1
+
+<span class="comment"># Приостановить</span>
+gcloud scheduler jobs pause expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1
+
+<span class="comment"># Возобновить</span>
+gcloud scheduler jobs resume expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1
+
+<span class="comment"># Удалить</span>
+gcloud scheduler jobs delete expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="icon">🧪</span> Локальное тестирование</h3>
+      <p style="margin-bottom:12px;">Для отладки без деплоя — запусти локальный сервер и вызови эндпоинт напрямую:</p>
+      <div class="code-block"><pre><span class="comment"># 1. Запусти сервер</span>
+python run_local.py
+
+<span class="comment"># 2. В другом терминале — вызови крон</span>
+curl -X POST http://localhost:8080/cron/recurring \
+  -H <span class="string">"X-Cron-Secret: your-strong-secret-here"</span></pre>
+      </div>
+      <p style="margin-top:12px;">Для теста с конкретной датой — вызови напрямую из Python:</p>
+      <div class="code-block"><pre><span class="keyword">import</span> asyncio
+<span class="keyword">from</span> datetime <span class="keyword">import</span> date
+<span class="keyword">from</span> jobs.recurring_cron <span class="keyword">import</span> run_recurring_cron
+
+asyncio.<span class="func">run</span>(run_recurring_cron(today=date(<span class="string">2026</span>, <span class="string">4</span>, <span class="string">21</span>)))</pre>
+      </div>
+    </div>
+
+    <div class="note-box">
+      <strong>💰 Стоимость:</strong> Cloud Scheduler бесплатен до 3 заданий в месяц. Одно задание для крона — в бесплатном tier.
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
   <div class="footer">expense-bot setup guide · v1.0</div>
 
 </div>

@@ -180,6 +180,55 @@ gcloud scheduler jobs delete expense-bot-recurring --project=expense-bot-489609 
 
 ---
 
+## 5. Cloud Scheduler (Weekly Summary)
+
+Sends a weekly spending summary to all opted-in users every Monday at 10:00 Asia/Singapore time.
+
+### 5.1 Create the job
+
+```bash
+gcloud scheduler jobs create http expense-bot-weekly-summary \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1 \
+  --schedule="0 10 * * 1" \
+  --uri="https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/weekly_summary" \
+  --http-method=POST \
+  --headers="X-Cron-Secret=your-strong-secret-here" \
+  --time-zone="Asia/Singapore" \
+  --attempt-deadline=5m
+```
+
+`CRON_SECRET` must be set in `.env.yaml` and match the `X-Cron-Secret` header value (same secret used by the recurring job).
+
+### 5.2 Verify
+
+```bash
+# Force a run
+gcloud scheduler jobs run expense-bot-weekly-summary \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1
+
+# Check logs
+gcloud functions logs read expense-bot \
+  --project=expense-bot-489609 \
+  --region=asia-southeast1 \
+  --limit=50
+```
+
+Expected log line: `Weekly summary cron complete: {'sent': N, 'skipped': N, 'errors': 0}`
+
+Users with `weekly_summary: false` in their settings (configurable via `/api/settings`) are skipped. Users with no transactions in the previous week are also skipped.
+
+### 5.3 Manage
+
+```bash
+gcloud scheduler jobs pause expense-bot-weekly-summary --project=expense-bot-489609 --location=asia-southeast1
+gcloud scheduler jobs resume expense-bot-weekly-summary --project=expense-bot-489609 --location=asia-southeast1
+gcloud scheduler jobs delete expense-bot-weekly-summary --project=expense-bot-489609 --location=asia-southeast1
+```
+
+---
+
 ## Troubleshooting
 
 ### CORS errors in browser console

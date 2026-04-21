@@ -107,6 +107,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             sheets.append_transaction(user.spreadsheet_id, record)
         context.user_data["last_expense"] = {"record": record}
 
+        from handlers.budget_alerts import check_and_send_budget_alert
+        await check_and_send_budget_alert(context.bot, user, record, sheets)
+
         # ── 6. Show saved card ──────────────────────────────────────────────
         cat_label = category_label(record.category)
         sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""

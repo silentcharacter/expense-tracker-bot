@@ -220,6 +220,8 @@ async def _apply_category_update(
     cat_display = f"{cat_label_str} / {sub_label_str}" if sub_label_str else cat_label_str
 
     if updated:
+        from handlers.budget_alerts import check_and_send_budget_alert
+        await check_and_send_budget_alert(context.bot, user, updated, context.bot_data["sheets"])
         await query.edit_message_text(
             f"{_format_confirmation(updated, user.base_currency, cat_display)}\n\n✓ Saved",
             reply_markup=saved_keyboard(record_id),

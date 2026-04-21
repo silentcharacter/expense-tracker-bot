@@ -145,6 +145,15 @@ def _handle_cron_route(request, path: str):
             return _jsonify({"error": "internal error"}), 500
         return _jsonify(summary), 200
 
+    if path == "/cron/weekly_summary":
+        from jobs.weekly_summary_cron import run_weekly_summary
+        try:
+            summary = asyncio.run(run_weekly_summary())
+        except Exception as exc:
+            logger.exception("Weekly summary cron failed: %s", exc)
+            return _jsonify({"error": "internal error"}), 500
+        return _jsonify(summary), 200
+
     return _jsonify({"error": "not found"}), 404
 
 

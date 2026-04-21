@@ -176,7 +176,7 @@ async def test_process_user_no_due_templates():
     sheets = _make_sheets(templates, [])
     currency = _make_currency()
 
-    inserted, skipped = await _process_user(sheets, currency, user, TODAY)
+    inserted, skipped, errors = await _process_user(sheets, currency, user, TODAY)
 
     assert (inserted, skipped) == (0, 0)
     sheets.append_transaction.assert_not_called()
@@ -189,7 +189,7 @@ async def test_process_user_inserts_new_template():
     sheets = _make_sheets([_make_template()], [])
     currency = _make_currency()
 
-    inserted, skipped = await _process_user(sheets, currency, user, TODAY)
+    inserted, skipped, errors = await _process_user(sheets, currency, user, TODAY)
 
     assert inserted == 1
     assert skipped == 0
@@ -215,7 +215,7 @@ async def test_process_user_skips_already_inserted():
     sheets = _make_sheets([_make_template()], [existing_record])
     currency = _make_currency()
 
-    inserted, skipped = await _process_user(sheets, currency, user, TODAY)
+    inserted, skipped, errors = await _process_user(sheets, currency, user, TODAY)
 
     assert inserted == 0
     assert skipped == 1
@@ -231,7 +231,7 @@ async def test_process_user_skips_template_without_id():
     sheets = _make_sheets([item], [])
     currency = _make_currency()
 
-    inserted, skipped = await _process_user(sheets, currency, user, TODAY)
+    inserted, skipped, errors = await _process_user(sheets, currency, user, TODAY)
 
     assert inserted == 0
     assert skipped == 0
@@ -260,7 +260,7 @@ async def test_process_user_multiple_templates_partial_skip():
     sheets = _make_sheets([tpl1, tpl2], [existing_record])
     currency = _make_currency()
 
-    inserted, skipped = await _process_user(sheets, currency, user, TODAY)
+    inserted, skipped, errors = await _process_user(sheets, currency, user, TODAY)
 
     assert inserted == 1
     assert skipped == 1

@@ -116,6 +116,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             sheets.append_transaction(user.spreadsheet_id, record)
         context.user_data["last_expense"] = {"record": record}
 
+        from handlers.budget_alerts import check_and_send_budget_alert
+        await check_and_send_budget_alert(context.bot, user, record, sheets)
+
         # ── Show saved card ─────────────────────────────────────────────────
         cat_label = category_label(record.category)
         sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""

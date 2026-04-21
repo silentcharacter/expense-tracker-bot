@@ -387,14 +387,6 @@ export function SettingsPage() {
             disabled={savingField === "weekly_summary"}
             onChange={(v) => handleToggle("weekly_summary", v)}
           />
-          <ToggleRow
-            icon="💡"
-            label="Insights"
-            subtitle="Spending pattern tips"
-            checked={settings.insights}
-            disabled={savingField === "insights"}
-            onChange={(v) => handleToggle("insights", v)}
-          />
         </div>
       </div>
 

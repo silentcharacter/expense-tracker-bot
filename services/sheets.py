@@ -33,6 +33,12 @@ _TRANSACTION_TTL = 300.0  # 5 minutes
 _recurring_cache: dict[str, tuple[list[dict], float]] = {}
 _RECURRING_TTL = 300.0  # 5 minutes
 
+# Module-level raw Categories sheet cache: spreadsheet_id → (list[list[str]], expiry_timestamp).
+# Shared by get_categories() and the budget/category write methods so a PUT /api/budgets
+# doesn't read the same sheet twice (once for the update, once for the response).
+_raw_categories_cache: dict[str, tuple[list[list], float]] = {}
+_RAW_CAT_TTL = 300.0  # 5 minutes
+
 # Per-spreadsheet locks so concurrent callers coalesce onto a single fetch
 # instead of each one blowing past the cache miss into the API (thundering herd).
 _transaction_fetch_locks: dict[str, threading.Lock] = {}
@@ -305,6 +311,17 @@ class SheetsService:
 
     # ── Budget (Categories sheet) ────────────────────────────────────────────
 
+    def _get_raw_cat_values(self, spreadsheet_id: str) -> list[list]:
+        """Return raw all_values for the Categories sheet, with a TTL cache and retry."""
+        now = time.monotonic()
+        cached = _raw_categories_cache.get(spreadsheet_id)
+        if cached and now < cached[1]:
+            return cached[0]
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
+        values = _with_retry(lambda: sheet.get_all_values())
+        _raw_categories_cache[spreadsheet_id] = (values, now + _RAW_CAT_TTL)
+        return values
+
     def get_categories(self, spreadsheet_id: str) -> list[UserCategory]:
         """Read user's categories from the Categories sheet with a 5-minute TTL cache.
 
@@ -322,8 +339,13 @@ class SheetsService:
         categories: list[UserCategory] = []
         sheet_was_empty = False
         try:
-            sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
-            rows = sheet.get_all_records()
+            all_values = self._get_raw_cat_values(spreadsheet_id)
+            if not all_values or len(all_values) < 2:
+                sheet_was_empty = True
+                rows = []
+            else:
+                header = [h.lower().strip() for h in all_values[0]]
+                rows = [dict(zip(header, r)) for r in all_values[1:]]
             # Accumulate into cat_data before constructing models (subcategory rows
             # may appear before or after their parent category row)
             cat_data: dict[str, dict] = {}
@@ -390,10 +412,10 @@ class SheetsService:
 
         Safe to call on new or existing spreadsheets — leaves existing data intact.
         """
-        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
-        existing = sheet.get_all_values()
+        existing = self._get_raw_cat_values(spreadsheet_id)
         if existing and len(existing) > 1:
             return  # user has already configured categories, leave them
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
 
         headers = ["category", "subcategory", "label", "budget"]
         sheet.clear()
@@ -558,7 +580,7 @@ class SheetsService:
             The deleted ExpenseRecord, or None if not found.
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        all_values = sheet.get_all_values(value_render_option=ValueRenderOption.unformatted)
+        all_values = _with_retry(lambda: sheet.get_all_values(value_render_option=ValueRenderOption.unformatted))
         if len(all_values) <= 1:
             return None
 
@@ -597,7 +619,7 @@ class SheetsService:
             True if the row was found and updated, False otherwise.
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        all_values = sheet.get_all_values(value_render_option=ValueRenderOption.unformatted)
+        all_values = _with_retry(lambda: sheet.get_all_values(value_render_option=ValueRenderOption.unformatted))
         if len(all_values) <= 1:
             return False
 
@@ -635,7 +657,7 @@ class SheetsService:
             True if the row was found and updated, False otherwise.
         """
         sheet = self._get_sheet(spreadsheet_id, SHEET_TRANSACTIONS)
-        all_values = sheet.get_all_values(value_render_option=ValueRenderOption.unformatted)
+        all_values = _with_retry(lambda: sheet.get_all_values(value_render_option=ValueRenderOption.unformatted))
         if len(all_values) <= 1:
             return False
 
@@ -664,8 +686,7 @@ class SheetsService:
             spreadsheet_id: User's Spreadsheet ID.
             budgets:        Mapping of "category/subcategory" → new budget amount.
         """
-        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
-        all_values = sheet.get_all_values()
+        all_values = self._get_raw_cat_values(spreadsheet_id)
         if not all_values or len(all_values) < 2:
             return
 
@@ -690,10 +711,12 @@ class SheetsService:
             if key in budgets:
                 updates.append((row_idx, budget_col + 1, budgets[key]))
 
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
         for row_num, col_num, value in updates:
             sheet.update_cell(row_num, col_num, value)
 
         _category_cache.pop(spreadsheet_id, None)
+        _raw_categories_cache.pop(spreadsheet_id, None)
         logger.info("Updated %d subcategory budgets for %s", len(updates), spreadsheet_id)
 
     def update_category_budgets(self, spreadsheet_id: str, budgets: dict[str, float]) -> None:
@@ -706,8 +729,7 @@ class SheetsService:
             spreadsheet_id: User's Spreadsheet ID.
             budgets:        Mapping of category slug → new budget amount.
         """
-        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
-        all_values = sheet.get_all_values()
+        all_values = self._get_raw_cat_values(spreadsheet_id)
         if not all_values or len(all_values) < 2:
             return
 
@@ -734,10 +756,12 @@ class SheetsService:
             if cat_slug in budgets and not sub_slug:
                 updates.append((row_idx, budget_col + 1, budgets[cat_slug]))
 
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
         for row_num, col_num, value in updates:
             sheet.update_cell(row_num, col_num, value)
 
         _category_cache.pop(spreadsheet_id, None)
+        _raw_categories_cache.pop(spreadsheet_id, None)
         logger.info("Updated %d category budgets for %s", len(updates), spreadsheet_id)
 
     def add_category(
@@ -810,8 +834,7 @@ class SheetsService:
         Returns:
             True if any rows were deleted, False if category not found.
         """
-        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
-        all_values = sheet.get_all_values()
+        all_values = self._get_raw_cat_values(spreadsheet_id)
         rows_to_delete = [
             i + 1  # 1-based row index
             for i, row in enumerate(all_values)
@@ -819,10 +842,12 @@ class SheetsService:
         ]
         if not rows_to_delete:
             return False
+        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
         # Delete in reverse order to keep row indices valid
         for row_num in reversed(rows_to_delete):
             sheet.delete_rows(row_num)
         _category_cache.pop(spreadsheet_id, None)
+        _raw_categories_cache.pop(spreadsheet_id, None)
         logger.info("Deleted category '%s' (%d rows) from %s", cat_slug, len(rows_to_delete), spreadsheet_id)
         return True
 
@@ -837,12 +862,13 @@ class SheetsService:
         Returns:
             True if deleted, False if not found.
         """
-        sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
-        all_values = sheet.get_all_values()
+        all_values = self._get_raw_cat_values(spreadsheet_id)
         for i, row in enumerate(all_values):
             if len(row) >= 2 and row[0] == cat_slug and row[1] == sub_slug:
+                sheet = self._get_sheet(spreadsheet_id, SHEET_CATEGORIES)
                 sheet.delete_rows(i + 1)
                 _category_cache.pop(spreadsheet_id, None)
+                _raw_categories_cache.pop(spreadsheet_id, None)
                 logger.info("Deleted subcategory '%s/%s' from %s", cat_slug, sub_slug, spreadsheet_id)
                 return True
         return False
@@ -861,11 +887,11 @@ class SheetsService:
             return cached[0]
 
         sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
-        header = sheet.row_values(1)
+        header = _with_retry(lambda: sheet.row_values(1))
         if not header:
             result: list[dict] = []
         else:
-            result = sheet.get_all_records()
+            result = _with_retry(lambda: sheet.get_all_records())
 
         _recurring_cache[spreadsheet_id] = (result, now + _RECURRING_TTL)
         return result

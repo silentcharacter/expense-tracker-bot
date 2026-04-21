@@ -791,6 +791,7 @@ class SheetsService:
         sheet.append_row(row, value_input_option="RAW")
 
         _category_cache.pop(spreadsheet_id, None)
+        _raw_categories_cache.pop(spreadsheet_id, None)
         logger.info("Added category '%s' to spreadsheet %s", slug, spreadsheet_id)
 
     def add_subcategory(
@@ -822,6 +823,7 @@ class SheetsService:
         sheet.append_row([cat_slug, sub_slug, label, ""], value_input_option="RAW")
 
         _category_cache.pop(spreadsheet_id, None)
+        _raw_categories_cache.pop(spreadsheet_id, None)
         logger.info("Added subcategory '%s/%s' to spreadsheet %s", cat_slug, sub_slug, spreadsheet_id)
 
     def delete_category(self, spreadsheet_id: str, cat_slug: str) -> bool:

@@ -188,7 +188,6 @@ export function CategoryBudgetList({
           const isSelected = selected?.category === cat.category && !selected.subcategory;
 
           const daySpend = dayTotals.byCategory.get(cat.category) ?? 0;
-          const daySpendDefault = dayTotals.byCategoryDefault.get(cat.category) ?? 0;
           const spent = isDay ? daySpend : cat.spent;
           const denom = isDay ? Math.max(1, dayTotals.total) : Math.max(1, cat.budget || 1);
           const pct = isDay ? (daySpend / denom) * 100 : cat.percentage;

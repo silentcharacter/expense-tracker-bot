@@ -165,7 +165,7 @@ export function DailyHeatmap({
               data-recurring={recurring ? "true" : "false"}
               data-future={d.isFuture ? "true" : "false"}
               data-selected={d.iso === selectedDay ? "true" : "false"}
-              aria-label={`${formatBannerDate(d.iso)} ${format(d.total, 0)}`}
+              aria-label={`${formatBannerDate(d.iso)} ${format({ base: d.total, default: d.totalDefault }, 0)}`}
               onClick={() => handleClick(d)}
               disabled={d.isFuture}
             >

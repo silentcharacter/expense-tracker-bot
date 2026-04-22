@@ -63,11 +63,13 @@ async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("You are not registered. Send /start first.")
         return
 
+    import os as _os
     context.user_data["awaiting"] = "email_address"
-    await update.message.reply_text(
-        "Please enter your Google account email address.\n"
-        "Your Spreadsheet will be shared and transferred to that account."
-    )
+    if _os.environ.get("STORAGE_BACKEND") == "firestore":
+        prompt = "Please enter your email address. It will be saved to your profile."
+    else:
+        prompt = "Please enter your Google account email address.\nYour Spreadsheet will be shared and transferred to that account."
+    await update.message.reply_text(prompt)
 
 
 # ── /settings ────────────────────────────────────────────────────────────────
@@ -153,11 +155,10 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def last(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/last [N] — show the last N transactions (default 10)."""
-    from services.sheets import SheetsService
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     args = context.args or []
     try:
@@ -191,11 +192,10 @@ async def last(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def undo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/undo — delete the most recent transaction."""
-    from services.sheets import SheetsService
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     user = await registry.get_user(update.effective_user.id)
     if user is None:
@@ -219,11 +219,10 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     Defaults to the current month when no period is specified.
     """
-    from services.sheets import SheetsService
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     user = await registry.get_user(update.effective_user.id)
     if user is None:

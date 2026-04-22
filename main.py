@@ -29,7 +29,7 @@ from models.expense import UserRole
 
 from handlers import commands, voice, text, callbacks
 from services.gemini import GeminiService
-from services.sheets import SheetsService
+from services.storage import get_storage
 from services.currency import CurrencyService
 from services.user_registry import UserRegistry
 
@@ -68,13 +68,12 @@ def _build_application() -> Application:
     app = Application.builder().token(token).build()
 
     # ── Shared services ─────────────────────────────────────────────────────
+    storage = get_storage()
     app.bot_data["gemini"] = GeminiService()
-    app.bot_data["sheets"] = SheetsService()
+    app.bot_data["sheets"] = storage
     app.bot_data["currency"] = CurrencyService()
-    app.bot_data["registry"] = UserRegistry(
-        sheets_service=app.bot_data["sheets"]
-    )
-    app.bot_data["sheets"].ensure_registry_header()
+    app.bot_data["registry"] = UserRegistry(sheets_service=storage)
+    storage.ensure_registry_header()
 
     # ── Command handlers ────────────────────────────────────────────────────
     app.add_handler(CommandHandler("start", commands.start))

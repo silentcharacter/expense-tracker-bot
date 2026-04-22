@@ -13,7 +13,7 @@ from telegram.error import Forbidden, TelegramError
 
 from models.category import category_label
 from models.expense import ExpenseRecord, User
-from services.sheets import SheetsService
+from services.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ def _build_message(
 
 
 async def run_weekly_summary(
-    sheets: Optional[SheetsService] = None,
+    sheets=None,
     bot: Optional[Bot] = None,
 ) -> dict:
     """Send weekly spending summaries to all opted-in active users.
@@ -149,7 +149,7 @@ async def run_weekly_summary(
     Returns:
         ``{"sent": int, "skipped": int, "errors": int}``
     """
-    sheets = sheets or SheetsService()
+    sheets = sheets or get_storage()
 
     summary = {"sent": 0, "skipped": 0, "errors": 0}
 

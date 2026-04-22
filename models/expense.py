@@ -99,6 +99,34 @@ class ExpenseRecord(BaseModel):
             return v.strip().upper() == "TRUE"
         return bool(v)
 
+    def to_firestore_dict(self) -> dict:
+        """Serialise record to a Firestore-compatible dict."""
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "amount_local": self.amount_local,
+            "local_currency": self.local_currency,
+            "amount_base": self.amount_base,
+            "base_currency": self.base_currency,
+            "fx_rate": self.fx_rate,
+            "category": self.category,
+            "subcategory": self.subcategory,
+            "description": self.description,
+            "source": self.source.value,
+            "raw_input": self.raw_input,
+            "recurring": self.recurring,
+            "recurring_template_id": self.recurring_template_id,
+        }
+
+    @classmethod
+    def from_firestore_dict(cls, data: dict) -> "ExpenseRecord":
+        """Deserialise from a Firestore document dict."""
+        d = dict(data)
+        ts = d.get("timestamp")
+        if ts is not None and hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+            d["timestamp"] = ts.replace(tzinfo=None)
+        return cls(**d)
+
     def to_sheet_row(self) -> list:
         """Serialise record to a flat list for Google Sheets append."""
         return [
@@ -168,7 +196,7 @@ class User(BaseModel):
     username: str = Field(default="", description="Telegram @username without @")
     display_name: str = Field(..., description="Full name from Telegram profile")
     email: str = Field(default="", description="Google email for Sheets ownership")
-    spreadsheet_id: str = Field(..., description="Personal Spreadsheet ID")
+    spreadsheet_id: str = Field(default="", description="Personal Spreadsheet ID, or str(telegram_id) in Firestore mode")
     role: UserRole = UserRole.user
     base_currency: str = Field(..., description="Base currency for analytics and budgets")
     default_currency: str = Field(..., description="Fallback currency when none is mentioned")
@@ -192,6 +220,33 @@ class User(BaseModel):
         if isinstance(v, str):
             return v.upper() == "TRUE"
         return bool(v)
+
+    def to_firestore_dict(self) -> dict:
+        """Serialise user to a Firestore-compatible dict."""
+        return {
+            "telegram_id": self.telegram_id,
+            "username": self.username,
+            "display_name": self.display_name,
+            "email": self.email,
+            "spreadsheet_id": self.spreadsheet_id,
+            "role": self.role.value,
+            "base_currency": self.base_currency,
+            "default_currency": self.default_currency,
+            "created_at": self.created_at,
+            "status": self.status.value,
+            "budget_alerts": self.budget_alerts,
+            "weekly_summary": self.weekly_summary,
+            "insights": self.insights,
+        }
+
+    @classmethod
+    def from_firestore_dict(cls, data: dict) -> "User":
+        """Deserialise from a Firestore document dict."""
+        d = dict(data)
+        ts = d.get("created_at")
+        if ts is not None and hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+            d["created_at"] = ts.replace(tzinfo=None)
+        return cls(**d)
 
     def to_registry_row(self) -> list:
         """Serialise to a flat list for the Master Registry sheet."""

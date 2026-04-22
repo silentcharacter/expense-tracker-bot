@@ -52,12 +52,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     from services.user_registry import UserRegistry
     from services.gemini import GeminiService
     from services.currency import CurrencyService
-    from services.sheets import SheetsService
 
     registry: UserRegistry = context.bot_data["registry"]
     gemini: GeminiService = context.bot_data["gemini"]
     currency_svc: CurrencyService = context.bot_data["currency"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     tg_user = update.effective_user
 
@@ -157,29 +156,36 @@ async def _handle_awaiting_input(
             )
             return
         context.user_data.pop("awaiting", None)
-        await update.message.reply_text("Sharing your Spreadsheet…")
+        import os as _os
+        is_firestore = _os.environ.get("STORAGE_BACKEND") == "firestore"
+        await update.message.reply_text("Saving…" if is_firestore else "Sharing your Spreadsheet…")
         try:
             await registry.transfer_to_user(update.effective_user.id, google_email)
         except Exception as exc:
             logger.exception(
-                "Failed to transfer spreadsheet for %s: %s",
+                "Failed to update email for %s: %s",
                 update.effective_user.id,
                 exc,
             )
             await update.message.reply_text(f"Error: {exc}")
             return
-        await update.message.reply_text(
-            f"Done! Your Spreadsheet has been shared with *{google_email}*.\n"
-            "You can now find it in Google Drive.",
-            parse_mode="Markdown",
-        )
+        if is_firestore:
+            await update.message.reply_text(
+                f"Done! Email *{google_email}* saved to your profile.",
+                parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_text(
+                f"Done! Your Spreadsheet has been shared with *{google_email}*.\n"
+                "You can now find it in Google Drive.",
+                parse_mode="Markdown",
+            )
         return
 
     if awaiting.startswith("edit_description:"):
         record_id = awaiting.split(":", 1)[1]
         context.user_data.pop("awaiting", None)
-        from services.sheets import SheetsService
-        sheets: SheetsService = context.bot_data["sheets"]
+        sheets = context.bot_data["sheets"]
         user = await registry.get_user(update.effective_user.id)
         if not user:
             await update.message.reply_text("User not found.")
@@ -199,8 +205,7 @@ async def _handle_awaiting_input(
         context.user_data.pop("awaiting", None)
         user = await registry.get_user(update.effective_user.id)
         if user:
-            from services.sheets import SheetsService
-            sheets: SheetsService = context.bot_data["sheets"]
+            sheets = context.bot_data["sheets"]
             sheets.append_feedback(user.telegram_id, user.username, user.display_name, text)
             await update.message.reply_text("Thank you for your feedback!")
         else:

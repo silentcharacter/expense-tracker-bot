@@ -16,13 +16,13 @@ from typing import Optional
 
 from models.expense import ExpenseRecord, ExpenseSource, User
 from services.currency import CurrencyService
-from services.sheets import SheetsService
+from services.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
 
 async def run_recurring_cron(
-    sheets: Optional[SheetsService] = None,
+    sheets=None,
     currency: Optional[CurrencyService] = None,
     today: Optional[date] = None,
 ) -> dict:
@@ -36,7 +36,7 @@ async def run_recurring_cron(
     Returns:
         Summary dict: ``{"users": int, "inserted": int, "skipped": int, "errors": int}``.
     """
-    sheets = sheets or SheetsService()
+    sheets = sheets or get_storage()
     currency = currency or CurrencyService()
     today = today or date.today()
 
@@ -65,7 +65,7 @@ async def run_recurring_cron(
 
 
 async def _process_user(
-    sheets: SheetsService,
+    sheets,
     currency: CurrencyService,
     user: User,
     today: date,

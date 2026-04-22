@@ -7,7 +7,7 @@ import time
 from urllib.parse import parse_qs, unquote
 
 
-MAX_AUTH_AGE_SECONDS = 3600  # 1 hour
+MAX_AUTH_AGE_SECONDS = 86400  # 24 hours (per Telegram recommendation)
 
 
 def validate_init_data(init_data: str, bot_token: str) -> dict | None:

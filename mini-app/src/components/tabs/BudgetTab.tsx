@@ -148,13 +148,17 @@ interface SimpleInputDrawerProps {
 function SimpleInputDrawer({ title, placeholder, confirmLabel, onConfirm, onClose }: SimpleInputDrawerProps) {
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function confirm() {
     if (!value.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       await onConfirm(value.trim());
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSaving(false);
     }
@@ -201,6 +205,11 @@ function SimpleInputDrawer({ title, placeholder, confirmLabel, onConfirm, onClos
             border: "1px solid var(--app-border)",
           }}
         />
+        {error && (
+          <p className="text-xs text-center" style={{ color: "var(--app-danger)" }}>
+            {error}
+          </p>
+        )}
         <button
           disabled={!value.trim() || saving}
           onClick={confirm}

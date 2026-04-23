@@ -36,7 +36,6 @@ def _delete_webhook(token: str) -> None:
 
 def main() -> None:
     _load_env_yaml()
-    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json")
 
     _delete_webhook(os.environ["TELEGRAM_BOT_TOKEN"])
 

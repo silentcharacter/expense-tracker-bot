@@ -2,8 +2,8 @@
 
 ## Project
 Multi-user Telegram bot for expense tracking with a Telegram Mini App dashboard.
-Voice/text input → Gemini Flash (audio→JSON) → Google Sheets.
-Mini App (React SPA) → REST API → same Google Sheets data.
+Voice/text input → Gemini Flash (audio→JSON) → Firestore.
+Mini App (React SPA) → REST API → same Firestore data.
 Hosting: Google Cloud Functions (bot + API), GCS static hosting (Mini App).
 Full architecture: docs/expense-bot-architecture.html
 
@@ -13,8 +13,7 @@ Full architecture: docs/expense-bot-architecture.html
 - Python 3.12, asyncio
 - python-telegram-bot (async)
 - Google Gemini 2.0 Flash (google-genai SDK)
-- Google Sheets API (gspread)
-- Google Drive API (googleapiclient)
+- Google Cloud Firestore (google-cloud-firestore)
 - Google Cloud Functions (2nd gen), functions-framework
 - Pydantic for data models
 - aiohttp (currency API client)
@@ -40,8 +39,10 @@ expense-bot/
 │   └── routes.py            #   /api/summary, /api/expenses, /api/budgets, /api/settings
 ├── services/                # Business logic
 │   ├── gemini.py            #   Gemini Flash: audio/text → structured JSON
-│   ├── sheets.py            #   Per-user spreadsheets, transactions, categories, budgets
-│   ├── user_registry.py     #   Registration, spreadsheet provisioning
+│   ├── firestore_service.py #   Firestore CRUD (transactions, categories, users, recurring)
+│   ├── storage.py           #   Storage backend factory (STORAGE_BACKEND env var)
+│   ├── sheets.py            #   Legacy Sheets backend (STORAGE_BACKEND=sheets)
+│   ├── user_registry.py     #   Registration, user provisioning
 │   ├── currency.py          #   FX rates (ExchangeRate-API) with 24h cache
 │   └── auth.py              #   Telegram Mini App initData HMAC validation
 ├── models/                  # Pydantic models
@@ -60,11 +61,13 @@ expense-bot/
 ├── tests/                   # pytest + pytest-asyncio
 │   ├── test_api.py          #   Mini App API routes
 │   ├── test_auth.py         #   initData validation
-│   ├── test_sheets_integration.py
-│   ├── test_currency_integration.py
-│   └── test_gemini_integration.py
+│   ├── test_budget_alerts.py
+│   ├── test_recurring_cron.py
+│   ├── test_firestore_integration.py  # requires Firestore emulator
+│   ├── test_currency_integration.py   # requires EXCHANGE_RATE_API_KEY env var
+│   ├── test_gemini_integration.py     # requires GOOGLE_API_KEY env var
+│   └── test_config.yaml     #   non-secret test config (committed)
 ├── scripts/
-│   └── get_oauth_token.py   # One-off OAuth for Drive admin ops
 ├── docs/                    # Architecture, deployment, local dev guides
 ├── specs/                   # Product/technical specs
 ├── deploy.sh                # gcloud functions deploy wrapper
@@ -74,6 +77,20 @@ expense-bot/
 ├── requirements.txt
 └── .env.yaml
 ```
+
+## Running Tests
+
+```bash
+# All tests — integration tests skip gracefully if emulator not running
+pytest
+
+# With Firestore emulator (Java 21+ required) — integration tests run fully
+JAVA_HOME=/opt/homebrew/opt/openjdk@21 firebase emulators:start --only firestore --project expense-bot-489609
+pytest
+```
+
+tests/test_config.yaml is committed to the repo and contains all required keys
+(FIRESTORE_EMULATOR_HOST, GOOGLE_API_KEY, EXCHANGE_RATE_API_KEY).
 
 ## Coding Rules
 - Type hints on all functions

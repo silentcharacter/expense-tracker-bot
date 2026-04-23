@@ -20,7 +20,8 @@ Mini App (GCS) ──REST──────────┘
 ## Prerequisites
 
 - `gcloud` CLI installed and authenticated (`gcloud auth login`)
-- Node.js ≥ 18 and npm
+- Application Default Credentials configured for local dev: `gcloud auth application-default login`
+- Node.js ≥ 18 and npm (also needed for the Firestore emulator: `npm install -g firebase-tools`)
 - Python 3.12 with dependencies installed (`pip install -r requirements.txt`)
 - `.env.yaml` filled in (see `.env.yaml.example`)
 
@@ -52,11 +53,7 @@ gcloud firestore databases create \
 ### 0.2 Deploy composite indexes
 
 ```bash
-gcloud firestore indexes composite create \
-  --project=expense-bot-489609 \
-  --collection-group=transactions \
-  --field-config=field-path=timestamp,order=descending
-
+# Only the two-field composite is needed — single-field indexes are created automatically
 gcloud firestore indexes composite create \
   --project=expense-bot-489609 \
   --collection-group=transactions \

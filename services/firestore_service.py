@@ -1,6 +1,7 @@
 """Firestore-backed storage — drop-in replacement for SheetsService."""
 
 import logging
+import os
 import time
 import uuid as _uuid
 from datetime import date, datetime
@@ -31,7 +32,10 @@ class FirestoreService:
     """
 
     def __init__(self, client: Optional[_fs.Client] = None) -> None:
-        self._db = client or _fs.Client()
+        if client is None:
+            db_name = os.environ.get("FIRESTORE_DATABASE", "(default)")
+            client = _fs.Client(database=db_name)
+        self._db = client
 
     # ── Path helpers ─────────────────────────────────────────────────────────
 

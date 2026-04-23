@@ -117,7 +117,6 @@ def main() -> None:
     args = _parse_args()
     _check_prerequisites()
     _load_env_yaml()
-    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(ROOT / "credentials.json"))
     _ensure_node_modules()
 
     ngrok_domain = args.domain or os.environ.get("NGROK_DOMAIN", "")

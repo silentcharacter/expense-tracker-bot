@@ -60,10 +60,23 @@ def main() -> None:
     if dry_run:
         logger.info("DRY RUN — no data will be written to Firestore")
 
-    # Build Sheets service (force sheets backend)
+    # Build Sheets service using OAuth refresh token (ADC lacks Sheets scope locally)
     os.environ["STORAGE_BACKEND"] = "sheets"
     from services.sheets import SheetsService
-    sheets = SheetsService()
+    import gspread
+    from google.oauth2.credentials import Credentials as OAuthCredentials
+    from google.auth.transport.requests import Request
+
+    creds = OAuthCredentials(
+        token=None,
+        refresh_token=os.environ["GOOGLE_OAUTH_REFRESH_TOKEN"],
+        client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+        token_uri="https://oauth2.googleapis.com/token",
+    )
+    creds.refresh(Request())
+    gc = gspread.Client(auth=creds)
+    sheets = SheetsService(client=gc)
 
     # Build Firestore service directly (not through factory)
     from services.firestore_service import FirestoreService
@@ -172,8 +185,8 @@ def main() -> None:
             logger.error("  Recurring migration failed for user %s: %s", tid, exc)
             totals["errors"] += 1
 
-        # Small pause to avoid Sheets quota bursts
-        time.sleep(0.5)
+        # Pause between users to avoid Sheets read quota (300 req/min/user)
+        time.sleep(3)
 
     logger.info(
         "Migration complete%s: %d users, %d transactions, %d categories, %d recurring, %d errors",

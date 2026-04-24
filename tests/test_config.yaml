@@ -1,0 +1,12 @@
+# Test configuration — committed to repo (private)
+# Firestore integration tests use the local emulator, no real credentials needed.
+# Gemini and Currency integration tests use real API keys below.
+
+STORAGE_BACKEND: firestore
+FIRESTORE_EMULATOR_HOST: "localhost:8080"
+FIRESTORE_DATABASE: "(default)"
+TIMEZONE: Asia/Bangkok
+
+# API keys for Gemini and Currency integration tests — set in .env (gitignored)
+# GOOGLE_API_KEY: ""
+# EXCHANGE_RATE_API_KEY: ""

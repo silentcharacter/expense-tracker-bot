@@ -5,7 +5,7 @@
  * is wrapped in try/catch because Telegram's WebView can refuse storage.
  */
 
-const TTL_MS = 10 * 60 * 1000;
+const TTL_MS = 60 * 1000;
 const PREFIX = "expbot:cache:v1:";
 
 interface Entry<T> {

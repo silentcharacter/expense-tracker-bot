@@ -19,6 +19,10 @@ interface NewHeaderProps {
   onMonthOffsetChange: (offset: number) => void;
   /** Opens the settings modal. */
   onOpenSettings: () => void;
+  /** Triggered when the user taps the refresh button. */
+  onRefresh?: () => void;
+  /** Show spinning indicator on the refresh button. */
+  isRefreshing?: boolean;
 }
 
 function GearIcon() {
@@ -45,6 +49,8 @@ export function NewHeader({
   monthOffset,
   onMonthOffsetChange,
   onOpenSettings,
+  onRefresh,
+  isRefreshing = false,
 }: NewHeaderProps) {
   const { displayMode, baseCurrency, defaultCurrency, setMode } = useCurrency();
   const { hapticFeedback } = useTelegram();
@@ -68,6 +74,12 @@ export function NewHeader({
   function handleSettings() {
     hapticFeedback?.impactOccurred("light");
     onOpenSettings();
+  }
+
+  function handleRefresh() {
+    if (isRefreshing) return;
+    hapticFeedback?.impactOccurred("light");
+    onRefresh?.();
   }
 
   function handlePrev() {
@@ -183,6 +195,43 @@ export function NewHeader({
               {getCurrencySymbol(defaultCurrency)}
             </button>
           </div>
+        )}
+
+        {onRefresh && (
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center justify-center rounded-full"
+            style={{
+              width: 36,
+              height: 36,
+              backgroundColor: "var(--app-secondary-bg)",
+              color: "var(--app-text-primary)",
+              border: "none",
+              cursor: isRefreshing ? "default" : "pointer",
+              opacity: isRefreshing ? 0.6 : 1,
+            }}
+            aria-label="Refresh data"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                animation: isRefreshing ? "spin 0.8s linear infinite" : "none",
+              }}
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
         )}
 
         <button

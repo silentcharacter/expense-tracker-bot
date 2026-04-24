@@ -57,7 +57,6 @@ async def category_keyboard(
     sheets,
 ) -> InlineKeyboardMarkup:
     """Build a keyboard with the user's categories for editing."""
-    from services.sheets import SheetsService as _SheetsService  # noqa: F401
     categories = sheets.get_categories(spreadsheet_id)
     buttons = [
         InlineKeyboardButton(
@@ -146,11 +145,10 @@ async def _handle_undo(
     query = update.callback_query
     record_id = parts[1] if len(parts) > 1 else ""
 
-    from services.sheets import SheetsService
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     user = await registry.get_user(update.effective_user.id)
     if user is None:
@@ -246,11 +244,10 @@ async def _handle_set_category(
     record_id = parts[1]
     new_category = parts[2]
 
-    from services.sheets import SheetsService
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     user = await registry.get_user(update.effective_user.id)
     if user is None:
@@ -291,11 +288,10 @@ async def _handle_set_subcategory(
         await query.edit_message_text("Session expired. Please tap ✎ Category again.")
         return
 
-    from services.sheets import SheetsService
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     user = await registry.get_user(update.effective_user.id)
     if user is None:

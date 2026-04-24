@@ -7,6 +7,24 @@ import logging
 import os
 import re as _re
 from collections import defaultdict
+
+_CYRILLIC_MAP = str.maketrans({
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd',
+    'е': 'e', 'ё': 'yo', 'ж': 'zh', 'з': 'z', 'и': 'i',
+    'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n',
+    'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't',
+    'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch',
+    'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '',
+    'э': 'e', 'ю': 'yu', 'я': 'ya',
+})
+
+
+def _slugify(label: str) -> str:
+    s = label.lower().strip().translate(_CYRILLIC_MAP)
+    s = s.replace(" ", "_")
+    s = _re.sub(r"[^a-z0-9_]", "", s)
+    s = _re.sub(r"_+", "_", s).strip("_")
+    return s
 from datetime import date, timedelta
 from typing import Optional
 
@@ -16,7 +34,7 @@ from flask import jsonify
 from models.expense import ExpenseRecord, User
 from services.auth import validate_init_data
 from services.currency import CurrencyService
-from services.sheets import SheetsService
+from services.storage import get_storage
 from services.user_registry import UserRegistry
 
 logger = logging.getLogger(__name__)
@@ -24,22 +42,18 @@ logger = logging.getLogger(__name__)
 # ── Lazy service singletons ─────────────────────────────────────────────────
 # Re-using the same instances across Cloud Function warm invocations.
 
-_sheets_singleton: Optional[SheetsService] = None
 _registry_singleton: Optional[UserRegistry] = None
 _currency_singleton: Optional[CurrencyService] = None
 
 
-def _get_sheets() -> SheetsService:
-    global _sheets_singleton
-    if _sheets_singleton is None:
-        _sheets_singleton = SheetsService()
-    return _sheets_singleton
+def _get_sheets():
+    return get_storage()
 
 
 def _get_registry() -> UserRegistry:
     global _registry_singleton
     if _registry_singleton is None:
-        _registry_singleton = UserRegistry(sheets_service=_get_sheets())
+        _registry_singleton = UserRegistry(sheets_service=get_storage())
     return _registry_singleton
 
 
@@ -270,7 +284,7 @@ def _record_to_dict(
 
 
 async def _compute_spending_pace(
-    sheets: SheetsService,
+    sheets,
     user: User,
     records: list[ExpenseRecord],
     total_base: float,
@@ -842,7 +856,7 @@ async def _api_categories_create(request: flask.Request, user: User) -> tuple:
     if not label:
         return jsonify({"error": "label is required"}), 400
 
-    slug = _re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
+    slug = _slugify(label)
     if not slug:
         slug = "cat_" + hashlib.sha1(label.encode()).hexdigest()[:8]
 
@@ -889,7 +903,7 @@ async def _api_subcategory_create(request: flask.Request, user: User, cat_slug: 
     if not label:
         return jsonify({"error": "label is required"}), 400
 
-    sub_slug = _re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
+    sub_slug = _slugify(label)
     if not sub_slug:
         sub_slug = "sub_" + hashlib.sha1(label.encode()).hexdigest()[:8]
 

@@ -251,9 +251,6 @@ export function SettingsPage() {
     }
   }
 
-  const spreadsheetUrl = settings.spreadsheet_id
-    ? `https://docs.google.com/spreadsheets/d/${settings.spreadsheet_id}`
-    : null;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -271,24 +268,6 @@ export function SettingsPage() {
             <p className="text-xs mt-0.5 truncate" style={{ color: "var(--app-text-secondary)" }}>
               @{settings.username}
             </p>
-          )}
-          {settings.email ? (
-            <span
-              className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
-              style={{ background: "color-mix(in srgb, #22c55e 15%, transparent)", color: "#22c55e" }}
-            >
-              <svg width={10} height={10} viewBox="0 0 10 10" fill="none">
-                <path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Google Sheets linked
-            </span>
-          ) : (
-            <span
-              className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
-              style={{ background: "color-mix(in srgb, var(--app-text-secondary) 15%, transparent)", color: "var(--app-text-secondary)" }}
-            >
-              Not linked
-            </span>
           )}
         </div>
       </div>
@@ -332,19 +311,6 @@ export function SettingsPage() {
       <SectionHeader label="Data" />
       <div className="card">
         <div className="flex flex-col divide-y" style={{ borderColor: "var(--app-border)" }}>
-          <SettingsRow
-            icon="📊"
-            label="Google Sheets"
-            subtitle={settings.email ? `Expenses — ${settings.display_name}` : "Not linked"}
-            onClick={spreadsheetUrl ? () => window.open(spreadsheetUrl, "_blank") : undefined}
-            right={
-              spreadsheetUrl ? (
-                <span className="text-sm font-medium" style={{ color: "var(--app-accent)" }}>
-                  Open ↗
-                </span>
-              ) : undefined
-            }
-          />
           <SettingsRow
             icon="📥"
             label="Export CSV"

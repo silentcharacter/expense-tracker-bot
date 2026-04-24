@@ -323,12 +323,6 @@
             <td><span class="tag green">Бесплатно</span></td>
           </tr>
           <tr>
-            <td><code>Service Account JSON</code></td>
-            <td>Cloud Console</td>
-            <td>Sheets + Drive API</td>
-            <td><span class="tag green">Бесплатно</span></td>
-          </tr>
-          <tr>
             <td><code>TELEGRAM_BOT_TOKEN</code></td>
             <td>@BotFather</td>
             <td>Telegram Bot API</td>
@@ -393,17 +387,16 @@ gcloud config set project expense-bot-12345</pre>
       </div>
 
       <div class="note-box">
-        <strong>💰 Billing:</strong> Google Cloud требует привязку карты, но для нашего проекта всё попадает в бесплатный tier. Новые аккаунты получают $300 кредита на 90 дней. Cloud Functions, Sheets API и Drive API бесплатны в наших объёмах.
+        <strong>💰 Billing:</strong> Google Cloud требует привязку карты, но для нашего проекта всё попадает в бесплатный tier. Новые аккаунты получают $300 кредита на 90 дней. Cloud Functions и Firestore бесплатны в наших объёмах.
       </div>
     </div>
 
     <div class="card">
       <h3><span class="icon">🔌</span> Включение API</h3>
       <p style="margin-bottom: 12px;">Включи четыре API в проекте:</p>
-      <div class="code-block"><pre><span class="comment"># Все четыре API одной командой</span>
+      <div class="code-block"><pre><span class="comment"># Все API одной командой</span>
 gcloud services enable \
-  sheets.googleapis.com \
-  drive.googleapis.com \
+  firestore.googleapis.com \
   cloudfunctions.googleapis.com \
   generativelanguage.googleapis.com
 
@@ -471,167 +464,69 @@ curl <span class="string">"https://generativelanguage.googleapis.com/v1beta/mode
 
   <div class="divider"></div>
 
-  <!-- Step 3: Service Account -->
+  <!-- Step 3: Firestore + ADC -->
   <div class="section">
     <div class="section-header">
       <span class="section-num">03</span>
-      <h2>Service Account (Sheets API)</h2>
+      <h2>Firestore + Application Default Credentials</h2>
       <span class="time-badge">~5 мин</span>
     </div>
 
     <div class="card">
-      <h3><span class="icon">🤖</span> Создание Service Account</h3>
+      <h3><span class="icon">🔥</span> Настройка Firestore</h3>
 
-      <div class="code-block"><pre><span class="comment"># Создать Service Account</span>
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>Включи Firestore API</h4>
+          <div class="code-block"><pre>gcloud services enable firestore.googleapis.com \
+  --project=expense-bot-12345</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Создай базу данных Firestore</h4>
+          <div class="code-block"><pre>gcloud firestore databases create \
+  --project=expense-bot-12345 \
+  --location=asia-southeast1 \
+  --type=firestore-native</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Создай сервис-аккаунт и выдай доступ к Firestore</h4>
+          <div class="code-block"><pre><span class="comment"># Создать сервис-аккаунт для Cloud Function</span>
 gcloud iam service-accounts create expense-bot-sa \
   --display-name=<span class="string">"Expense Bot Service Account"</span>
 
-<span class="comment"># Скачать JSON-ключ</span>
-gcloud iam service-accounts keys create credentials.json \
-  --iam-account=expense-bot-sa@expense-bot-12345.iam.gserviceaccount.com</pre>
-      </div>
-
-      <p style="margin-top:12px;">Файл <code>credentials.json</code> появится в текущей директории. Это credentials для программного доступа к Sheets и Drive.</p>
-
-      <div class="danger-box">
-        <strong>🔒 Безопасность:</strong> Никогда не коммить credentials.json в git! Добавь в .gitignore немедленно. Для продакшена используй Google Secret Manager.
-      </div>
-
-      <div class="code-block"><pre><span class="comment"># Добавить в .gitignore</span>
-echo <span class="string">"credentials.json"</span> >> .gitignore</pre>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3><span class="icon">📊</span> Настройка Google Sheets</h3>
-
-      <div class="step">
-        <span class="step-num">1</span>
-        <div class="step-content">
-          <h4>Создай Template Spreadsheet</h4>
-          <p>Открой <a href="https://sheets.google.com" style="color:var(--accent);">sheets.google.com</a> → создай новый Spreadsheet → назови "Expense Bot — Template". Создай листы: Transactions, Dashboard, Categories.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <span class="step-num">2</span>
-        <div class="step-content">
-          <h4>Создай Master Registry Spreadsheet</h4>
-          <p>Ещё один Spreadsheet → назови "Expense Bot — Registry". Переименуй первый лист (Sheet1) в <code>Registry</code>. Колонки: telegram_id, username, display_name, email, spreadsheet_id, owner, base_currency, default_currency, created_at, status.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <span class="step-num">3</span>
-        <div class="step-content">
-          <h4>Расшарь оба Service Account'у</h4>
-          <p>Открой каждый Spreadsheet → Share → вставь email Service Account'а (он выглядит как <code><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="6d08151d08031e08400f0219401e0c2d08151d08031e08400f0219405c5f5e595843040c00430a1e081f1b040e080c0e0e02180319430e0200">[email&#160;protected]</a></code>) → дай роль Editor.</p>
+<span class="comment"># Выдать доступ к Firestore</span>
+gcloud projects add-iam-policy-binding expense-bot-12345 \
+  --member=<span class="string">"serviceAccount:expense-bot-sa@expense-bot-12345.iam.gserviceaccount.com"</span> \
+  --role=<span class="string">"roles/datastore.user"</span></pre>
+          </div>
+          <p style="margin-top:8px;">Cloud Function будет запускаться от этого сервис-аккаунта — credentials.json не нужен.</p>
         </div>
       </div>
 
       <div class="step">
         <span class="step-num">4</span>
         <div class="step-content">
-          <h4>Создай папку для пользовательских Spreadsheets</h4>
-          <p>В Google Drive создай папку "ExpenseBot Users". Расшарь её Service Account'у (Editor). Скопируй ID папки из URL: <code>drive.google.com/drive/folders/<strong>FOLDER_ID</strong></code>.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <span class="step-num">5</span>
-        <div class="step-content">
-          <h4>Запиши ID</h4>
-          <p>Из URL каждого Spreadsheet скопируй ID: <code>docs.google.com/spreadsheets/d/<strong>SPREADSHEET_ID</strong>/edit</code>. Тебе нужны три ID: TEMPLATE_SHEET_ID, REGISTRY_SHEET_ID, USERS_FOLDER_ID.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="divider"></div>
-
-  <!-- Step 3b: Admin OAuth2 -->
-  <div class="section">
-    <div class="section-header">
-      <span class="section-num">03b</span>
-      <h2>Admin OAuth2 (Drive file creation)</h2>
-      <span class="time-badge">~3 мин</span>
-    </div>
-
-    <div class="card">
-      <h3><span class="icon">🔐</span> Зачем нужен OAuth2</h3>
-      <p>Service Account на consumer GCP-проектах имеет <strong>нулевую квоту</strong> Google Drive — он не может владеть файлами. Поэтому для создания Spreadsheets (копирование шаблона) мы используем OAuth2-токен твоего личного Gmail-аккаунта (admin). SA остаётся для чтения/записи Sheets.</p>
-    </div>
-
-    <div class="card">
-      <h3><span class="icon">⚙️</span> Создание OAuth2 Desktop credentials</h3>
-
-      <div class="step">
-        <span class="step-num">1</span>
-        <div class="step-content">
-          <h4>Настрой OAuth Consent Screen</h4>
-          <p>Cloud Console → APIs & Services → <strong>OAuth consent screen</strong>.</p>
-          <ul>
-            <li>User Type: <strong>External</strong> → Create</li>
-            <li>App name: <code>Expense Bot</code></li>
-            <li>User support email: твой Gmail</li>
-            <li>Developer contact email: твой Gmail</li>
-            <li>Scopes — пропусти (Next)</li>
-            <li>Test users → <strong>+ Add users</strong> → добавь свой Gmail (тот же что ADMIN_EMAIL)</li>
-            <li>Save</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="danger-box">
-        <strong>🔒 Важно: добавь себя в Test users!</strong> Приложение в статусе Testing — авторизоваться могут только пользователи из списка. Без этого получишь <code>Error 403: access_denied</code>.
-      </div>
-
-      <div class="step">
-        <span class="step-num">2</span>
-        <div class="step-content">
-          <h4>Создай OAuth Client ID</h4>
-          <p>Cloud Console → APIs & Services → Credentials → <strong>+ Create Credentials</strong> → <strong>OAuth client ID</strong>.</p>
-          <ul>
-            <li>Application type: <strong>Desktop app</strong> (не Web application!)</li>
-            <li>Name: <code>Expense Bot Desktop</code></li>
-            <li>Create</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="note-box">
-        <strong>⚠️ Именно Desktop app!</strong> Если выбрать Web application, получишь <code>Error 400: redirect_uri_mismatch</code>. В скачанном JSON должен быть ключ <code>"installed"</code>, а не <code>"web"</code>.
-      </div>
-
-      <div class="step">
-        <span class="step-num">3</span>
-        <div class="step-content">
-          <h4>Скачай JSON</h4>
-          <p>Нажми <strong>Download JSON</strong> и сохрани как <code>oauth_client_secret.json</code> в корень проекта. Добавь в <code>.gitignore</code>.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <span class="step-num">4</span>
-        <div class="step-content">
-          <h4>Получи Refresh Token</h4>
-          <div class="code-block"><pre><span class="comment"># Установи зависимость (если нет)</span>
-pip install google-auth-oauthlib
-
-<span class="comment"># Запусти скрипт — откроется браузер для авторизации</span>
-python scripts/get_oauth_token.py</pre>
+          <h4>Настрой Application Default Credentials для локальной разработки</h4>
+          <div class="code-block"><pre><span class="comment"># Один раз — авторизует gcloud для локальных вызовов GCP API</span>
+gcloud auth application-default login</pre>
           </div>
-          <p style="margin-top:8px;">Откроется браузер → залогинься своим Gmail (тот же что ADMIN_EMAIL) → нажми "Continue" (Google покажет предупреждение для unverified apps — это нормально, нажми "Advanced" → "Go to Expense Bot").</p>
-          <p style="margin-top:8px;">Скрипт выведет три переменные — добавь их в <code>.env.yaml</code>:</p>
-          <div class="code-block"><pre><span class="type">GOOGLE_OAUTH_CLIENT_ID</span>: <span class="string">"..."</span>
-<span class="type">GOOGLE_OAUTH_CLIENT_SECRET</span>: <span class="string">"..."</span>
-<span class="type">GOOGLE_OAUTH_REFRESH_TOKEN</span>: <span class="string">"..."</span></pre>
-          </div>
+          <p style="margin-top:8px;">Credentials сохранятся в <code>~/.config/gcloud/</code> и подхватятся автоматически. Файл <code>credentials.json</code> не нужен.</p>
         </div>
       </div>
 
-      <div class="note-box">
-        <strong>⚠️ Refresh token бессрочный</strong> пока OAuth-приложение в статусе Testing и ты не отзовёшь доступ. Получать повторно не нужно.
+      <div class="success-box">
+        <strong>✅ Никаких JSON-ключей!</strong> Cloud Functions использует сервис-аккаунт автоматически. Локальная разработка — через ADC.
       </div>
     </div>
   </div>
@@ -772,20 +667,11 @@ curl <span class="string">"https://v6.exchangerate-api.com/v6/YOUR_KEY/latest/US
 <span class="comment"># Gemini</span>
 <span class="type">GOOGLE_API_KEY</span>: <span class="string">"AIzaSy..."</span>
 
-<span class="comment"># Google Sheets / Drive</span>
-<span class="type">ADMIN_EMAIL</span>: <span class="string">"you@gmail.com"</span>
-<span class="type">SA_EMAIL</span>: <span class="string">"expense-bot-sa@PROJECT_ID.iam.gserviceaccount.com"</span>
-<span class="type">TEMPLATE_SHEET_ID</span>: <span class="string">"1aBcDe..."</span>
-<span class="type">REGISTRY_SHEET_ID</span>: <span class="string">"1fGhIj..."</span>
-<span class="type">USERS_FOLDER_ID</span>: <span class="string">"1kLmNo..."</span>
-
-<span class="comment"># Admin OAuth2 (Drive file creation)</span>
-<span class="type">GOOGLE_OAUTH_CLIENT_ID</span>: <span class="string">"123...apps.googleusercontent.com"</span>
-<span class="type">GOOGLE_OAUTH_CLIENT_SECRET</span>: <span class="string">"GOCSPX-..."</span>
-<span class="type">GOOGLE_OAUTH_REFRESH_TOKEN</span>: <span class="string">"1//0..."</span>
-
 <span class="comment"># Exchange Rate</span>
 <span class="type">EXCHANGE_RATE_API_KEY</span>: <span class="string">"abc123..."</span>
+
+<span class="comment"># Storage</span>
+<span class="type">STORAGE_BACKEND</span>: <span class="string">"firestore"</span>
 
 <span class="comment"># App Config</span>
 <span class="type">TIMEZONE</span>: <span class="string">"Asia/Bangkok"</span></pre>
@@ -796,8 +682,6 @@ curl <span class="string">"https://v6.exchangerate-api.com/v6/YOUR_KEY/latest/US
       </div>
 
       <div class="code-block"><pre><span class="comment"># .gitignore</span>
-credentials.json
-oauth_client_secret.json
 .env.yaml
 __pycache__/
 *.pyc</pre>

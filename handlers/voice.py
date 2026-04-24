@@ -31,12 +31,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     from services.user_registry import UserRegistry
     from services.gemini import GeminiService
     from services.currency import CurrencyService
-    from services.sheets import SheetsService
 
     registry: UserRegistry = context.bot_data["registry"]
     gemini: GeminiService = context.bot_data["gemini"]
     currency_svc: CurrencyService = context.bot_data["currency"]
-    sheets: SheetsService = context.bot_data["sheets"]
+    sheets = context.bot_data["sheets"]
 
     tg_user = update.effective_user
 

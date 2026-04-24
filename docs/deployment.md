@@ -20,9 +20,68 @@ Mini App (GCS) ──REST──────────┘
 ## Prerequisites
 
 - `gcloud` CLI installed and authenticated (`gcloud auth login`)
-- Node.js ≥ 18 and npm
+- Application Default Credentials configured for local dev: `gcloud auth application-default login`
+- Node.js ≥ 18 and npm (also needed for the Firestore emulator: `npm install -g firebase-tools`)
 - Python 3.12 with dependencies installed (`pip install -r requirements.txt`)
 - `.env.yaml` filled in (see `.env.yaml.example`)
+
+---
+
+## 0. Firestore Setup (one-time, if migrating from Sheets)
+
+### 0.1 Enable the API and grant IAM permissions
+
+```bash
+# Enable Firestore
+gcloud services enable firestore.googleapis.com --project=expense-bot-489609
+
+# Grant the Cloud Function's service account Firestore access
+gcloud projects add-iam-policy-binding expense-bot-489609 \
+  --member="serviceAccount:expense-bot-sa@expense-bot-489609.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+```
+
+Create the Firestore database if it doesn't exist yet (choose Native mode):
+
+```bash
+gcloud firestore databases create \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1 \
+  --type=firestore-native
+```
+
+### 0.2 Deploy composite indexes
+
+```bash
+# Only the two-field composite is needed — single-field indexes are created automatically
+gcloud firestore indexes composite create \
+  --project=expense-bot-489609 \
+  --collection-group=transactions \
+  --field-config=field-path=timestamp,order=ascending \
+  --field-config=field-path=recurring_template_id,order=ascending
+```
+
+Alternatively, deploy all indexes from `firestore.indexes.json` using the Firebase CLI:
+
+```bash
+firebase deploy --only firestore:indexes --project=expense-bot-489609
+```
+
+### 0.3 Migrate data from Sheets to Firestore
+
+```bash
+# Dry run first — logs what would be written without touching Firestore
+python scripts/migrate_sheets_to_firestore.py --dry-run
+
+# Real migration (idempotent — safe to re-run)
+python scripts/migrate_sheets_to_firestore.py
+```
+
+### 0.4 Add STORAGE_BACKEND to .env.yaml
+
+```yaml
+STORAGE_BACKEND: firestore
+```
 
 ---
 
@@ -226,6 +285,14 @@ gcloud scheduler jobs pause expense-bot-weekly-summary --project=expense-bot-489
 gcloud scheduler jobs resume expense-bot-weekly-summary --project=expense-bot-489609 --location=asia-southeast1
 gcloud scheduler jobs delete expense-bot-weekly-summary --project=expense-bot-489609 --location=asia-southeast1
 ```
+
+---
+
+## Manual data access (Firestore mode)
+
+- **Firebase Console** — browse/edit user documents at `console.firebase.google.com` → Firestore → `users/{telegram_id}/transactions`
+- **Dump to CSV locally** — `python scripts/dump_user.py <telegram_id> --out-dir ./dump`
+- **Export via bot** — `/export` command or `GET /api/export` still works as before
 
 ---
 

@@ -36,7 +36,7 @@ import yaml
 
 ROOT = Path(__file__).parent
 MINI_APP_DIR = ROOT / "mini-app"
-API_PORT = 8080
+API_PORT = 8090
 VITE_PORT = 5173
 NGROK_API = "http://127.0.0.1:4040/api/tunnels"
 
@@ -117,7 +117,6 @@ def main() -> None:
     args = _parse_args()
     _check_prerequisites()
     _load_env_yaml()
-    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", str(ROOT / "credentials.json"))
     _ensure_node_modules()
 
     ngrok_domain = args.domain or os.environ.get("NGROK_DOMAIN", "")
@@ -181,7 +180,7 @@ def main() -> None:
                 print()
                 print("  Tip: set NGROK_DOMAIN in .env.yaml for a fixed URL")
                 print()
-            print("  Vite proxies /api/* → localhost:8080 (functions-framework)")
+            print("  Vite proxies /api/* → localhost:8090 (functions-framework)")
             print("  Auth uses real Telegram initData from WebView")
             print("=" * 62)
         else:

@@ -10,7 +10,6 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from models.expense import User, UserRole, UserStatus
-from services.sheets import SheetsService
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +55,19 @@ class UserRegistry:
 
     def __init__(
         self,
-        sheets_service: Optional[SheetsService] = None,
+        sheets_service=None,
         drive_service=None,
     ) -> None:
-        self._sheets = sheets_service or SheetsService()
-        self._drive = drive_service or self._build_drive_service()
-        self._template_id = os.environ["TEMPLATE_SHEET_ID"]
-        self._folder_id = os.environ["USERS_FOLDER_ID"]
-        self._admin_email = os.environ["ADMIN_EMAIL"]
+        from services.storage import get_storage
+        self._sheets = sheets_service or get_storage()
+        self._drive = drive_service  # built lazily in Sheets mode only
         self._cache: dict[int, User] = {}
+
+    def _get_drive(self):
+        """Return Drive client, building it on first call (Sheets mode only)."""
+        if self._drive is None:
+            self._drive = self._build_drive_service()
+        return self._drive
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -116,8 +119,11 @@ class UserRegistry:
         self.validate_currency(base_currency, raise_on_invalid=True)
         self.validate_currency(default_currency, raise_on_invalid=True)
 
-        spreadsheet_id = self._copy_template(display_name)
-        self._share_with_service_account(spreadsheet_id)
+        if os.environ.get("STORAGE_BACKEND") == "firestore":
+            spreadsheet_id = str(telegram_id)
+        else:
+            spreadsheet_id = self._copy_template(display_name)
+            self._share_with_service_account(spreadsheet_id)
 
         user = User(
             telegram_id=telegram_id,
@@ -159,24 +165,25 @@ class UserRegistry:
         if user is None:
             raise UserRegistryError(f"User {telegram_id} not found in registry")
 
-        try:
-            self._drive.permissions().create(
-                fileId=user.spreadsheet_id,
-                body={
-                    "type": "user",
-                    "role": "writer",
-                    "emailAddress": email,
-                },
-                sendNotificationEmail=True,
-                fields="id",
-            ).execute()
-        except HttpError as exc:
-            raise UserRegistryError(f"Drive API error sharing spreadsheet: {exc}") from exc
+        if os.environ.get("STORAGE_BACKEND") != "firestore":
+            try:
+                self._get_drive().permissions().create(
+                    fileId=user.spreadsheet_id,
+                    body={
+                        "type": "user",
+                        "role": "writer",
+                        "emailAddress": email,
+                    },
+                    sendNotificationEmail=True,
+                    fields="id",
+                ).execute()
+            except HttpError as exc:
+                raise UserRegistryError(f"Drive API error sharing spreadsheet: {exc}") from exc
+            logger.info("Shared spreadsheet %s with %s", user.spreadsheet_id, email)
 
         self._sheets.update_user_email(telegram_id, email)
         if telegram_id in self._cache:
             self._cache[telegram_id] = self._cache[telegram_id].model_copy(update={"email": email})
-        logger.info("Shared spreadsheet %s with %s", user.spreadsheet_id, email)
 
     async def update_settings(
         self,
@@ -273,14 +280,14 @@ class UserRegistry:
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
-    def _copy_template(self, display_name: str) -> str:
+    def _copy_template(self, display_name: str) -> str:  # Sheets mode only
         """Copy the template Spreadsheet and return the new file's ID.
 
         Raises:
             UserRegistryError: On Drive API failure.
         """
         try:
-            result = self._drive.files().copy(
+            result = self._get_drive().files().copy(
                 fileId=self._template_id,
                 body={
                     "name": f"Expenses — {display_name}",
@@ -298,7 +305,7 @@ class UserRegistry:
         if not sa_email:
             return
         try:
-            self._drive.permissions().create(
+            self._get_drive().permissions().create(
                 fileId=spreadsheet_id,
                 body={
                     "type": "user",

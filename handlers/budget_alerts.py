@@ -6,7 +6,6 @@ from datetime import date
 from telegram import Bot
 
 from models.expense import ExpenseRecord, User
-from services.sheets import SheetsService
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ async def check_and_send_budget_alert(
     bot: Bot,
     user: User,
     record: ExpenseRecord,
-    sheets: SheetsService,
+    sheets,
 ) -> None:
     """Send a Telegram alert if the new expense pushed a category past a budget threshold.
 

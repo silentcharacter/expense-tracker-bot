@@ -239,7 +239,13 @@ export function CategoryBudgetList({
                       </span>
                       <span className="text-xs flex-shrink-0" style={{ color: "var(--app-text-secondary)" }}>
                         {isDay ? (
-                          `${pct.toFixed(0)}%`
+                          <>
+                            <span className="amount" style={{ color: "var(--app-text-primary)" }}>
+                              {format({ base: daySpend, default: dayTotals.byCategoryDefault.get(cat.category) ?? 0 }, 0)}
+                            </span>
+                            {" · "}
+                            {pct.toFixed(0)}%
+                          </>
                         ) : (
                           <>
                             <span className="amount" style={{ color: "var(--app-text-primary)" }}>

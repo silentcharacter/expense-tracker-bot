@@ -44,8 +44,8 @@ def _build_system_instruction(categories: list[UserCategory], default_currency: 
     """Render the system prompt with per-user categories and default currency."""
     lines = []
     for c in categories:
-        subs = ", ".join(s.slug for s in c.subcategories)
-        lines.append(f"  {c.slug}: [{subs}]")
+        subs = ", ".join(f"{s.slug} ({s.label})" for s in c.subcategories)
+        lines.append(f"  {c.slug} ({c.label}): [{subs}]")
     return _SYSTEM_INSTRUCTION_TEMPLATE.format(
         categories_with_subs="\n".join(lines),
         default_currency=default_currency,

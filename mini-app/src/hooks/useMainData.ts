@@ -110,5 +110,13 @@ export function useMainData(monthOffset = 0): UseMainDataResult {
     void loadFresh();
   }, [monthOffset, loadFresh]);
 
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") void refetch();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refetch]);
+
   return { ...data, isLoading, error, refetch };
 }

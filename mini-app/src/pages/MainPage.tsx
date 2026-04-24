@@ -90,6 +90,7 @@ export function MainPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [filterDay, setFilterDay] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<CategoryFilter | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   async function handleDeleteExpense(id: string) {
     await deleteExpense(id);
@@ -101,6 +102,15 @@ export function MainPage() {
     setMonthOffset(next);
     setFilterDay(null);
     setFilterCategory(null);
+  }
+
+  async function handleRefresh() {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
   }
 
   const baseCurrency = summary?.base_currency ?? user?.base_currency ?? "USD";
@@ -135,6 +145,8 @@ export function MainPage() {
           monthOffset={monthOffset}
           onMonthOffsetChange={handleMonthChange}
           onOpenSettings={() => setShowSettings(true)}
+          onRefresh={() => void handleRefresh()}
+          isRefreshing={isRefreshing}
         />
 
         {error && !summary ? (

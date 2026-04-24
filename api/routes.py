@@ -7,6 +7,24 @@ import logging
 import os
 import re as _re
 from collections import defaultdict
+
+_CYRILLIC_MAP = str.maketrans({
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd',
+    'е': 'e', 'ё': 'yo', 'ж': 'zh', 'з': 'z', 'и': 'i',
+    'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n',
+    'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't',
+    'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch',
+    'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '',
+    'э': 'e', 'ю': 'yu', 'я': 'ya',
+})
+
+
+def _slugify(label: str) -> str:
+    s = label.lower().strip().translate(_CYRILLIC_MAP)
+    s = s.replace(" ", "_")
+    s = _re.sub(r"[^a-z0-9_]", "", s)
+    s = _re.sub(r"_+", "_", s).strip("_")
+    return s
 from datetime import date, timedelta
 from typing import Optional
 
@@ -838,7 +856,7 @@ async def _api_categories_create(request: flask.Request, user: User) -> tuple:
     if not label:
         return jsonify({"error": "label is required"}), 400
 
-    slug = _re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
+    slug = _slugify(label)
     if not slug:
         slug = "cat_" + hashlib.sha1(label.encode()).hexdigest()[:8]
 
@@ -885,7 +903,7 @@ async def _api_subcategory_create(request: flask.Request, user: User, cat_slug: 
     if not label:
         return jsonify({"error": "label is required"}), 400
 
-    sub_slug = _re.sub(r"[^a-z0-9_]", "", label.lower().replace(" ", "_"))
+    sub_slug = _slugify(label)
     if not sub_slug:
         sub_slug = "sub_" + hashlib.sha1(label.encode()).hexdigest()[:8]
 

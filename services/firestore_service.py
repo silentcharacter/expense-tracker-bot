@@ -2,7 +2,6 @@
 
 import logging
 import os
-import time
 import uuid as _uuid
 from datetime import date, datetime
 from typing import Optional
@@ -13,13 +12,6 @@ from models.expense import ExpenseRecord, User
 from models.category import UserCategory, UserSubcategory, default_user_categories
 
 logger = logging.getLogger(__name__)
-
-# ── Module-level TTL caches (same structure as SheetsService) ────────────────
-
-_transaction_cache: dict[str, tuple[list[ExpenseRecord], float]] = {}
-_category_cache: dict[str, tuple[list[UserCategory], float]] = {}
-_recurring_cache: dict[str, tuple[list[dict], float]] = {}
-_CACHE_TTL = 300.0  # 5 minutes
 
 
 class FirestoreService:
@@ -55,7 +47,6 @@ class FirestoreService:
 
     def append_transaction(self, user_id: str, record: ExpenseRecord) -> None:
         self._tx_col(user_id).document(record.id).set(record.to_firestore_dict())
-        _transaction_cache.pop(user_id, None)
         logger.info("Appended transaction %s for user %s", record.id, user_id)
 
     def delete_last_transaction(self, user_id: str) -> Optional[ExpenseRecord]:
@@ -69,7 +60,6 @@ class FirestoreService:
             return None
         data = docs[0].to_dict()
         docs[0].reference.delete()
-        _transaction_cache.pop(user_id, None)
         try:
             return ExpenseRecord.from_firestore_dict(data)
         except Exception as exc:
@@ -82,7 +72,6 @@ class FirestoreService:
             return None
         data = doc.to_dict()
         doc.reference.delete()
-        _transaction_cache.pop(user_id, None)
         logger.info("Deleted transaction %s for user %s", expense_id, user_id)
         try:
             return ExpenseRecord.from_firestore_dict(data)
@@ -91,10 +80,6 @@ class FirestoreService:
             return None
 
     def _get_all_transactions(self, user_id: str) -> list[ExpenseRecord]:
-        cached = _transaction_cache.get(user_id)
-        if cached and time.monotonic() < cached[1]:
-            return cached[0]
-
         docs = list(
             self._tx_col(user_id)
             .order_by("timestamp", direction=_fs.Query.DESCENDING)
@@ -106,9 +91,6 @@ class FirestoreService:
                 records.append(ExpenseRecord.from_firestore_dict(doc.to_dict()))
             except Exception:
                 continue
-
-        _transaction_cache[user_id] = (records, time.monotonic() + _CACHE_TTL)
-        logger.debug("Cached %d transactions for user %s", len(records), user_id)
         return records
 
     def get_transactions(
@@ -146,7 +128,7 @@ class FirestoreService:
         if not doc.exists:
             return False
         doc.reference.update({"category": category, "subcategory": subcategory})
-        _transaction_cache.pop(user_id, None)
+
         logger.info("Updated category for transaction %s (user %s): %s/%s", record_id, user_id, category, subcategory)
         return True
 
@@ -157,7 +139,7 @@ class FirestoreService:
         if not doc.exists:
             return False
         doc.reference.update({"description": description})
-        _transaction_cache.pop(user_id, None)
+
         logger.info("Updated description for transaction %s (user %s)", record_id, user_id)
         return True
 
@@ -170,18 +152,13 @@ class FirestoreService:
             for doc in docs[i : i + 500]:
                 batch.delete(doc.reference)
             batch.commit()
-        _transaction_cache.pop(user_id, None)
+
         logger.info("Cleared %d transactions for user %s", len(docs), user_id)
         return len(docs)
 
     # ── Categories ────────────────────────────────────────────────────────────
 
     def get_categories(self, user_id: str) -> list[UserCategory]:
-        now = time.monotonic()
-        cached = _category_cache.get(user_id)
-        if cached and now < cached[1]:
-            return cached[0]
-
         categories: list[UserCategory] = []
         try:
             docs = list(self._cat_col(user_id).stream())
@@ -216,7 +193,6 @@ class FirestoreService:
             except Exception as exc:
                 logger.warning("Could not seed categories for user %s: %s", user_id, exc)
 
-        _category_cache[user_id] = (categories, now + _CACHE_TTL)
         return categories
 
     def ensure_categories_sheet(self, user_id: str) -> None:
@@ -267,7 +243,7 @@ class FirestoreService:
                     updated = True
             if updated:
                 cat_ref.update({"subcategories": subs})
-        _category_cache.pop(user_id, None)
+
         logger.info("Updated subcategory budgets for user %s", user_id)
 
     def update_category_budgets(self, user_id: str, budgets: dict[str, float]) -> None:
@@ -275,7 +251,7 @@ class FirestoreService:
             cat_ref = self._cat_col(user_id).document(slug)
             if cat_ref.get().exists:
                 cat_ref.update({"budget": amount})
-        _category_cache.pop(user_id, None)
+
         logger.info("Updated category budgets for user %s", user_id)
 
     def add_category(
@@ -287,7 +263,7 @@ class FirestoreService:
         self._cat_col(user_id).document(slug).set({
             "slug": slug, "label": label, "budget": budget, "subcategories": [],
         })
-        _category_cache.pop(user_id, None)
+
         logger.info("Added category '%s' for user %s", slug, user_id)
 
     def add_subcategory(
@@ -303,7 +279,7 @@ class FirestoreService:
             raise ValueError(f"Subcategory '{sub_slug}' already exists in '{cat_slug}'")
         subs.append({"slug": sub_slug, "label": label, "budget": None})
         cat_ref.update({"subcategories": subs})
-        _category_cache.pop(user_id, None)
+
         logger.info("Added subcategory '%s/%s' for user %s", cat_slug, sub_slug, user_id)
 
     def delete_category(self, user_id: str, cat_slug: str) -> bool:
@@ -311,7 +287,7 @@ class FirestoreService:
         if not doc.exists:
             return False
         doc.reference.delete()
-        _category_cache.pop(user_id, None)
+
         logger.info("Deleted category '%s' for user %s", cat_slug, user_id)
         return True
 
@@ -326,35 +302,26 @@ class FirestoreService:
         if len(new_subs) == len(subs):
             return False
         cat_ref.update({"subcategories": new_subs})
-        _category_cache.pop(user_id, None)
+
         logger.info("Deleted subcategory '%s/%s' for user %s", cat_slug, sub_slug, user_id)
         return True
 
     # ── Recurring expenses ────────────────────────────────────────────────────
 
     def get_recurring(self, user_id: str) -> list[dict]:
-        now = time.monotonic()
-        cached = _recurring_cache.get(user_id)
-        if cached and now < cached[1]:
-            return cached[0]
-
         docs = list(self._rec_col(user_id).stream())
-        result = [doc.to_dict() for doc in docs]
-        _recurring_cache[user_id] = (result, now + _CACHE_TTL)
-        return result
+        return [doc.to_dict() for doc in docs]
 
     def add_recurring(self, user_id: str, entry: dict) -> None:
         eid = entry.get("id") or str(_uuid.uuid4())
         data = {**entry, "id": eid}
         self._rec_col(user_id).document(eid).set(data)
-        _recurring_cache.pop(user_id, None)
 
     def delete_recurring(self, user_id: str, entry_id: str) -> bool:
         doc = self._rec_col(user_id).document(entry_id).get()
         if not doc.exists:
             return False
         doc.reference.delete()
-        _recurring_cache.pop(user_id, None)
         return True
 
     # ── Master Registry ───────────────────────────────────────────────────────

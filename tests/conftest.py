@@ -10,17 +10,31 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _TEST_CONFIG_PATH = Path(__file__).resolve().parent / "test_config.yaml"
+_ENV_YAML_PATH = Path(__file__).resolve().parent.parent / ".env.yaml"
 
 
 def _load_test_config() -> None:
-    """Load tests/test_config.yaml into os.environ. Pre-set vars take priority."""
-    if not _TEST_CONFIG_PATH.exists():
-        return
-    with open(_TEST_CONFIG_PATH) as f:
-        data = yaml.safe_load(f)
-    if isinstance(data, dict):
+    """Merge .env.yaml and test_config.yaml into os.environ.
+
+    Load order:
+      1. .env.yaml  — provides API keys (GOOGLE_API_KEY, EXCHANGE_RATE_API_KEY, …)
+      2. test_config.yaml — overrides infra settings (emulator host, storage backend, …)
+
+    test_config.yaml always wins so prod Firestore / other infra is never used in tests.
+    """
+    for path, force in [(_ENV_YAML_PATH, False), (_TEST_CONFIG_PATH, True)]:
+        if not path.exists():
+            continue
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            continue
         for key, value in data.items():
-            if value is not None and str(value).strip():
+            if value is None or not str(value).strip():
+                continue
+            if force:
+                os.environ[key] = str(value)
+            else:
                 os.environ.setdefault(key, str(value))
 
 

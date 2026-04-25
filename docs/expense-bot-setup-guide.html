@@ -312,6 +312,36 @@
     </div>
 
     <div class="card">
+      <h3><span class="icon">☁️</span> Установка gcloud CLI</h3>
+
+      <div class="step">
+        <span class="step-num">1</span>
+        <div class="step-content">
+          <h4>macOS (Homebrew)</h4>
+          <div class="code-block"><pre>brew install --cask google-cloud-sdk</pre></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">2</span>
+        <div class="step-content">
+          <h4>Linux / WSL</h4>
+          <div class="code-block"><pre>curl https://sdk.cloud.google.com | bash
+exec -l $SHELL</pre></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="step-num">3</span>
+        <div class="step-content">
+          <h4>Инициализация</h4>
+          <div class="code-block"><pre>gcloud init</pre></div>
+          <p>Браузер откроется автоматически — залогинься своим Google-аккаунтом и выбери проект.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h3><span class="icon">🔑</span> Итоговые ключи</h3>
       <div class="table-wrap">
         <table>

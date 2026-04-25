@@ -13,6 +13,9 @@ from models.category import UserCategory, UserSubcategory, default_user_categori
 
 logger = logging.getLogger(__name__)
 
+# {user_id: list[UserCategory]} — invalidated on writes
+_category_cache: dict[str, list] = {}
+
 
 class FirestoreService:
     """CRUD operations backed by Cloud Firestore.
@@ -159,6 +162,9 @@ class FirestoreService:
     # ── Categories ────────────────────────────────────────────────────────────
 
     def get_categories(self, user_id: str) -> list[UserCategory]:
+        if user_id in _category_cache:
+            return _category_cache[user_id]
+
         categories: list[UserCategory] = []
         try:
             docs = list(self._cat_col(user_id).stream())
@@ -193,6 +199,7 @@ class FirestoreService:
             except Exception as exc:
                 logger.warning("Could not seed categories for user %s: %s", user_id, exc)
 
+        _category_cache[user_id] = categories
         return categories
 
     def ensure_categories_sheet(self, user_id: str) -> None:
@@ -212,6 +219,7 @@ class FirestoreService:
                 ],
             })
         batch.commit()
+        _category_cache.pop(user_id, None)
         logger.info("Seeded default categories for user %s", user_id)
 
     def get_budgets(self, user_id: str) -> dict[str, float]:
@@ -244,6 +252,7 @@ class FirestoreService:
             if updated:
                 cat_ref.update({"subcategories": subs})
 
+        _category_cache.pop(user_id, None)
         logger.info("Updated subcategory budgets for user %s", user_id)
 
     def update_category_budgets(self, user_id: str, budgets: dict[str, float]) -> None:
@@ -252,6 +261,7 @@ class FirestoreService:
             if cat_ref.get().exists:
                 cat_ref.update({"budget": amount})
 
+        _category_cache.pop(user_id, None)
         logger.info("Updated category budgets for user %s", user_id)
 
     def add_category(
@@ -264,6 +274,7 @@ class FirestoreService:
             "slug": slug, "label": label, "budget": budget, "subcategories": [],
         })
 
+        _category_cache.pop(user_id, None)
         logger.info("Added category '%s' for user %s", slug, user_id)
 
     def add_subcategory(
@@ -280,6 +291,7 @@ class FirestoreService:
         subs.append({"slug": sub_slug, "label": label, "budget": None})
         cat_ref.update({"subcategories": subs})
 
+        _category_cache.pop(user_id, None)
         logger.info("Added subcategory '%s/%s' for user %s", cat_slug, sub_slug, user_id)
 
     def delete_category(self, user_id: str, cat_slug: str) -> bool:
@@ -288,6 +300,7 @@ class FirestoreService:
             return False
         doc.reference.delete()
 
+        _category_cache.pop(user_id, None)
         logger.info("Deleted category '%s' for user %s", cat_slug, user_id)
         return True
 
@@ -303,6 +316,7 @@ class FirestoreService:
             return False
         cat_ref.update({"subcategories": new_subs})
 
+        _category_cache.pop(user_id, None)
         logger.info("Deleted subcategory '%s/%s' for user %s", cat_slug, sub_slug, user_id)
         return True
 

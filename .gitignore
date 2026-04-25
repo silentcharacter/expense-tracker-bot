@@ -37,7 +37,6 @@ node_modules/
 mini-app/dist/
 mini-app/.env.local
 mini-app/.env.*.local
-mini-app/.env.production
 mini-app/.vite/.env
 
 # Firebase emulator logs

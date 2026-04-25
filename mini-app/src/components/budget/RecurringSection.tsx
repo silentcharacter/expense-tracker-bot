@@ -1,4 +1,4 @@
-/** ↻ RECURRING section with pill "+ Add" button in header. */
+/** ↻ RECURRING section grouped by category → subcategory with totals. */
 
 import { useState } from "react";
 import type { RecurringItem, RecurringResponse } from "../../api/types";
@@ -13,6 +13,18 @@ interface RecurringSectionProps {
   onDelete: (id: string) => Promise<void>;
 }
 
+interface SubcategoryGroup {
+  subcategory: string;
+  items: RecurringItem[];
+  total: number;
+}
+
+interface CategoryGroup {
+  category: string;
+  subcategories: SubcategoryGroup[];
+  total: number;
+}
+
 function ordinalSuffix(n: number): string {
   if (n >= 11 && n <= 13) return `${n}th`;
   switch (n % 10) {
@@ -23,18 +35,41 @@ function ordinalSuffix(n: number): string {
   }
 }
 
+function groupItems(items: RecurringItem[]): CategoryGroup[] {
+  const catMap = new Map<string, Map<string, RecurringItem[]>>();
+
+  for (const item of items) {
+    const cat = item.category || "";
+    const sub = item.subcategory || "";
+    if (!catMap.has(cat)) catMap.set(cat, new Map());
+    const subMap = catMap.get(cat)!;
+    if (!subMap.has(sub)) subMap.set(sub, []);
+    subMap.get(sub)!.push(item);
+  }
+
+  return Array.from(catMap.entries()).map(([category, subMap]) => {
+    const subcategories: SubcategoryGroup[] = Array.from(subMap.entries()).map(([subcategory, subItems]) => ({
+      subcategory,
+      items: subItems,
+      total: subItems.reduce((s, i) => s + i.amount_base, 0),
+    }));
+    return {
+      category,
+      subcategories,
+      total: subcategories.reduce((s, sg) => s + sg.total, 0),
+    };
+  });
+}
+
 function RecurringRowContent({ item, formatLive }: { item: RecurringItem; formatLive: (v: number, d: number) => string }) {
   return (
-    <div className="flex items-center gap-3 py-2.5">
-      <span className="text-2xl flex-shrink-0">
-        {item.category ? getCategoryEmoji(item.category) : "🔄"}
-      </span>
+    <div className="flex items-center gap-3 py-2.5 pl-4">
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate" style={{ color: "var(--app-text-primary)" }}>
           {item.description}
         </p>
         <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
-          {item.subcategory || item.category} · Monthly · {ordinalSuffix(item.day_of_month)}
+          Monthly · {ordinalSuffix(item.day_of_month)}
         </p>
       </div>
       <span className="amount text-sm font-semibold flex-shrink-0" style={{ color: "var(--app-text-primary)" }}>
@@ -48,6 +83,7 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
   const { formatLive } = useCurrency();
   const { items } = data;
   const totalBase = items.reduce((s, i) => s + i.amount_base, 0);
+  const groups = groupItems(items);
 
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const [pendingItem, setPendingItem] = useState<RecurringItem | null>(null);
@@ -64,6 +100,8 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
       setSwipedId(null);
     }
   }
+
+  const allItems = groups.flatMap(g => g.subcategories.flatMap(sg => sg.items));
 
   return (
     <>
@@ -90,17 +128,59 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
           </p>
         ) : (
           <div className="flex flex-col">
-            {items.map((item, i) => (
-              <SwipeableRow
-                key={item.id}
-                isOpen={swipedId === item.id}
-                onOpen={() => setSwipedId(item.id)}
-                onClose={() => setSwipedId(null)}
-                onDeleteClick={() => setPendingItem(item)}
-                borderBottom={i < items.length - 1}
-              >
-                <RecurringRowContent item={item} formatLive={formatLive} />
-              </SwipeableRow>
+            {groups.map((group, gi) => (
+              <div key={group.category || "__none__"}>
+                {/* Category header */}
+                <div
+                  className="flex items-center justify-between py-2"
+                  style={{ borderTop: gi > 0 ? "1px solid var(--app-border)" : undefined }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{group.category ? getCategoryEmoji(group.category) : "🔄"}</span>
+                    <span className="text-sm font-semibold capitalize" style={{ color: "var(--app-text-primary)" }}>
+                      {group.category || "Other"}
+                    </span>
+                  </div>
+                  <span className="amount text-sm font-semibold" style={{ color: "var(--app-accent)" }}>
+                    {formatLive(group.total, 0)}/mo
+                  </span>
+                </div>
+
+                {/* Subcategory groups */}
+                {group.subcategories.map((sg) => (
+                  <div key={sg.subcategory || "__none__"} className="mb-1">
+                    {/* Subcategory header (only if there's a subcategory name) */}
+                    {sg.subcategory && (
+                      <div className="flex items-center justify-between pl-4 py-1">
+                        <span className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--app-text-secondary)" }}>
+                          {sg.subcategory}
+                        </span>
+                        <span className="amount text-xs font-medium" style={{ color: "var(--app-text-secondary)" }}>
+                          {formatLive(sg.total, 0)}/mo
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Items */}
+                    {sg.items.map((item, ii) => {
+                      const globalIdx = allItems.indexOf(item);
+                      const isLast = globalIdx === allItems.length - 1;
+                      return (
+                        <SwipeableRow
+                          key={item.id}
+                          isOpen={swipedId === item.id}
+                          onOpen={() => setSwipedId(item.id)}
+                          onClose={() => setSwipedId(null)}
+                          onDeleteClick={() => setPendingItem(item)}
+                          borderBottom={!isLast && ii < sg.items.length - 1}
+                        >
+                          <RecurringRowContent item={item} formatLive={formatLive} />
+                        </SwipeableRow>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             ))}
           </div>
         )}

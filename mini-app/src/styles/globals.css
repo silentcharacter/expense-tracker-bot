@@ -187,20 +187,17 @@ body {
   pointer-events: none;
 }
 
-.heatmap-cell__dow {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  font-size: 8px;
-  line-height: 1;
+.heatmap-dow-header {
+  text-align: center;
+  font-size: 9px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.55);
-  pointer-events: none;
-}
-
-.heatmap-cell[data-level="0"][data-recurring="false"] .heatmap-cell__dow {
   color: var(--app-text-secondary);
   opacity: 0.7;
+  padding-bottom: 2px;
+}
+
+.heatmap-cell-placeholder {
+  aspect-ratio: 1 / 1;
 }
 
 .heatmap-cell[data-level="0"][data-recurring="false"] .heatmap-cell__day {

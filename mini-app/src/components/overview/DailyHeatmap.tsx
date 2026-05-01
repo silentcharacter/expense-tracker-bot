@@ -125,6 +125,9 @@ export function DailyHeatmap({
     onDaySelect(d.iso === selectedDay ? null : d.iso);
   }
 
+  const DOW_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+  const offset = (new Date(referenceYear, referenceMonth, 1).getDay() + 6) % 7;
+
   return (
     <div className="card">
       {/* Banner */}
@@ -152,10 +155,18 @@ export function DailyHeatmap({
 
       {/* Grid */}
       <div className="heatmap-grid">
-        {days.map((d, i) => {
+        {/* Day-of-week header */}
+        {DOW_LABELS.map((label) => (
+          <div key={label} className="heatmap-dow-header">{label}</div>
+        ))}
+        {/* Offset placeholders */}
+        {Array.from({ length: offset }, (_, i) => (
+          <div key={`pad-${i}`} className="heatmap-cell-placeholder" />
+        ))}
+        {/* Day cells */}
+        {days.map((d) => {
           const recurring = isRecurringDominant(d);
           const level = recurring ? 0 : levelFor(d, thresholds);
-          const dow = i < 7 ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][new Date(d.iso + "T00:00:00").getDay()] : null;
           return (
             <button
               key={d.iso}
@@ -170,7 +181,6 @@ export function DailyHeatmap({
               disabled={d.isFuture}
             >
               <span className="heatmap-cell__day">{d.day}</span>
-              {dow && <span className="heatmap-cell__dow">{dow}</span>}
             </button>
           );
         })}

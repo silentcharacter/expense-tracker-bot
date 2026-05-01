@@ -198,21 +198,44 @@ gcloud services enable cloudscheduler.googleapis.com --project=expense-bot-48960
 
 ### 4.2 Create the job
 
+Replace `<CRON_SECRET>` with the value from `.env.yaml`. Use **single quotes** around the `--headers` value — double quotes cause zsh to interpret `!` and `&` as special characters.
+
 ```bash
 gcloud scheduler jobs create http expense-bot-recurring \
   --project=expense-bot-489609 \
   --location=asia-southeast1 \
-  --schedule="0 9 * * *" \
-  --uri="https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/recurring" \
+  --schedule='0 9 * * *' \
+  --uri='https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/recurring' \
   --http-method=POST \
-  --headers="X-Cron-Secret=your-strong-secret-here" \
-  --time-zone="Asia/Singapore" \
+  --headers='X-Cron-Secret=<CRON_SECRET>' \
+  --time-zone='Asia/Singapore' \
   --attempt-deadline=5m
 ```
 
 `0 9 * * *` — daily at 09:00 in the specified timezone.
 
-### 4.3 Verify
+### 4.3 Update the secret (if mismatched)
+
+If the job was created with the wrong secret, update it (always use single quotes):
+
+```bash
+gcloud scheduler jobs update http expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1 \
+  --update-headers='X-Cron-Secret=<CRON_SECRET>'
+```
+
+Check the current job config to verify:
+
+```bash
+gcloud scheduler jobs describe expense-bot-recurring \
+  --project=expense-bot-489609 \
+  --location=asia-southeast1
+```
+
+The `status.code` field must be absent (success) or `0` after the next run. Code `7` means PERMISSION_DENIED — secret mismatch.
+
+### 4.4 Verify
 
 ```bash
 # Force a run
@@ -220,16 +243,24 @@ gcloud scheduler jobs run expense-bot-recurring \
   --project=expense-bot-489609 \
   --location=asia-southeast1
 
-# Check logs
-gcloud functions logs read expense-bot \
+# Check logs (Cloud Functions 2nd gen uses structured logging — no textPayload filter needed)
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="expense-bot"' \
   --project=expense-bot-489609 \
-  --region=asia-southeast1 \
-  --limit=50
+  --limit=30 \
+  --format='value(timestamp, jsonPayload.message)'
+
+# Or quick smoke-test via curl
+curl -s -X POST \
+  'https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/recurring' \
+  -H 'X-Cron-Secret: <CRON_SECRET>' | python3 -m json.tool
 ```
+
+Expected response: `{"errors": 0, "inserted": N, "skipped": N, "users": N}`
 
 Expected log line: `Recurring cron complete: {'users': N, 'inserted': N, 'skipped': N, 'errors': 0}`
 
-### 4.4 Manage
+### 4.5 Manage
 
 ```bash
 gcloud scheduler jobs pause expense-bot-recurring --project=expense-bot-489609 --location=asia-southeast1
@@ -245,15 +276,17 @@ Sends a weekly spending summary to all opted-in users every Monday at 10:00 Asia
 
 ### 5.1 Create the job
 
+Use **single quotes** around `--headers` (see note in section 4.2).
+
 ```bash
 gcloud scheduler jobs create http expense-bot-weekly-summary \
   --project=expense-bot-489609 \
   --location=asia-southeast1 \
-  --schedule="0 10 * * 1" \
-  --uri="https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/weekly_summary" \
+  --schedule='0 10 * * 1' \
+  --uri='https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot/cron/weekly_summary' \
   --http-method=POST \
-  --headers="X-Cron-Secret=your-strong-secret-here" \
-  --time-zone="Asia/Singapore" \
+  --headers='X-Cron-Secret=<CRON_SECRET>' \
+  --time-zone='Asia/Singapore' \
   --attempt-deadline=5m
 ```
 
@@ -268,10 +301,11 @@ gcloud scheduler jobs run expense-bot-weekly-summary \
   --location=asia-southeast1
 
 # Check logs
-gcloud functions logs read expense-bot \
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="expense-bot"' \
   --project=expense-bot-489609 \
-  --region=asia-southeast1 \
-  --limit=50
+  --limit=30 \
+  --format='value(timestamp, jsonPayload.message)'
 ```
 
 Expected log line: `Weekly summary cron complete: {'sent': N, 'skipped': N, 'errors': 0}`

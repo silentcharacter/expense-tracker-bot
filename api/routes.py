@@ -160,6 +160,9 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
         return await _api_recurring_get(user)
     elif path == "/recurring" and method == "POST":
         return await _api_recurring_add(request, user)
+    elif path.startswith("/recurring/") and path.endswith("/log") and method == "POST":
+        entry_id = path[len("/recurring/"):-len("/log")]
+        return await _api_recurring_log(user, entry_id)
     elif path.startswith("/recurring/") and method == "DELETE":
         entry_id = path[len("/recurring/"):]
         return await _api_recurring_delete(user, entry_id)
@@ -1067,3 +1070,40 @@ async def _api_recurring_delete(user: User, entry_id: str) -> tuple:
     if not deleted:
         return jsonify({"error": "entry not found"}), 404
     return await _api_recurring_get(user)
+
+
+# ── POST /api/recurring/<entry_id>/log ───────────────────────────────────────
+
+
+async def _api_recurring_log(user: User, entry_id: str) -> tuple:
+    """Force-log a recurring expense template as a transaction right now.
+
+    Returns 409 if the template was already logged this calendar month.
+    """
+    from datetime import date as _date
+    from jobs.recurring_cron import _build_record
+
+    sheets = _get_sheets()
+    currency = _get_currency()
+
+    rows = sheets.get_recurring(user.spreadsheet_id)
+    item = next((r for r in rows if str(r.get("id", "")) == entry_id), None)
+    if item is None:
+        return jsonify({"error": "entry not found"}), 404
+
+    today = _date.today()
+    month_start = today.replace(day=1)
+    existing = sheets.get_transactions(user.spreadsheet_id, since=month_start, until=today)
+    already = any(
+        r.recurring and r.recurring_template_id == entry_id
+        for r in existing
+    )
+    if already:
+        return jsonify({"error": "already_logged_this_month"}), 409
+
+    record = await _build_record(currency, user, item, today)
+    if record is None:
+        return jsonify({"error": "could not build record"}), 422
+
+    sheets.append_transaction(user.spreadsheet_id, record)
+    return jsonify({"ok": True}), 201

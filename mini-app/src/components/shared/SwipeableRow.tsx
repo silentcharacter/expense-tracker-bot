@@ -9,6 +9,13 @@ interface SwipeableRowProps {
   onOpen: () => void;
   onClose: () => void;
   onDeleteClick: () => void;
+  /** Optional left-side action revealed by right-swipe. */
+  leftActionLabel?: string;
+  leftActionColor?: string;
+  isLeftOpen?: boolean;
+  onLeftOpen?: () => void;
+  onLeftClose?: () => void;
+  onLeftActionClick?: () => void;
   borderBottom?: boolean;
   animationDelay?: number;
   /** Background of the sliding content (should match card background). */
@@ -21,6 +28,12 @@ export function SwipeableRow({
   onOpen,
   onClose,
   onDeleteClick,
+  leftActionLabel,
+  leftActionColor = "#22c55e",
+  isLeftOpen = false,
+  onLeftOpen,
+  onLeftClose,
+  onLeftActionClick,
   borderBottom = false,
   animationDelay,
   background = "var(--app-card-bg)",
@@ -28,18 +41,27 @@ export function SwipeableRow({
   const rowRef = useRef<HTMLDivElement>(null);
 
   const isOpenRef = useRef(isOpen);
+  const isLeftOpenRef = useRef(isLeftOpen);
   const onOpenRef = useRef(onOpen);
   const onCloseRef = useRef(onClose);
+  const onLeftOpenRef = useRef(onLeftOpen);
+  const onLeftCloseRef = useRef(onLeftClose);
   useLayoutEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+  useLayoutEffect(() => { isLeftOpenRef.current = isLeftOpen; }, [isLeftOpen]);
   useLayoutEffect(() => { onOpenRef.current = onOpen; }, [onOpen]);
   useLayoutEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useLayoutEffect(() => { onLeftOpenRef.current = onLeftOpen; }, [onLeftOpen]);
+  useLayoutEffect(() => { onLeftCloseRef.current = onLeftClose; }, [onLeftClose]);
 
-  const [translateX, setTranslateX] = useState(isOpen ? -SWIPE_SNAP : 0);
+  const initialX = isLeftOpen ? SWIPE_SNAP : isOpen ? -SWIPE_SNAP : 0;
+  const [translateX, setTranslateX] = useState(initialX);
   const [isDragging, setIsDragging] = useState(false);
 
   useLayoutEffect(() => {
-    setTranslateX(isOpen ? -SWIPE_SNAP : 0);
-  }, [isOpen]);
+    setTranslateX(isLeftOpen ? SWIPE_SNAP : isOpen ? -SWIPE_SNAP : 0);
+  }, [isOpen, isLeftOpen]);
+
+  const hasLeftAction = Boolean(leftActionLabel);
 
   useEffect(() => {
     const el = rowRef.current;
@@ -53,7 +75,7 @@ export function SwipeableRow({
       gesture.startY = t.clientY;
       gesture.dragging = false;
       gesture.locked = false;
-      gesture.currentX = isOpenRef.current ? -SWIPE_SNAP : 0;
+      gesture.currentX = isLeftOpenRef.current ? SWIPE_SNAP : isOpenRef.current ? -SWIPE_SNAP : 0;
     }
 
     function onTouchMove(e: TouchEvent) {
@@ -70,8 +92,9 @@ export function SwipeableRow({
       }
 
       e.preventDefault();
-      const base = isOpenRef.current ? -SWIPE_SNAP : 0;
-      const newX = Math.max(-SWIPE_SNAP, Math.min(0, base + dx));
+      const base = isLeftOpenRef.current ? SWIPE_SNAP : isOpenRef.current ? -SWIPE_SNAP : 0;
+      const maxRight = hasLeftAction ? SWIPE_SNAP : 0;
+      const newX = Math.max(-SWIPE_SNAP, Math.min(maxRight, base + dx));
       gesture.currentX = newX;
       setTranslateX(newX);
     }
@@ -80,14 +103,29 @@ export function SwipeableRow({
       if (!gesture.dragging) return;
       gesture.dragging = false;
       setIsDragging(false);
-      const base = isOpenRef.current ? -SWIPE_SNAP : 0;
+      const base = isLeftOpenRef.current ? SWIPE_SNAP : isOpenRef.current ? -SWIPE_SNAP : 0;
       const delta = gesture.currentX - base;
-      if (!isOpenRef.current && gesture.currentX < -SWIPE_THRESHOLD) {
-        onOpenRef.current();
-      } else if (isOpenRef.current && delta > SWIPE_THRESHOLD) {
-        onCloseRef.current();
-      } else {
-        setTranslateX(base);
+
+      if (!isOpenRef.current && !isLeftOpenRef.current) {
+        if (gesture.currentX < -SWIPE_THRESHOLD) {
+          onOpenRef.current();
+        } else if (hasLeftAction && gesture.currentX > SWIPE_THRESHOLD) {
+          onLeftOpenRef.current?.();
+        } else {
+          setTranslateX(0);
+        }
+      } else if (isOpenRef.current) {
+        if (delta > SWIPE_THRESHOLD) {
+          onCloseRef.current();
+        } else {
+          setTranslateX(-SWIPE_SNAP);
+        }
+      } else if (isLeftOpenRef.current) {
+        if (delta < -SWIPE_THRESHOLD) {
+          onLeftCloseRef.current?.();
+        } else {
+          setTranslateX(SWIPE_SNAP);
+        }
       }
     }
 
@@ -99,13 +137,28 @@ export function SwipeableRow({
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasLeftAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
       className="relative overflow-hidden"
       style={{ borderBottom: borderBottom ? "1px solid var(--app-border)" : undefined }}
     >
+      {hasLeftAction && (
+        <div
+          className="absolute left-0 top-0 bottom-0 flex items-center justify-center"
+          style={{ width: SWIPE_SNAP, background: leftActionColor }}
+        >
+          <button
+            type="button"
+            className="w-full h-full flex items-center justify-center text-white text-sm font-semibold"
+            onClick={onLeftActionClick}
+          >
+            {leftActionLabel}
+          </button>
+        </div>
+      )}
+
       <div
         className="absolute right-0 top-0 bottom-0 flex items-center justify-center"
         style={{ width: SWIPE_SNAP, background: "var(--app-danger)" }}
@@ -128,7 +181,10 @@ export function SwipeableRow({
           touchAction: "pan-y",
           animationDelay: animationDelay !== undefined ? `${animationDelay}ms` : undefined,
         }}
-        onClick={() => { if (isOpenRef.current) onCloseRef.current(); }}
+        onClick={() => {
+          if (isOpenRef.current) onCloseRef.current();
+          else if (isLeftOpenRef.current) onLeftCloseRef.current?.();
+        }}
       >
         {children}
       </div>

@@ -8,7 +8,7 @@
 import { useRef, useState } from "react";
 import { updateBudgets } from "../../api/budgets";
 import { createCategory, createSubcategory, deleteCategory, deleteSubcategory } from "../../api/categories";
-import { addRecurring, deleteRecurring } from "../../api/recurring";
+import { addRecurring, deleteRecurring, logRecurring } from "../../api/recurring";
 import type {
   AddRecurringRequest,
   BudgetsResponse,
@@ -74,6 +74,12 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
     await refetch();
   }
 
+  async function handleLogRecurring(id: string): Promise<'ok' | 'already_logged'> {
+    const result = await logRecurring(id);
+    if (result === 'ok') await refetch();
+    return result;
+  }
+
   return (
     <div className="flex flex-col">
       <BudgetSummaryCard
@@ -95,6 +101,7 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
           data={recurring}
           onAdd={() => setShowAddRecurring(true)}
           onDelete={handleDeleteRecurring}
+          onLog={handleLogRecurring}
         />
       )}
 

@@ -11,6 +11,7 @@ interface RecurringSectionProps {
   data: RecurringResponse;
   onAdd: () => void;
   onDelete: (id: string) => Promise<void>;
+  onLog: (id: string) => Promise<'ok' | 'already_logged'>;
 }
 
 interface SubcategoryGroup {
@@ -79,7 +80,7 @@ function RecurringRowContent({ item, formatLive }: { item: RecurringItem; format
   );
 }
 
-export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProps) {
+export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSectionProps) {
   const { formatLive } = useCurrency();
   const { items } = data;
   const totalBase = items.reduce((s, i) => s + i.amount_base, 0);
@@ -88,6 +89,11 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const [pendingItem, setPendingItem] = useState<RecurringItem | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [logSwipedId, setLogSwipedId] = useState<string | null>(null);
+  const [pendingLogItem, setPendingLogItem] = useState<RecurringItem | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   async function handleConfirmDelete() {
     if (!pendingItem) return;
@@ -98,6 +104,22 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
       setDeleteLoading(false);
       setPendingItem(null);
       setSwipedId(null);
+    }
+  }
+
+  async function handleConfirmLog() {
+    if (!pendingLogItem) return;
+    setLogLoading(true);
+    try {
+      const result = await onLog(pendingLogItem.id);
+      if (result === 'already_logged') {
+        setToast('Already recorded this month');
+        setTimeout(() => setToast(null), 3000);
+      }
+    } finally {
+      setLogLoading(false);
+      setPendingLogItem(null);
+      setLogSwipedId(null);
     }
   }
 
@@ -169,9 +191,15 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
                         <SwipeableRow
                           key={item.id}
                           isOpen={swipedId === item.id}
-                          onOpen={() => setSwipedId(item.id)}
+                          onOpen={() => { setSwipedId(item.id); setLogSwipedId(null); }}
                           onClose={() => setSwipedId(null)}
                           onDeleteClick={() => setPendingItem(item)}
+                          isLeftOpen={logSwipedId === item.id}
+                          onLeftOpen={() => { setLogSwipedId(item.id); setSwipedId(null); }}
+                          onLeftClose={() => setLogSwipedId(null)}
+                          onLeftActionClick={() => setPendingLogItem(item)}
+                          leftActionLabel="Record"
+                          leftActionColor="#22c55e"
                           borderBottom={!isLast && ii < sg.items.length - 1}
                         >
                           <RecurringRowContent item={item} formatLive={formatLive} />
@@ -197,6 +225,15 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
         )}
       </div>
 
+      {toast && (
+        <div
+          className="fixed bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl text-sm font-medium text-white z-50 whitespace-nowrap"
+          style={{ background: "rgba(0,0,0,0.75)" }}
+        >
+          {toast}
+        </div>
+      )}
+
       {pendingItem && (
         <ConfirmDialog
           title="Delete recurring expense?"
@@ -206,6 +243,17 @@ export function RecurringSection({ data, onAdd, onDelete }: RecurringSectionProp
           loading={deleteLoading}
           onConfirm={() => void handleConfirmDelete()}
           onCancel={() => setPendingItem(null)}
+        />
+      )}
+
+      {pendingLogItem && (
+        <ConfirmDialog
+          title="Record expense?"
+          message={`Do you want to record "${pendingLogItem.description}"?`}
+          confirmLabel="Record"
+          loading={logLoading}
+          onConfirm={() => void handleConfirmLog()}
+          onCancel={() => { setPendingLogItem(null); setLogSwipedId(null); }}
         />
       )}
     </>

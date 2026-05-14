@@ -38,11 +38,8 @@ async def check_and_send_budget_alert(
         if cat_obj is None:
             return
 
-        # Effective budget: category-level value, or sum of subcategory budgets
-        if cat_obj.budget:
-            budget = cat_obj.budget
-        else:
-            budget = sum(s.budget or 0.0 for s in cat_obj.subcategories)
+        # Category budgets are derived only from subcategory budgets.
+        budget = sum(s.budget or 0.0 for s in cat_obj.subcategories)
         if budget <= 0:
             return
 

@@ -69,6 +69,8 @@ def _make_sheets(transactions: list, categories: list) -> MagicMock:
 
 
 def _food_cat(budget: float | None = 1000.0, subcats: list | None = None) -> UserCategory:
+    if subcats is None and budget is not None:
+        subcats = [UserSubcategory(slug="restaurant", label="Restaurant", budget=budget)]
     return UserCategory(
         slug="food",
         label="Food & Drinks",
@@ -262,7 +264,7 @@ async def test_both_thresholds_crossed_in_one_expense():
 
 @pytest.mark.asyncio
 async def test_effective_budget_from_subcategories():
-    """When category.budget is None, sum subcategory budgets (400+600=1000)."""
+    """Sum subcategory budgets (400+600=1000)."""
     user = _make_user()
     bot = _make_bot()
     subcats = [
@@ -279,6 +281,28 @@ async def test_effective_budget_from_subcategories():
     bot.send_message.assert_called_once()
     text = bot.send_message.call_args.kwargs["text"]
     assert "⚠️" in text
+
+
+@pytest.mark.asyncio
+async def test_category_budget_field_is_ignored():
+    """A stale category.budget must not override the subcategory budget sum."""
+    user = _make_user()
+    bot = _make_bot()
+    subcats = [
+        UserSubcategory(slug="restaurant", label="Restaurant", budget=400.0),
+        UserSubcategory(slug="cafe", label="Cafe", budget=600.0),
+    ]
+    cat = _food_cat(budget=2000.0, subcats=subcats)
+    existing = [_make_tx("food", 700.0)]
+    record = _make_record(amount_base=100.0)
+    sheets = _make_sheets(existing + [record], [cat])
+
+    await check_and_send_budget_alert(bot, user, record, sheets)
+
+    bot.send_message.assert_called_once()
+    text = bot.send_message.call_args.kwargs["text"]
+    assert "⚠️" in text
+    assert "1,000" in text
 
 
 @pytest.mark.asyncio

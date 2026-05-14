@@ -177,6 +177,7 @@ export function MainPage() {
                 transactionCount={summary.transaction_count}
                 dailyAverage={summary.daily_average}
                 budgetUsedPercent={budgetUsedPercent}
+                budgetTotal={budgetTotal}
                 comparison={summary.comparison}
                 dateRange={summary.date_range}
               />

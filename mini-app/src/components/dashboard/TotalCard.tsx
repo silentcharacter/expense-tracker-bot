@@ -17,6 +17,7 @@ interface TotalCardProps {
   transactionCount: number;
   dailyAverage: number;
   budgetUsedPercent?: number;
+  budgetTotal?: number;
   comparison?: PeriodComparison;
   /** Legacy DashboardPage only — ignored when CurrencyProvider is mounted. */
   currency?: string;
@@ -69,6 +70,7 @@ export function TotalCard({
   transactionCount,
   dailyAverage,
   budgetUsedPercent,
+  budgetTotal,
   comparison,
   currency,
   period,
@@ -130,6 +132,11 @@ export function TotalCard({
           <p className="text-[10px] uppercase tracking-wide opacity-60">Budget used</p>
           <p className="text-sm font-semibold">
             {budgetUsedPercent != null ? `${Math.round(budgetUsedPercent)}%` : "—"}
+            {budgetTotal != null && budgetTotal > 0 && (
+              <span className="amount ml-1 text-[10px] font-medium opacity-70">
+                of {formatMoney(budgetTotal, undefined, 0)}
+              </span>
+            )}
           </p>
         </div>
       </div>

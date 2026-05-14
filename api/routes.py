@@ -323,7 +323,7 @@ async def _compute_spending_pace(
         logger.warning("Could not read recurring sheet for pace calc: %s", exc)
         recurring_total = 0.0
 
-    # Total budget = sum of all category budgets.
+    # Total budget = sum of effective category budgets (subcategory sums).
     try:
         budgets_map = sheets.get_budgets(user.spreadsheet_id)
         budget_total = round(sum(budgets_map.values()), 4)

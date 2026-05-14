@@ -354,16 +354,14 @@ class SheetsService:
                 cat_slug = str(row.get("category") or row.get("slug", "")).strip().lower()
                 sub_slug = str(row.get("subcategory", "")).strip().lower()
                 label = str(row.get("label", "")).strip()
-                budget = _parse_budget(row.get("budget", ""))
                 if not cat_slug:
                     continue
-                entry = cat_data.setdefault(cat_slug, {"label": "", "budget": None, "subs": []})
+                entry = cat_data.setdefault(cat_slug, {"label": "", "subs": []})
                 if not sub_slug:  # category row
                     if label:
                         entry["label"] = label
-                    if budget is not None:
-                        entry["budget"] = budget
                 else:  # subcategory row
+                    budget = _parse_budget(row.get("budget", ""))
                     entry["subs"].append((sub_slug, label, budget))
 
             from models.category import category_label as _cat_label
@@ -377,12 +375,8 @@ class SheetsService:
                     )
                     for s, lbl, b in info["subs"]
                 ]
-                # If no category-level budget, aggregate subcategory budgets.
-                effective_budget = info["budget"]
-                if effective_budget is None:
-                    sub_total = sum(b for _, _, b in info["subs"] if b is not None)
-                    if sub_total > 0:
-                        effective_budget = sub_total
+                sub_total = sum(b for _, _, b in info["subs"] if b is not None)
+                effective_budget = sub_total if sub_total > 0 else None
                 categories.append(UserCategory(slug=slug, label=label, budget=effective_budget, subcategories=subs))
 
             if not categories:
@@ -430,22 +424,19 @@ class SheetsService:
         logger.info("Seeded %d category/subcategory rows for spreadsheet %s", len(rows), spreadsheet_id)
 
     def get_budgets(self, spreadsheet_id: str) -> dict[str, float]:
-        """Read category budgets from the Categories sheet.
+        """Read effective category budgets from the Categories sheet.
 
-        A category budget is either the value on the category row itself, or
-        the sum of all subcategory budgets when no category-level budget is set.
+        Category-level budget cells are legacy data and are ignored. A category
+        budget is always the sum of its subcategory budgets.
 
         Returns:
             Dict mapping category slug → budget amount in base currency.
         """
         result: dict[str, float] = {}
         for cat in self.get_categories(spreadsheet_id):
-            if cat.budget is not None:
-                result[cat.slug] = cat.budget
-            else:
-                sub_total = sum(s.budget for s in cat.subcategories if s.budget is not None)
-                if sub_total > 0:
-                    result[cat.slug] = sub_total
+            sub_total = sum(s.budget for s in cat.subcategories if s.budget is not None)
+            if sub_total > 0:
+                result[cat.slug] = sub_total
         return result
 
     # ── Master Registry ──────────────────────────────────────────────────────

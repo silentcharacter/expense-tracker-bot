@@ -178,11 +178,8 @@ class FirestoreService:
                     )
                     for s in data.get("subcategories", [])
                 ]
-                cat_budget = data.get("budget")
-                if cat_budget is None:
-                    sub_total = sum(s.budget for s in subs if s.budget is not None)
-                    if sub_total > 0:
-                        cat_budget = sub_total
+                sub_total = sum(s.budget for s in subs if s.budget is not None)
+                cat_budget = sub_total if sub_total > 0 else None
                 categories.append(UserCategory(
                     slug=data["slug"],
                     label=data.get("label", data["slug"]),
@@ -225,12 +222,9 @@ class FirestoreService:
     def get_budgets(self, user_id: str) -> dict[str, float]:
         result: dict[str, float] = {}
         for cat in self.get_categories(user_id):
-            if cat.budget is not None:
-                result[cat.slug] = cat.budget
-            else:
-                sub_total = sum(s.budget for s in cat.subcategories if s.budget is not None)
-                if sub_total > 0:
-                    result[cat.slug] = sub_total
+            sub_total = sum(s.budget for s in cat.subcategories if s.budget is not None)
+            if sub_total > 0:
+                result[cat.slug] = sub_total
         return result
 
     def update_subcategory_budgets(self, user_id: str, budgets: dict[str, float]) -> None:

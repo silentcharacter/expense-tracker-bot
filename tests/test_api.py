@@ -79,6 +79,17 @@ def _make_record(**kwargs) -> ExpenseRecord:
     return ExpenseRecord(**defaults)
 
 
+def _frozen_date(year: int, month: int, day: int) -> type[date]:
+    """Build a date subclass with a deterministic today()."""
+
+    class FrozenDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return cls(year, month, day)
+
+    return FrozenDate
+
+
 # ── Test helper ───────────────────────────────────────────────────────────────
 
 
@@ -222,7 +233,7 @@ async def test_summary_includes_default_currency_rate(mock_sheets, mock_registry
 
 
 async def test_summary_month_includes_spending_pace(mock_sheets, mock_registry, mock_currency) -> None:
-    """Monthly summary at offset=0 includes a spending_pace block (spec §1.2)."""
+    """Monthly summary at offset=0 includes a spending_pace block."""
     mock_sheets.get_transactions.return_value = [
         _make_record(amount_base=200.0, category="food"),
         _make_record(amount_base=500.0, category="housing", recurring=True, recurring_template_id="t1"),
@@ -237,10 +248,11 @@ async def test_summary_month_includes_spending_pace(mock_sheets, mock_registry, 
     ]
     mock_sheets.get_budgets.return_value = {"food": 600.0, "housing": 500.0}
 
-    body, status = await _call(
-        "GET", "/api/summary", mock_sheets, mock_registry,
-        args={"period": "month"}, mock_currency=mock_currency,
-    )
+    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+        body, status = await _call(
+            "GET", "/api/summary", mock_sheets, mock_registry,
+            args={"period": "month"}, mock_currency=mock_currency,
+        )
     assert status == 200
     assert "spending_pace" in body
     pace = body["spending_pace"]
@@ -249,9 +261,49 @@ async def test_summary_month_includes_spending_pace(mock_sheets, mock_registry, 
     assert pace["recurring_total"] == pytest.approx(500.0)
     assert pace["budget_total"] == pytest.approx(1100.0)
     assert pace["discretionary_budget"] == pytest.approx(600.0)
+    assert pace["projected_discretionary"] == pytest.approx(200.0 / 15 * 31)
     assert pace["status"] in ("on_track", "over_pace")
-    assert pace["days_in_month"] >= 28
-    assert pace["days_elapsed"] >= 1
+    assert pace["days_in_month"] == 31
+    assert pace["days_elapsed"] == 15
+
+
+async def test_summary_spending_pace_excludes_today(mock_sheets, mock_registry, mock_currency) -> None:
+    """Projection uses completed days only and ignores today's discretionary spend."""
+    mock_sheets.get_transactions.return_value = [
+        _make_record(amount_base=200.0, category="food", timestamp=datetime(2026, 3, 15, 12, 0, 0)),
+        _make_record(amount_base=100.0, category="food", timestamp=datetime(2026, 3, 16, 9, 0, 0)),
+    ]
+    mock_sheets.get_recurring.return_value = []
+    mock_sheets.get_budgets.return_value = {"food": 1000.0}
+
+    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+        body, status = await _call(
+            "GET", "/api/summary", mock_sheets, mock_registry,
+            args={"period": "month"}, mock_currency=mock_currency,
+        )
+
+    assert status == 200
+    pace = body["spending_pace"]
+    assert pace["discretionary_spent"] == pytest.approx(300.0)
+    assert pace["projected_discretionary"] == pytest.approx(200.0 / 15 * 31)
+    assert pace["available_per_day"] == pytest.approx((1000.0 - 200.0) / 16)
+    assert pace["days_elapsed"] == 15
+
+
+async def test_summary_spending_pace_omitted_on_first_day(mock_sheets, mock_registry, mock_currency) -> None:
+    """No spending pace is shown on day 1 because there are no completed days."""
+    mock_sheets.get_transactions.return_value = [
+        _make_record(amount_base=100.0, category="food", timestamp=datetime(2026, 3, 1, 9, 0, 0)),
+    ]
+
+    with patch("api.routes.date", _frozen_date(2026, 3, 1)):
+        body, status = await _call(
+            "GET", "/api/summary", mock_sheets, mock_registry,
+            args={"period": "month"}, mock_currency=mock_currency,
+        )
+
+    assert status == 200
+    assert "spending_pace" not in body
 
 
 async def test_summary_week_omits_spending_pace(mock_sheets, mock_registry, mock_currency) -> None:

@@ -293,24 +293,38 @@ async def _compute_spending_pace(
     total_base: float,
     since: date,
     until: date,
-) -> dict:
+) -> dict | None:
     """Build the spending_pace block for the current-month summary.
 
     Splits spending into recurring (templates materialised by the cron) and
-    discretionary (everything else). Projects discretionary forward linearly
-    using ``projected = (spent / days_elapsed) × days_in_month`` per spec §1.2.
-    Recurring is excluded from the projection because it does not scale
-    linearly with time.
+    discretionary (everything else). Projects discretionary forward from fully
+    completed days only, so the current day does not make the morning forecast
+    look artificially low. Recurring is excluded from the projection because it
+    does not scale linearly with time.
     """
     import calendar as _cal
 
     today = date.today()
     days_in_month = _cal.monthrange(today.year, today.month)[1]
-    days_elapsed = max(today.day, 1)
-    days_remaining = max(days_in_month - today.day, 0)
+    completed_days = today.day - 1
+    if completed_days == 0:
+        return None
+    days_remaining = max(days_in_month - completed_days, 0)
 
     recurring_spent = round(sum(r.amount_base for r in records if r.recurring), 4)
     discretionary_spent = round(total_base - recurring_spent, 4)
+    today_discretionary_spent = round(
+        sum(
+            r.amount_base
+            for r in records
+            if not r.recurring and r.timestamp.date() == today
+        ),
+        4,
+    )
+    completed_discretionary_spent = round(
+        max(discretionary_spent - today_discretionary_spent, 0.0),
+        4,
+    )
 
     # Recurring template total for the month: sum of each template's
     # amount_local converted to base currency via the FX service.
@@ -334,11 +348,12 @@ async def _compute_spending_pace(
     discretionary_budget = round(max(budget_total - recurring_total, 0.0), 4)
 
     projected_discretionary = round(
-        discretionary_spent / days_elapsed * days_in_month, 4
+        completed_discretionary_spent / completed_days * days_in_month, 4
     )
 
     available_per_day = round(
-        max(discretionary_budget - discretionary_spent, 0.0) / max(days_remaining, 1),
+        max(discretionary_budget - completed_discretionary_spent, 0.0)
+        / max(days_remaining, 1),
         4,
     )
 
@@ -348,7 +363,7 @@ async def _compute_spending_pace(
         status = "on_track"
 
     return {
-        "days_elapsed": days_elapsed,
+        "days_elapsed": completed_days,
         "days_in_month": days_in_month,
         "total_spent": round(total_base, 4),
         "recurring_spent": recurring_spent,
@@ -499,9 +514,11 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
 
     # ── spending_pace (current month only) ──────────────────────────────────
     if period == "month" and offset == 0:
-        result["spending_pace"] = await _compute_spending_pace(
+        spending_pace = await _compute_spending_pace(
             sheets, user, records, total_base, since, until
         )
+        if spending_pace is not None:
+            result["spending_pace"] = spending_pace
 
     if compare:
         prev_since, prev_until = _previous_period_dates(period, since, until)

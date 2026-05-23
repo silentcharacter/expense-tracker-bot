@@ -15,7 +15,7 @@ interface TotalCardProps {
   total: number;
   totalDefault?: number;
   transactionCount: number;
-  dailyAverage: number;
+  dailyAverage?: number | null;
   budgetUsedPercent?: number;
   budgetTotal?: number;
   comparison?: PeriodComparison;
@@ -120,10 +120,12 @@ export function TotalCard({
       {!comparisonText && <div className="mb-3" />}
 
       <div className="flex justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide opacity-60">Daily avg</p>
-          <p className="amount text-sm font-semibold">{formatMoney(dailyAverage)}</p>
-        </div>
+        {dailyAverage != null && (
+          <div>
+            <p className="text-[10px] uppercase tracking-wide opacity-60">Daily avg</p>
+            <p className="amount text-sm font-semibold">{formatMoney(dailyAverage)}</p>
+          </div>
+        )}
         <div className="text-center">
           <p className="text-[10px] uppercase tracking-wide opacity-60">Transactions</p>
           <p className="text-sm font-semibold">{transactionCount}</p>

@@ -291,6 +291,8 @@ async def _compute_spending_pace(
     user: User,
     records: list[ExpenseRecord],
     total_base: float,
+    total_default: float,
+    base_to_default_rate: float | None,
     since: date,
     until: date,
 ) -> dict | None:
@@ -313,6 +315,15 @@ async def _compute_spending_pace(
 
     recurring_spent = round(sum(r.amount_base for r in records if r.recurring), 4)
     discretionary_spent = round(total_base - recurring_spent, 4)
+    recurring_spent_default = round(
+        sum(
+            _amount_default(r, user.default_currency, base_to_default_rate)
+            for r in records
+            if r.recurring
+        ),
+        4,
+    )
+    discretionary_spent_default = round(total_default - recurring_spent_default, 4)
     today_discretionary_spent = round(
         sum(
             r.amount_base
@@ -367,7 +378,9 @@ async def _compute_spending_pace(
         "days_in_month": days_in_month,
         "total_spent": round(total_base, 4),
         "recurring_spent": recurring_spent,
+        "recurring_spent_default": recurring_spent_default,
         "discretionary_spent": discretionary_spent,
+        "discretionary_spent_default": discretionary_spent_default,
         "recurring_total": recurring_total,
         "discretionary_budget": discretionary_budget,
         "budget_total": budget_total,
@@ -480,6 +493,24 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     ]
 
     today = date.today()
+    if period == "month" and offset == 0:
+        completed_days = today.day - 1
+        if completed_days > 0:
+            today_discretionary_base = sum(
+                r.amount_base
+                for r in records
+                if not r.recurring and r.timestamp.date() == today
+            )
+            completed_discretionary_base = max(
+                discretionary_base - today_discretionary_base,
+                0.0,
+            )
+            daily_average = round(completed_discretionary_base / completed_days, 4)
+        else:
+            daily_average = None
+    else:
+        daily_average = round(discretionary_base / days, 4)
+
     if offset < 0:
         days_remaining = 0
     else:
@@ -505,7 +536,7 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "default_currency": default_currency,
         "default_currency_rate": base_to_default_rate,
         "transaction_count": len(records),
-        "daily_average": round(discretionary_base / days, 4),
+        "daily_average": daily_average,
         "days_remaining": days_remaining,
         "by_category": by_category,
         "by_currency": by_currency,
@@ -515,7 +546,14 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     # ── spending_pace (current month only) ──────────────────────────────────
     if period == "month" and offset == 0:
         spending_pace = await _compute_spending_pace(
-            sheets, user, records, total_base, since, until
+            sheets,
+            user,
+            records,
+            total_base,
+            total_default,
+            base_to_default_rate,
+            since,
+            until,
         )
         if spending_pace is not None:
             result["spending_pace"] = spending_pace

@@ -35,7 +35,9 @@ export interface SpendingPace {
   days_in_month: number;
   total_spent: number;
   recurring_spent: number;
+  recurring_spent_default?: number;
   discretionary_spent: number;
+  discretionary_spent_default?: number;
   recurring_total: number;
   discretionary_budget: number;
   budget_total: number;
@@ -51,7 +53,7 @@ export interface SummaryResponse {
   total_default: number;
   base_currency: string;
   transaction_count: number;
-  daily_average: number;
+  daily_average: number | null;
   by_category: CategorySummary[];
   by_currency: CurrencySummary[];
   daily_totals: DailyTotal[];

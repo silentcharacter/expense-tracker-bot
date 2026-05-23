@@ -12,7 +12,9 @@ interface SpendingPaceProps {
 }
 
 export function SpendingPace({ pace }: SpendingPaceProps) {
-  const { formatLive: format } = useCurrency();
+  const { format: formatAmount, formatLive } = useCurrency();
+  const formatSpent = (base: number, defaultAmount?: number) =>
+    defaultAmount == null ? formatLive(base, 0) : formatAmount({ base, default: defaultAmount }, 0);
 
   const budget = Math.max(1, pace.discretionary_budget);
   const spentPct = Math.min(100, (pace.discretionary_spent / budget) * 100);
@@ -31,7 +33,7 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
           Spending pace
         </span>
         <span className="status-badge" data-tone="success">
-          Projected <span className="amount ml-1">{format(projectedTotal, 0)}</span>
+          Projected <span className="amount ml-1">{formatLive(projectedTotal, 0)}</span>
         </span>
       </div>
 
@@ -56,13 +58,13 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
 
       <div className="flex justify-between text-[11px] mb-4" style={{ color: "var(--app-text-secondary)" }}>
         <span>
-          Spent <span className="amount" style={{ color: "var(--app-text-primary)" }}>{format(pace.discretionary_spent, 0)}</span>
+          Spent <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.discretionary_spent, pace.discretionary_spent_default)}</span>
         </span>
         <span>
-          Proj <span className="amount" style={{ color: "var(--app-text-primary)" }}>{format(pace.projected_discretionary, 0)}</span>
+          Proj <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatLive(pace.projected_discretionary, 0)}</span>
         </span>
         <span>
-          Budget <span className="amount" style={{ color: "var(--app-text-primary)" }}>{format(pace.discretionary_budget, 0)}</span>
+          Budget <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatLive(pace.discretionary_budget, 0)}</span>
         </span>
       </div>
 
@@ -75,9 +77,9 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
           ↻ Recurring
         </span>
         <span className="amount text-sm" style={{ color: "var(--app-text-secondary)" }}>
-          <span style={{ color: "var(--app-text-primary)" }}>{format(pace.recurring_spent, 0)}</span>
+          <span style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.recurring_spent, pace.recurring_spent_default)}</span>
           {" / "}
-          {format(pace.recurring_total, 0)}
+          {formatLive(pace.recurring_total, 0)}
         </span>
       </div>
 
@@ -95,7 +97,7 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
           </span>
         </div>
         <span className="amount text-base font-semibold" style={{ color: "var(--app-text-primary)" }}>
-          {format(pace.available_per_day, 0)}
+          {formatLive(pace.available_per_day, 0)}
         </span>
       </div>
     </div>

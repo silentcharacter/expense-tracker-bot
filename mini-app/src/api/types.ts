@@ -42,7 +42,9 @@ export interface SpendingPace {
   discretionary_budget: number;
   budget_total: number;
   projected_discretionary: number;
+  projected_discretionary_default?: number;
   available_per_day: number;
+  available_per_day_default?: number | null;
   status: "on_track" | "over_pace";
 }
 

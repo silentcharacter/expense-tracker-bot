@@ -61,7 +61,7 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
           Spent <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.discretionary_spent, pace.discretionary_spent_default)}</span>
         </span>
         <span>
-          Proj <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatLive(pace.projected_discretionary, 0)}</span>
+          Proj <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.projected_discretionary, pace.projected_discretionary_default)}</span>
         </span>
         <span>
           Budget <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatLive(pace.discretionary_budget, 0)}</span>
@@ -97,7 +97,7 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
           </span>
         </div>
         <span className="amount text-base font-semibold" style={{ color: "var(--app-text-primary)" }}>
-          {formatLive(pace.available_per_day, 0)}
+          {formatSpent(pace.available_per_day, pace.available_per_day_default ?? undefined)}
         </span>
       </div>
     </div>

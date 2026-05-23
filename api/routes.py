@@ -336,6 +336,18 @@ async def _compute_spending_pace(
         max(discretionary_spent - today_discretionary_spent, 0.0),
         4,
     )
+    today_discretionary_spent_default = round(
+        sum(
+            _amount_default(r, user.default_currency, base_to_default_rate)
+            for r in records
+            if not r.recurring and r.timestamp.date() == today
+        ),
+        4,
+    )
+    completed_discretionary_spent_default = round(
+        max(discretionary_spent_default - today_discretionary_spent_default, 0.0),
+        4,
+    )
 
     # Recurring template total for the month: sum of each template's
     # amount_local converted to base currency via the FX service.
@@ -357,15 +369,33 @@ async def _compute_spending_pace(
         budget_total = 0.0
 
     discretionary_budget = round(max(budget_total - recurring_total, 0.0), 4)
+    discretionary_budget_default = (
+        round(discretionary_budget * base_to_default_rate, 4)
+        if base_to_default_rate is not None
+        else None
+    )
 
     projected_discretionary = round(
         completed_discretionary_spent / completed_days * days_in_month, 4
+    )
+    projected_discretionary_default = round(
+        completed_discretionary_spent_default / completed_days * days_in_month,
+        4,
     )
 
     available_per_day = round(
         max(discretionary_budget - completed_discretionary_spent, 0.0)
         / max(days_remaining, 1),
         4,
+    )
+    available_per_day_default = (
+        round(
+            max(discretionary_budget_default - completed_discretionary_spent_default, 0.0)
+            / max(days_remaining, 1),
+            4,
+        )
+        if discretionary_budget_default is not None
+        else None
     )
 
     if discretionary_budget > 0:
@@ -385,7 +415,9 @@ async def _compute_spending_pace(
         "discretionary_budget": discretionary_budget,
         "budget_total": budget_total,
         "projected_discretionary": projected_discretionary,
+        "projected_discretionary_default": projected_discretionary_default,
         "available_per_day": available_per_day,
+        "available_per_day_default": available_per_day_default,
         "status": status,
     }
 

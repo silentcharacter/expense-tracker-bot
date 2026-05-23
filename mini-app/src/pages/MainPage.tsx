@@ -176,6 +176,7 @@ export function MainPage() {
                 totalDefault={summary.total_default}
                 transactionCount={summary.transaction_count}
                 dailyAverage={summary.daily_average}
+                dailyAverageDefault={summary.daily_average_default}
                 budgetUsedPercent={budgetUsedPercent}
                 budgetTotal={budgetTotal}
                 comparison={summary.comparison}

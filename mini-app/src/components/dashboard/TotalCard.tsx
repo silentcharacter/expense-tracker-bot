@@ -16,6 +16,7 @@ interface TotalCardProps {
   totalDefault?: number;
   transactionCount: number;
   dailyAverage?: number | null;
+  dailyAverageDefault?: number | null;
   budgetUsedPercent?: number;
   budgetTotal?: number;
   comparison?: PeriodComparison;
@@ -69,6 +70,7 @@ export function TotalCard({
   totalDefault,
   transactionCount,
   dailyAverage,
+  dailyAverageDefault,
   budgetUsedPercent,
   budgetTotal,
   comparison,
@@ -123,7 +125,9 @@ export function TotalCard({
         {dailyAverage != null && (
           <div>
             <p className="text-[10px] uppercase tracking-wide opacity-60">Daily avg</p>
-            <p className="amount text-sm font-semibold">{formatMoney(dailyAverage)}</p>
+            <p className="amount text-sm font-semibold">
+              {formatMoney(dailyAverage, dailyAverageDefault ?? undefined)}
+            </p>
           </div>
         )}
         <div className="text-center">

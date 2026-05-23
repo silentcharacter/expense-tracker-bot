@@ -427,6 +427,11 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         _amount_default(r, default_currency, base_to_default_rate) for r in records
     )
     discretionary_base = sum(r.amount_base for r in records if not r.recurring)
+    discretionary_default = sum(
+        _amount_default(r, default_currency, base_to_default_rate)
+        for r in records
+        if not r.recurring
+    )
     days = max((until - since).days + 1, 1)
 
     # By category
@@ -501,15 +506,30 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
                 for r in records
                 if not r.recurring and r.timestamp.date() == today
             )
+            today_discretionary_default = sum(
+                _amount_default(r, default_currency, base_to_default_rate)
+                for r in records
+                if not r.recurring and r.timestamp.date() == today
+            )
             completed_discretionary_base = max(
                 discretionary_base - today_discretionary_base,
                 0.0,
             )
+            completed_discretionary_default = max(
+                discretionary_default - today_discretionary_default,
+                0.0,
+            )
             daily_average = round(completed_discretionary_base / completed_days, 4)
+            daily_average_default = round(
+                completed_discretionary_default / completed_days,
+                4,
+            )
         else:
             daily_average = None
+            daily_average_default = None
     else:
         daily_average = round(discretionary_base / days, 4)
+        daily_average_default = round(discretionary_default / days, 4)
 
     if offset < 0:
         days_remaining = 0
@@ -537,6 +557,7 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "default_currency_rate": base_to_default_rate,
         "transaction_count": len(records),
         "daily_average": daily_average,
+        "daily_average_default": daily_average_default,
         "days_remaining": days_remaining,
         "by_category": by_category,
         "by_currency": by_currency,

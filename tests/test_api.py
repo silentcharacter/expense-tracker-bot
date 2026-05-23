@@ -287,6 +287,7 @@ async def test_summary_spending_pace_excludes_today(mock_sheets, mock_registry, 
     assert status == 200
     pace = body["spending_pace"]
     assert body["daily_average"] == pytest.approx(round(200.0 / 15, 4))
+    assert body["daily_average_default"] == pytest.approx(round(6700.0 / 15, 4))
     assert pace["discretionary_spent"] == pytest.approx(300.0)
     assert pace["discretionary_spent_default"] == pytest.approx(10050.0)
     assert pace["recurring_spent_default"] == pytest.approx(0.0)
@@ -309,6 +310,7 @@ async def test_summary_spending_pace_omitted_on_first_day(mock_sheets, mock_regi
 
     assert status == 200
     assert body["daily_average"] is None
+    assert body["daily_average_default"] is None
     assert "spending_pace" not in body
 
 

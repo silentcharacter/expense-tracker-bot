@@ -54,6 +54,7 @@ export interface SummaryResponse {
   base_currency: string;
   transaction_count: number;
   daily_average: number | null;
+  daily_average_default?: number | null;
   by_category: CategorySummary[];
   by_currency: CurrencySummary[];
   daily_totals: DailyTotal[];

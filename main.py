@@ -15,6 +15,9 @@ import logging
 import os
 from typing import Optional
 
+import sentry_sdk
+from sentry_sdk.integrations.gcp import GcpIntegration
+
 import functions_framework
 from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.ext import (
@@ -32,6 +35,14 @@ from services.gemini import GeminiService
 from services.storage import get_storage
 from services.currency import CurrencyService
 from services.user_registry import UserRegistry
+
+_sentry_dsn = os.environ.get("SENTRY_DSN")
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        integrations=[GcpIntegration()],
+        send_default_pii=True,
+    )
 
 logging.basicConfig(
     level=logging.INFO,

@@ -23,6 +23,9 @@ pydantic>=2.6.0
 # HTTP client (currency API)
 aiohttp>=3.9.0
 
+# Error tracking
+sentry-sdk[gcp]>=2.0.0
+
 # Utilities
 python-dateutil>=2.9.0
 pytz>=2024.1

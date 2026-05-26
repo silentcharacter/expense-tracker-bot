@@ -64,7 +64,7 @@ class GeminiService:
     well-formed Expense on every call.
     """
 
-    MODEL = "gemini-2.5-flash"
+    MODEL = "gemini-2.5-flash-lite"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         self._client = genai.Client(

@@ -2,6 +2,33 @@
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 
+const MAX_RETRIES = 4;
+const RETRY_BASE_MS = 400;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Retry transient Cloud Function 503s during cold scale-out. */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastResponse: Response | undefined;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      lastResponse = response;
+      if (response.status !== 503 || attempt === MAX_RETRIES - 1) {
+        return response;
+      }
+    } catch (err) {
+      if (attempt === MAX_RETRIES - 1) {
+        throw err;
+      }
+    }
+    await sleep(RETRY_BASE_MS * (attempt + 1));
+  }
+  return lastResponse!;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -32,7 +59,7 @@ function createApiClient(): ApiClient {
   }
 
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await fetch(buildUrl(path), {
+    const response = await fetchWithRetry(buildUrl(path), {
       method,
       headers: {
         "Content-Type": "application/json",
@@ -63,7 +90,7 @@ function createApiClient(): ApiClient {
       return request<T>("DELETE", path);
     },
     async getBlob(path: string, params?: Record<string, string>): Promise<{ blob: Blob; filename: string }> {
-      const response = await fetch(buildUrl(path, params), {
+      const response = await fetchWithRetry(buildUrl(path, params), {
         method: "GET",
         headers: { Authorization: `tma ${getInitData()}` },
       });

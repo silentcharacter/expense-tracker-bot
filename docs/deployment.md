@@ -105,7 +105,7 @@ gcloud functions deploy expense-bot \
 After deploy, set the webhook:
 
 ```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot"
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://expense-bot-bsjaw727mq-as.a.run.app"
 ```
 
 ---
@@ -117,7 +117,7 @@ curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://asia-southeast1
 Create `mini-app/.env.production` with the Cloud Function URL:
 
 ```
-VITE_API_URL=https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot
+VITE_API_URL=https://expense-bot-bsjaw727mq-as.a.run.app
 ```
 
 Vite loads this file automatically when building in production mode.
@@ -331,6 +331,20 @@ gcloud scheduler jobs delete expense-bot-weekly-summary --project=expense-bot-48
 ---
 
 ## Troubleshooting
+
+### Google TLS / ECDSA certificate email (Q2 2026)
+
+Google is rotating some endpoints (including `googleapis.com`) to ECDSA certs via GTS WE1.
+**No action needed** for this project: the Mini App uses the browser trust store, Cloud
+Functions use the default container CA bundle, and there is no certificate pinning in the
+code. The email applies only if you maintain a **custom trust store** or **pin** certs.
+
+### `cloudfunctions.net` returns 503 but `run.app` works
+
+Gen2 functions have two URLs. If `asia-southeast1-….cloudfunctions.net/expense-bot`
+returns 503 while `expense-bot-….a.run.app` returns 200/204, point `VITE_API_URL` and
+the Telegram webhook at the **run.app** URL (see `gcloud functions describe …
+--format='value(serviceConfig.uri)'`).
 
 ### CORS errors in browser console
 

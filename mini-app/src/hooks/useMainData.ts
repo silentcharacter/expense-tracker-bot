@@ -64,13 +64,12 @@ function cacheKey(offset: number): string {
 
 async function fetchBundle(monthOffset: number): Promise<MainData> {
   const { since, until } = monthBounds(monthOffset);
-  const [summary, budgets, expenses, categories, recurring] = await Promise.all([
-    fetchSummary("month", true, monthOffset),
-    fetchBudgets(monthOffset),
-    fetchExpenses({ since, until, limit: 200 }),
-    fetchCategories(),
-    fetchRecurring(),
-  ]);
+  // Sequential requests: Cloud Function concurrency=1; parallel bursts cause 503s.
+  const summary = await fetchSummary("month", true, monthOffset);
+  const budgets = await fetchBudgets(monthOffset);
+  const expenses = await fetchExpenses({ since, until, limit: 200 });
+  const categories = await fetchCategories();
+  const recurring = await fetchRecurring();
   return { summary, budgets, expenses, categories, recurring };
 }
 

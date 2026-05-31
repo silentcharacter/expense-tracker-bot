@@ -111,7 +111,7 @@ async def handle_api_request(request: flask.Request) -> tuple:
 def _cors_preflight_response() -> tuple:
     headers = {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Access-Control-Max-Age": "3600",
     }
@@ -130,6 +130,9 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
     elif path.startswith("/expenses/") and method == "DELETE":
         expense_id = path.split("/")[-1]
         return await _api_expense_delete(expense_id, user)
+    elif path.startswith("/expenses/") and method == "PATCH":
+        expense_id = path.split("/")[-1]
+        return await _api_expense_update(request, expense_id, user)
     elif path == "/budgets" and method == "GET":
         return await _api_budgets_get(request, user)
     elif path == "/budgets" and method == "PUT":
@@ -702,6 +705,85 @@ async def _api_expense_delete(expense_id: str, user: User) -> tuple:
     if deleted is None:
         return jsonify({"error": "expense not found"}), 404
     return jsonify({"deleted": True, "expense": _record_to_dict(deleted)}), 200
+
+
+# ── PATCH /api/expenses/:id ─────────────────────────────────────────────────
+
+
+async def _api_expense_update(request: flask.Request, expense_id: str, user: User) -> tuple:
+    from datetime import datetime as _dt
+
+    body = request.get_json(silent=True) or {}
+
+    description = str(body.get("description", "")).strip()
+    if not description:
+        return jsonify({"error": "description is required"}), 400
+
+    raw_amount = body.get("amount_local")
+    if raw_amount in (None, ""):
+        return jsonify({"error": "amount_local is required"}), 400
+    try:
+        amount_local = float(raw_amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount_local must be a number"}), 400
+    if amount_local <= 0:
+        return jsonify({"error": "amount_local must be positive"}), 400
+
+    local_currency = str(body.get("local_currency") or user.default_currency).upper()
+    category = str(body.get("category", "")).strip()
+    subcategory = str(body.get("subcategory", "")).strip()
+    date_str = str(body.get("date", "")).strip()
+
+    if not category:
+        return jsonify({"error": "category is required"}), 400
+    if not date_str:
+        return jsonify({"error": "date is required"}), 400
+
+    try:
+        expense_date = date.fromisoformat(date_str)
+    except ValueError:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+
+    base_currency = user.base_currency
+    if local_currency == base_currency.upper():
+        fx_rate = 1.0
+        amount_base = round(amount_local, 4)
+    else:
+        try:
+            fx_rate = await _get_currency().get_rate(local_currency, base_currency)
+            amount_base = round(amount_local * fx_rate, 4)
+        except Exception as exc:
+            logger.warning("FX rate fetch failed for expense update (%s->%s): %s", local_currency, base_currency, exc)
+            return jsonify({"error": "could not fetch exchange rate"}), 422
+
+    updates = {
+        "description": description,
+        "amount_local": amount_local,
+        "local_currency": local_currency,
+        "amount_base": amount_base,
+        "fx_rate": fx_rate,
+        "category": category,
+        "subcategory": subcategory,
+        "timestamp": _dt.combine(expense_date, _dt.min.time()),
+    }
+
+    sheets = _get_sheets()
+    updated = sheets.update_transaction(user.spreadsheet_id, expense_id, updates)
+    if updated is None:
+        return jsonify({"error": "expense not found"}), 404
+
+    default_currency = user.default_currency
+    if default_currency.upper() == base_currency.upper():
+        base_to_default_rate: float | None = 1.0
+    else:
+        try:
+            base_to_default_rate = round(
+                await _get_currency().get_rate(base_currency, default_currency), 6
+            )
+        except Exception:
+            base_to_default_rate = None
+
+    return jsonify(_record_to_dict(updated, default_currency, base_to_default_rate)), 200
 
 
 # ── GET /api/budgets ────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 /** Overview sub-tab: heatmap → spending pace → category breakdown → transactions. */
 
-import type { BudgetsResponse, ExpensesResponse, SummaryResponse } from "../../api/types";
+import type { BudgetsResponse, ExpensesResponse, SummaryResponse, UpdateExpenseRequest } from "../../api/types";
 import { TransactionList } from "../dashboard/TransactionList";
 import { CategoryBudgetList } from "../overview/CategoryBudgetList";
 import type { CategoryFilter } from "../overview/CategoryBudgetList";
@@ -20,6 +20,7 @@ interface OverviewTabProps {
   onSelectDay: (day: string | null) => void;
   onSelectCategory: (filter: CategoryFilter | null) => void;
   onDeleteExpense?: (id: string) => Promise<void>;
+  onEditExpense?: (id: string, data: UpdateExpenseRequest) => Promise<void>;
 }
 
 export function OverviewTab({
@@ -33,6 +34,7 @@ export function OverviewTab({
   onSelectDay,
   onSelectCategory,
   onDeleteExpense,
+  onEditExpense,
 }: OverviewTabProps) {
   const expenseList = expenses?.expenses ?? [];
   const budgetEntries = budgets?.budgets ?? [];
@@ -64,6 +66,7 @@ export function OverviewTab({
         filterCategory={filterCategory}
         onClearCategoryFilter={() => onSelectCategory(null)}
         onDeleteExpense={onDeleteExpense}
+        onEditExpense={onEditExpense}
         showHeader
       />
     </div>

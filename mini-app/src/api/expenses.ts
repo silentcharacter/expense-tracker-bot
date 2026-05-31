@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { DeleteExpenseResponse, ExpensesResponse } from "./types";
+import type { DeleteExpenseResponse, Expense, ExpensesResponse, UpdateExpenseRequest } from "./types";
 
 export interface FetchExpensesParams {
   since?: string;
@@ -21,4 +21,8 @@ export function fetchExpenses(params: FetchExpensesParams = {}): Promise<Expense
 
 export function deleteExpense(id: string): Promise<DeleteExpenseResponse> {
   return api.delete<DeleteExpenseResponse>(`/expenses/${id}`);
+}
+
+export function updateExpense(id: string, data: UpdateExpenseRequest): Promise<Expense> {
+  return api.patch<Expense>(`/expenses/${id}`, data);
 }

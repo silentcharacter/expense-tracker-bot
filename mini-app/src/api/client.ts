@@ -43,6 +43,7 @@ interface ApiClient {
   get<T>(path: string, params?: Record<string, string>): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
   put<T>(path: string, body: unknown): Promise<T>;
+  patch<T>(path: string, body: unknown): Promise<T>;
   delete<T>(path: string): Promise<T>;
   getBlob(path: string, params?: Record<string, string>): Promise<{ blob: Blob; filename: string }>;
 }
@@ -85,6 +86,9 @@ function createApiClient(): ApiClient {
     },
     put<T>(path: string, body: unknown): Promise<T> {
       return request<T>("PUT", path, body);
+    },
+    patch<T>(path: string, body: unknown): Promise<T> {
+      return request<T>("PATCH", path, body);
     },
     delete<T>(path: string): Promise<T> {
       return request<T>("DELETE", path);

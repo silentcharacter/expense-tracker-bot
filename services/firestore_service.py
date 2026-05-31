@@ -69,6 +69,20 @@ class FirestoreService:
             logger.warning("Could not parse deleted transaction: %s", exc)
             return None
 
+    def update_transaction(self, user_id: str, expense_id: str, updates: dict) -> Optional[ExpenseRecord]:
+        doc_ref = self._tx_col(user_id).document(expense_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            return None
+        doc_ref.update(updates)
+        updated = doc_ref.get()
+        logger.info("Updated transaction %s for user %s", expense_id, user_id)
+        try:
+            return ExpenseRecord.from_firestore_dict(updated.to_dict())
+        except Exception as exc:
+            logger.warning("Could not parse updated transaction: %s", exc)
+            return None
+
     def delete_transaction_by_id(self, user_id: str, expense_id: str) -> Optional[ExpenseRecord]:
         doc = self._tx_col(user_id).document(expense_id).get()
         if not doc.exists:

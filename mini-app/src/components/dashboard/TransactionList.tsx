@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { Expense } from "../../api/types";
+import type { Expense, UpdateExpenseRequest } from "../../api/types";
 import { useCurrencyOptional } from "../../context/CurrencyContext";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../../utils/categories";
 import { formatAmount } from "../../utils/format";
 import { ConfirmDialog } from "../settings/ConfirmDialog";
 import { SwipeableRow } from "../shared/SwipeableRow";
+import { EditExpenseDrawer } from "./EditExpenseDrawer";
 
 interface CategoryFilterSel {
   category: string;
@@ -17,6 +18,7 @@ interface TransactionListProps {
   filterCategory?: CategoryFilterSel | null;
   onClearCategoryFilter?: () => void;
   onDeleteExpense?: (id: string) => Promise<void>;
+  onEditExpense?: (id: string, data: UpdateExpenseRequest) => Promise<void>;
   showHeader?: boolean;
 }
 
@@ -94,12 +96,15 @@ export function TransactionList({
   filterCategory = null,
   onClearCategoryFilter,
   onDeleteExpense,
+  onEditExpense,
   showHeader = false,
 }: TransactionListProps) {
   const currency = useCurrencyOptional();
   const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [leftSwipedId, setLeftSwipedId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   const filtered = expenses.filter((e) => {
     if (filterDay && e.timestamp.slice(0, 10) !== filterDay) return false;
@@ -163,9 +168,15 @@ export function TransactionList({
                 <SwipeableRow
                   key={expense.id}
                   isOpen={swipedId === expense.id}
-                  onOpen={() => setSwipedId(expense.id)}
+                  onOpen={() => { setSwipedId(expense.id); setLeftSwipedId(null); }}
                   onClose={() => setSwipedId(null)}
                   onDeleteClick={() => setPendingDeleteId(expense.id)}
+                  leftActionLabel={onEditExpense ? "Edit" : undefined}
+                  leftActionColor="#22c55e"
+                  isLeftOpen={leftSwipedId === expense.id}
+                  onLeftOpen={() => { setLeftSwipedId(expense.id); setSwipedId(null); }}
+                  onLeftClose={() => setLeftSwipedId(null)}
+                  onLeftActionClick={() => { setEditingExpense(expense); setLeftSwipedId(null); }}
                   borderBottom={i < filtered.length - 1}
                   animationDelay={i * 30}
                   background="var(--app-bg)"
@@ -188,6 +199,14 @@ export function TransactionList({
           </div>
         )}
       </div>
+
+      {editingExpense && onEditExpense && (
+        <EditExpenseDrawer
+          expense={editingExpense}
+          onConfirm={(data) => onEditExpense(editingExpense.id, data)}
+          onClose={() => setEditingExpense(null)}
+        />
+      )}
 
       {pendingDeleteId && (
         <ConfirmDialog

@@ -1,7 +1,8 @@
 /** Single-page shell: header, total card, sub-tabs, active tab body, settings modal. */
 
 import { useState } from "react";
-import { deleteExpense } from "../api/expenses";
+import { deleteExpense, updateExpense } from "../api/expenses";
+import type { UpdateExpenseRequest } from "../api/types";
 import { CurrencyProvider } from "../context/CurrencyContext";
 import { useUser } from "../context/UserContext";
 import { useMainData } from "../hooks/useMainData";
@@ -94,6 +95,11 @@ export function MainPage() {
 
   async function handleDeleteExpense(id: string) {
     await deleteExpense(id);
+    await refetch();
+  }
+
+  async function handleEditExpense(id: string, data: UpdateExpenseRequest) {
+    await updateExpense(id, data);
     await refetch();
   }
 
@@ -204,6 +210,7 @@ export function MainPage() {
                     onSelectDay={setFilterDay}
                     onSelectCategory={setFilterCategory}
                     onDeleteExpense={handleDeleteExpense}
+                    onEditExpense={handleEditExpense}
                   />
                 ))}
 

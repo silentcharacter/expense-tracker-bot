@@ -97,6 +97,15 @@ export interface DeleteExpenseResponse {
   expense: Expense;
 }
 
+export interface UpdateExpenseRequest {
+  description: string;
+  amount_local: number;
+  local_currency: string;
+  category: string;
+  subcategory: string;
+  date: string; // YYYY-MM-DD
+}
+
 // ── Budgets ───────────────────────────────────────────────────────────────────
 
 export interface SubcategoryBudgetEntry {

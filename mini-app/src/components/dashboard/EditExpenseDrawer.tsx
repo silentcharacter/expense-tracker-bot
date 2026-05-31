@@ -20,6 +20,7 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
   const [date, setDate] = useState(expense.timestamp.slice(0, 10));
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const descRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
   async function confirm() {
     if (!valid) return;
     setSaving(true);
+    setError(null);
     try {
       await onConfirm({
         description: description.trim(),
@@ -60,6 +62,8 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
         date,
       });
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSaving(false);
     }
@@ -181,6 +185,12 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
               </option>
             ))}
           </select>
+        )}
+
+        {error && (
+          <p className="text-xs px-1" style={{ color: "var(--app-danger)" }}>
+            {error}
+          </p>
         )}
 
         <button

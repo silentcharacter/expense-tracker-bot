@@ -1,16 +1,24 @@
 """Gemini Flash client: audio/text → structured Expense JSON."""
 
+import asyncio
 import logging
 import os
+import random
 from typing import Optional
 
 from google import genai
+from google.genai import errors
 from google.genai import types
 
 from models.expense import Expense
 from models.category import UserCategory
 
 logger = logging.getLogger(__name__)
+
+_GEMINI_MAX_ATTEMPTS = 3
+_GEMINI_RETRY_BASE_DELAY_SECONDS = 0.5
+_GEMINI_RETRY_MAX_DELAY_SECONDS = 4.0
+_TRANSIENT_GEMINI_STATUS_CODES = {429, 500, 502, 503, 504}
 
 _SYSTEM_INSTRUCTION_TEMPLATE = """\
 You are an expense parser. Extract the following fields from the user's input \
@@ -141,6 +149,21 @@ class GeminiService:
 
     # ── Internal helpers ────────────────────────────────────────────────────
 
+    @staticmethod
+    def _is_transient_api_error(exc: Exception) -> bool:
+        """Return True for Gemini errors that are worth retrying."""
+        if not isinstance(exc, errors.APIError):
+            return False
+        code = getattr(exc, "code", None)
+        return code in _TRANSIENT_GEMINI_STATUS_CODES
+
+    @staticmethod
+    def _retry_delay(attempt: int) -> float:
+        """Calculate exponential retry delay with small jitter."""
+        base = _GEMINI_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+        delay = min(base, _GEMINI_RETRY_MAX_DELAY_SECONDS)
+        return delay + random.uniform(0, 0.25)
+
     async def _generate(
         self,
         system_instruction: str,
@@ -151,20 +174,37 @@ class GeminiService:
         Raises:
             GeminiServiceError: On API or validation failure.
         """
-        try:
-            response = self._client.models.generate_content(
-                model=self.MODEL,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=Expense,
-                    temperature=0.1,
-                ),
-            )
-        except Exception as exc:
-            logger.exception("Gemini API error: %s", exc)
-            raise GeminiServiceError(f"Gemini API error: {exc}") from exc
+        response = None
+        for attempt in range(1, _GEMINI_MAX_ATTEMPTS + 1):
+            try:
+                response = self._client.models.generate_content(
+                    model=self.MODEL,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        response_mime_type="application/json",
+                        response_schema=Expense,
+                        temperature=0.1,
+                    ),
+                )
+                break
+            except Exception as exc:
+                if self._is_transient_api_error(exc) and attempt < _GEMINI_MAX_ATTEMPTS:
+                    delay = self._retry_delay(attempt)
+                    logger.warning(
+                        "Transient Gemini API error on attempt %s/%s; retrying in %.2fs: %s",
+                        attempt,
+                        _GEMINI_MAX_ATTEMPTS,
+                        delay,
+                        exc,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                logger.exception("Gemini API error after %s attempt(s): %s", attempt, exc)
+                raise GeminiServiceError(f"Gemini API error: {exc}") from exc
+
+        if response is None:
+            raise GeminiServiceError("Gemini API error: empty response")
 
         raw = response.text
         logger.debug("Gemini raw response: %s", raw)

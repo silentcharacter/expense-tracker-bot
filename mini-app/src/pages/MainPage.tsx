@@ -134,6 +134,11 @@ export function MainPage() {
   const budgetTotal = (budgets?.budgets ?? []).reduce((s, b) => s + b.budget, 0);
   const budgetUsedPercent =
     budgetTotal > 0 && summary ? (summary.total_base / budgetTotal) * 100 : undefined;
+  const dayToDayBudget = summary?.spending_pace?.discretionary_budget;
+  const dayToDayBudgetUsedPercent =
+    summary?.spending_pace && dayToDayBudget && dayToDayBudget > 0
+      ? (summary.spending_pace.discretionary_spent / dayToDayBudget) * 100
+      : undefined;
 
   return (
     <CurrencyProvider
@@ -183,6 +188,8 @@ export function MainPage() {
                 transactionCount={summary.transaction_count}
                 dailyAverage={summary.daily_average}
                 dailyAverageDefault={summary.daily_average_default}
+                dayToDayBudgetUsedPercent={dayToDayBudgetUsedPercent}
+                dayToDayBudgetTotal={dayToDayBudget}
                 budgetUsedPercent={budgetUsedPercent}
                 budgetTotal={budgetTotal}
                 comparison={summary.comparison}

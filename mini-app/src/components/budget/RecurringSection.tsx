@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { RecurringItem, RecurringResponse } from "../../api/types";
 import { useCurrency } from "../../context/CurrencyContext";
 import { getCategoryEmoji } from "../../utils/categories";
+import { fmt } from "../../utils/format";
 import { ConfirmDialog } from "../settings/ConfirmDialog";
 import { SwipeableRow } from "../shared/SwipeableRow";
 
@@ -17,13 +18,11 @@ interface RecurringSectionProps {
 interface SubcategoryGroup {
   subcategory: string;
   items: RecurringItem[];
-  total: number;
 }
 
 interface CategoryGroup {
   category: string;
   subcategories: SubcategoryGroup[];
-  total: number;
 }
 
 function ordinalSuffix(n: number): string {
@@ -52,17 +51,48 @@ function groupItems(items: RecurringItem[]): CategoryGroup[] {
     const subcategories: SubcategoryGroup[] = Array.from(subMap.entries()).map(([subcategory, subItems]) => ({
       subcategory,
       items: subItems,
-      total: subItems.reduce((s, i) => s + i.amount_base, 0),
     }));
     return {
       category,
       subcategories,
-      total: subcategories.reduce((s, sg) => s + sg.total, 0),
     };
   });
 }
 
-function RecurringRowContent({ item, formatLive }: { item: RecurringItem; formatLive: (v: number, d: number) => string }) {
+function activeAmountForItem(
+  item: RecurringItem,
+  activeCurrency: string,
+  convertLive: (amountBase: number) => number,
+): number {
+  return item.local_currency.toUpperCase() === activeCurrency.toUpperCase()
+    ? item.amount_local
+    : convertLive(item.amount_base);
+}
+
+function formatActiveTotal(
+  items: RecurringItem[],
+  activeCurrency: string,
+  convertLive: (amountBase: number) => number,
+): string {
+  const total = items.reduce((sum, item) => sum + activeAmountForItem(item, activeCurrency, convertLive), 0);
+  return fmt(total, activeCurrency, 0);
+}
+
+function RecurringRowContent({
+  item,
+  activeCurrency,
+  formatLive,
+}: {
+  item: RecurringItem;
+  activeCurrency: string;
+  formatLive: (v: number, d: number) => string;
+}) {
+  const localCurrency = item.local_currency.toUpperCase();
+  const activeCurrencyCode = activeCurrency.toUpperCase();
+  const localAmount = fmt(item.amount_local, localCurrency, 0);
+  const activeAmount = formatLive(item.amount_base, 0);
+  const amountLabel = localCurrency === activeCurrencyCode ? localAmount : `${localAmount} / ${activeAmount}`;
+
   return (
     <div className="flex items-center gap-3 py-2.5 pl-4">
       <div className="flex-1 min-w-0">
@@ -74,16 +104,15 @@ function RecurringRowContent({ item, formatLive }: { item: RecurringItem; format
         </p>
       </div>
       <span className="amount text-sm font-semibold flex-shrink-0" style={{ color: "var(--app-text-primary)" }}>
-        {formatLive(item.amount_base, 0)}
+        {amountLabel}
       </span>
     </div>
   );
 }
 
 export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSectionProps) {
-  const { formatLive } = useCurrency();
+  const { activeCurrency, convertLive, formatLive } = useCurrency();
   const { items } = data;
-  const totalBase = items.reduce((s, i) => s + i.amount_base, 0);
   const groups = groupItems(items);
 
   const [swipedId, setSwipedId] = useState<string | null>(null);
@@ -164,7 +193,7 @@ export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSect
                     </span>
                   </div>
                   <span className="amount text-sm font-semibold" style={{ color: "var(--app-accent)" }}>
-                    {formatLive(group.total, 0)}/mo
+                    {formatActiveTotal(group.subcategories.flatMap(sg => sg.items), activeCurrency, convertLive)}/mo
                   </span>
                 </div>
 
@@ -178,7 +207,7 @@ export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSect
                           {sg.subcategory}
                         </span>
                         <span className="amount text-xs font-medium" style={{ color: "var(--app-text-secondary)" }}>
-                          {formatLive(sg.total, 0)}/mo
+                          {formatActiveTotal(sg.items, activeCurrency, convertLive)}/mo
                         </span>
                       </div>
                     )}
@@ -202,7 +231,7 @@ export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSect
                           leftActionColor="#22c55e"
                           borderBottom={!isLast && ii < sg.items.length - 1}
                         >
-                          <RecurringRowContent item={item} formatLive={formatLive} />
+                          <RecurringRowContent item={item} activeCurrency={activeCurrency} formatLive={formatLive} />
                         </SwipeableRow>
                       );
                     })}
@@ -218,7 +247,7 @@ export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSect
             <p className="text-xs text-center" style={{ color: "var(--app-text-secondary)" }}>
               Total recurring:{" "}
               <span className="font-semibold amount" style={{ color: "var(--app-accent)" }}>
-                {formatLive(totalBase, 0)}/mo
+                {formatActiveTotal(items, activeCurrency, convertLive)}/mo
               </span>
             </p>
           </div>

@@ -13,6 +13,7 @@ interface RecurringSectionProps {
   onAdd: () => void;
   onDelete: (id: string) => Promise<void>;
   onLog: (id: string) => Promise<'ok' | 'already_logged'>;
+  onEdit: (item: RecurringItem) => void;
 }
 
 interface SubcategoryGroup {
@@ -110,7 +111,7 @@ function RecurringRowContent({
   );
 }
 
-export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSectionProps) {
+export function RecurringSection({ data, onAdd, onDelete, onLog, onEdit }: RecurringSectionProps) {
   const { activeCurrency, convertLive, formatLive } = useCurrency();
   const { items } = data;
   const groups = groupItems(items);
@@ -229,6 +230,9 @@ export function RecurringSection({ data, onAdd, onDelete, onLog }: RecurringSect
                           onLeftActionClick={() => setPendingLogItem(item)}
                           leftActionLabel="Record"
                           leftActionColor="#22c55e"
+                          leftAction2Label="Edit"
+                          leftAction2Color="#3b82f6"
+                          onLeftAction2Click={() => { onEdit(item); setLogSwipedId(null); }}
                           borderBottom={!isLast && ii < sg.items.length - 1}
                         >
                           <RecurringRowContent item={item} activeCurrency={activeCurrency} formatLive={formatLive} />

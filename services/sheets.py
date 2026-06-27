@@ -907,6 +907,26 @@ class SheetsService:
         ]
         sheet.append_row(row)
 
+    def update_recurring(self, spreadsheet_id: str, entry_id: str, updates: dict) -> bool:
+        """Update a recurring entry by id. Returns True if found and updated."""
+        _recurring_cache.pop(spreadsheet_id, None)
+        sheet = self._get_sheet(spreadsheet_id, SHEET_RECURRING)
+        all_values = sheet.get_all_values()
+        if not all_values:
+            return False
+        header = all_values[0]
+        col = {name: idx + 1 for idx, name in enumerate(header)}
+        for i, row in enumerate(all_values):
+            if i == 0:
+                continue
+            if row and row[0] == entry_id:
+                row_num = i + 1
+                for field, value in updates.items():
+                    if field in col:
+                        sheet.update_cell(row_num, col[field], value)
+                return True
+        return False
+
     def delete_recurring(self, spreadsheet_id: str, entry_id: str) -> bool:
         """Delete a recurring entry by its id value. Returns True if found and deleted."""
         _recurring_cache.pop(spreadsheet_id, None)

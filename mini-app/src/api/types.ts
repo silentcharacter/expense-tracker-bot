@@ -224,3 +224,12 @@ export interface AddRecurringRequest {
   category?: string;
   subcategory?: string;
 }
+
+export interface UpdateRecurringRequest {
+  description: string;
+  amount_local: number;
+  local_currency: string;
+  day_of_month: number;
+  category: string;
+  subcategory: string;
+}

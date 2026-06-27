@@ -8,11 +8,13 @@
 import { useRef, useState } from "react";
 import { updateBudgets } from "../../api/budgets";
 import { createCategory, createSubcategory, deleteCategory, deleteSubcategory } from "../../api/categories";
-import { addRecurring, deleteRecurring, logRecurring } from "../../api/recurring";
+import { addRecurring, deleteRecurring, logRecurring, updateRecurring } from "../../api/recurring";
 import type {
   AddRecurringRequest,
   BudgetsResponse,
+  RecurringItem,
   RecurringResponse,
+  UpdateRecurringRequest,
 } from "../../api/types";
 import { useTelegram } from "../../hooks/useTelegram";
 import { getCategoryEmoji } from "../../utils/categories";
@@ -31,6 +33,7 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [addSubFor, setAddSubFor] = useState<{ slug: string; label: string } | null>(null);
   const [showAddRecurring, setShowAddRecurring] = useState(false);
+  const [editingRecurring, setEditingRecurring] = useState<RecurringItem | null>(null);
   const { showConfirm } = useTelegram();
 
   const entries = budgets?.budgets ?? [];
@@ -69,6 +72,11 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
     await refetch();
   }
 
+  async function handleEditRecurring(id: string, entry: UpdateRecurringRequest) {
+    await updateRecurring(id, entry);
+    await refetch();
+  }
+
   async function handleDeleteRecurring(id: string) {
     await deleteRecurring(id);
     await refetch();
@@ -102,6 +110,7 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
           onAdd={() => setShowAddRecurring(true)}
           onDelete={handleDeleteRecurring}
           onLog={handleLogRecurring}
+          onEdit={(item) => setEditingRecurring(item)}
         />
       )}
 
@@ -136,6 +145,31 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
           }))}
           onConfirm={handleAddRecurring}
           onClose={() => setShowAddRecurring(false)}
+        />
+      )}
+
+      {editingRecurring && recurring && (
+        <AddRecurringDrawer
+          key={editingRecurring.id}
+          defaultCurrency={recurring.default_currency}
+          baseCurrency={recurring.base_currency}
+          categories={entries.map((b) => ({
+            slug: b.category,
+            label: b.label,
+            subcategories: b.subcategories.map((s) => ({ slug: s.slug, label: s.label })),
+          }))}
+          initialValues={editingRecurring}
+          onConfirm={(entry) =>
+            handleEditRecurring(editingRecurring.id, {
+              description: entry.description,
+              amount_local: entry.amount_local,
+              local_currency: entry.local_currency ?? editingRecurring.local_currency,
+              day_of_month: entry.day_of_month ?? editingRecurring.day_of_month,
+              category: entry.category ?? editingRecurring.category,
+              subcategory: entry.subcategory ?? editingRecurring.subcategory,
+            })
+          }
+          onClose={() => setEditingRecurring(null)}
         />
       )}
     </div>
@@ -240,6 +274,7 @@ interface AddRecurringDrawerProps {
   defaultCurrency: string;
   baseCurrency: string;
   categories: { slug: string; label: string; subcategories: { slug: string; label: string }[] }[];
+  initialValues?: Pick<RecurringItem, "description" | "amount_local" | "local_currency" | "day_of_month" | "category" | "subcategory">;
   onConfirm: (entry: AddRecurringRequest) => Promise<void>;
   onClose: () => void;
 }
@@ -248,15 +283,17 @@ function AddRecurringDrawer({
   defaultCurrency,
   baseCurrency,
   categories,
+  initialValues,
   onConfirm,
   onClose,
 }: AddRecurringDrawerProps) {
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(defaultCurrency);
-  const [dayOfMonth, setDayOfMonth] = useState("1");
-  const [category, setCategory] = useState("");
-  const [subcategory, setSubcategory] = useState("");
+  const isEditing = Boolean(initialValues);
+  const [description, setDescription] = useState(initialValues?.description ?? "");
+  const [amount, setAmount] = useState(initialValues ? String(initialValues.amount_local) : "");
+  const [currency, setCurrency] = useState(initialValues?.local_currency?.toUpperCase() ?? defaultCurrency);
+  const [dayOfMonth, setDayOfMonth] = useState(initialValues ? String(initialValues.day_of_month) : "1");
+  const [category, setCategory] = useState(initialValues?.category ?? "");
+  const [subcategory, setSubcategory] = useState(initialValues?.subcategory ?? "");
   const [saving, setSaving] = useState(false);
   const descRef = useRef<HTMLInputElement>(null);
 
@@ -314,7 +351,7 @@ function AddRecurringDrawer({
       >
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold" style={{ color: "var(--app-text-primary)" }}>
-            Add recurring expense
+            {isEditing ? "Edit recurring expense" : "Add recurring expense"}
           </p>
           <button
             className="text-xs px-2 py-1 rounded"
@@ -436,7 +473,7 @@ function AddRecurringDrawer({
             border: "none",
           }}
         >
-          {saving ? "Adding…" : "Add recurring"}
+          {saving ? (isEditing ? "Saving…" : "Adding…") : (isEditing ? "Save changes" : "Add recurring")}
         </button>
       </div>
     </div>

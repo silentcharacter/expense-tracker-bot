@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const SWIPE_SNAP = 80;
+const SWIPE_SNAP_DOUBLE = 160;
 const SWIPE_THRESHOLD = 40;
 
 interface SwipeableRowProps {
@@ -16,6 +17,10 @@ interface SwipeableRowProps {
   onLeftOpen?: () => void;
   onLeftClose?: () => void;
   onLeftActionClick?: () => void;
+  /** Optional second left-side action (shown alongside the first). */
+  leftAction2Label?: string;
+  leftAction2Color?: string;
+  onLeftAction2Click?: () => void;
   borderBottom?: boolean;
   animationDelay?: number;
   /** Background of the sliding content (should match card background). */
@@ -34,6 +39,9 @@ export function SwipeableRow({
   onLeftOpen,
   onLeftClose,
   onLeftActionClick,
+  leftAction2Label,
+  leftAction2Color = "#3b82f6",
+  onLeftAction2Click,
   borderBottom = false,
   animationDelay,
   background = "var(--app-card-bg)",
@@ -53,15 +61,17 @@ export function SwipeableRow({
   useLayoutEffect(() => { onLeftOpenRef.current = onLeftOpen; }, [onLeftOpen]);
   useLayoutEffect(() => { onLeftCloseRef.current = onLeftClose; }, [onLeftClose]);
 
-  const initialX = isLeftOpen ? SWIPE_SNAP : isOpen ? -SWIPE_SNAP : 0;
+  const initialX = isLeftOpen ? leftSnapSize : isOpen ? -SWIPE_SNAP : 0;
   const [translateX, setTranslateX] = useState(initialX);
   const [isDragging, setIsDragging] = useState(false);
 
   useLayoutEffect(() => {
-    setTranslateX(isLeftOpen ? SWIPE_SNAP : isOpen ? -SWIPE_SNAP : 0);
-  }, [isOpen, isLeftOpen]);
+    setTranslateX(isLeftOpen ? leftSnapSize : isOpen ? -SWIPE_SNAP : 0);
+  }, [isOpen, isLeftOpen, leftSnapSize]);
 
   const hasLeftAction = Boolean(leftActionLabel);
+  const hasLeftAction2 = Boolean(leftAction2Label);
+  const leftSnapSize = hasLeftAction && hasLeftAction2 ? SWIPE_SNAP_DOUBLE : SWIPE_SNAP;
 
   useEffect(() => {
     const el = rowRef.current;
@@ -75,7 +85,7 @@ export function SwipeableRow({
       gesture.startY = t.clientY;
       gesture.dragging = false;
       gesture.locked = false;
-      gesture.currentX = isLeftOpenRef.current ? SWIPE_SNAP : isOpenRef.current ? -SWIPE_SNAP : 0;
+      gesture.currentX = isLeftOpenRef.current ? leftSnapSize : isOpenRef.current ? -SWIPE_SNAP : 0;
     }
 
     function onTouchMove(e: TouchEvent) {
@@ -92,8 +102,8 @@ export function SwipeableRow({
       }
 
       e.preventDefault();
-      const base = isLeftOpenRef.current ? SWIPE_SNAP : isOpenRef.current ? -SWIPE_SNAP : 0;
-      const maxRight = hasLeftAction ? SWIPE_SNAP : 0;
+      const base = isLeftOpenRef.current ? leftSnapSize : isOpenRef.current ? -SWIPE_SNAP : 0;
+      const maxRight = hasLeftAction ? leftSnapSize : 0;
       const newX = Math.max(-SWIPE_SNAP, Math.min(maxRight, base + dx));
       gesture.currentX = newX;
       setTranslateX(newX);
@@ -103,7 +113,7 @@ export function SwipeableRow({
       if (!gesture.dragging) return;
       gesture.dragging = false;
       setIsDragging(false);
-      const base = isLeftOpenRef.current ? SWIPE_SNAP : isOpenRef.current ? -SWIPE_SNAP : 0;
+      const base = isLeftOpenRef.current ? leftSnapSize : isOpenRef.current ? -SWIPE_SNAP : 0;
       const delta = gesture.currentX - base;
 
       if (!isOpenRef.current && !isLeftOpenRef.current) {
@@ -124,7 +134,7 @@ export function SwipeableRow({
         if (delta < -SWIPE_THRESHOLD) {
           onLeftCloseRef.current?.();
         } else {
-          setTranslateX(SWIPE_SNAP);
+          setTranslateX(leftSnapSize);
         }
       }
     }
@@ -137,7 +147,7 @@ export function SwipeableRow({
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, [hasLeftAction]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasLeftAction, leftSnapSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -146,16 +156,27 @@ export function SwipeableRow({
     >
       {hasLeftAction && (
         <div
-          className="absolute left-0 top-0 bottom-0 flex items-center justify-center"
-          style={{ width: SWIPE_SNAP, background: leftActionColor }}
+          className="absolute left-0 top-0 bottom-0 flex"
+          style={{ width: leftSnapSize }}
         >
           <button
             type="button"
-            className="w-full h-full flex items-center justify-center text-white text-sm font-semibold"
+            className="flex-1 h-full flex items-center justify-center text-white text-sm font-semibold"
+            style={{ background: leftActionColor }}
             onClick={onLeftActionClick}
           >
             {leftActionLabel}
           </button>
+          {hasLeftAction2 && (
+            <button
+              type="button"
+              className="flex-1 h-full flex items-center justify-center text-white text-sm font-semibold"
+              style={{ background: leftAction2Color }}
+              onClick={onLeftAction2Click}
+            >
+              {leftAction2Label}
+            </button>
+          )}
         </div>
       )}
 

@@ -166,6 +166,9 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
     elif path.startswith("/recurring/") and path.endswith("/log") and method == "POST":
         entry_id = path[len("/recurring/"):-len("/log")]
         return await _api_recurring_log(user, entry_id)
+    elif path.startswith("/recurring/") and method == "PUT":
+        entry_id = path[len("/recurring/"):]
+        return await _api_recurring_update(request, user, entry_id)
     elif path.startswith("/recurring/") and method == "DELETE":
         entry_id = path[len("/recurring/"):]
         return await _api_recurring_delete(user, entry_id)
@@ -1247,6 +1250,44 @@ async def _api_recurring_add(request: flask.Request, user: User) -> tuple:
     }
     sheets = _get_sheets()
     sheets.add_recurring(user.spreadsheet_id, entry)
+    return await _api_recurring_get(user)
+
+
+# ── PUT /api/recurring/<entry_id> ────────────────────────────────────────────
+
+
+async def _api_recurring_update(request: flask.Request, user: User, entry_id: str) -> tuple:
+    """Update an existing recurring expense entry."""
+    body = request.get_json(silent=True) or {}
+    description = str(body.get("description", "")).strip()
+    if not description:
+        return jsonify({"error": "description is required"}), 400
+
+    raw_amount = body.get("amount_local")
+    if raw_amount in (None, ""):
+        return jsonify({"error": "amount_local is required"}), 400
+    try:
+        amount_local = float(raw_amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": "amount_local must be a number"}), 400
+    if amount_local <= 0:
+        return jsonify({"error": "amount_local must be positive"}), 400
+
+    local_currency = str(body.get("local_currency") or user.default_currency).upper()
+
+    updates = {
+        "category": body.get("category", ""),
+        "subcategory": body.get("subcategory", ""),
+        "description": description,
+        "amount": amount_local,
+        "amount_local": amount_local,
+        "local_currency": local_currency,
+        "day_of_month": int(body.get("day_of_month", 1)),
+    }
+    sheets = _get_sheets()
+    updated = sheets.update_recurring(user.spreadsheet_id, entry_id, updates)
+    if not updated:
+        return jsonify({"error": "entry not found"}), 404
     return await _api_recurring_get(user)
 
 

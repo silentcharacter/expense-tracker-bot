@@ -1,5 +1,5 @@
 import { api, ApiError } from "./client";
-import type { RecurringResponse, AddRecurringRequest } from "./types";
+import type { RecurringResponse, AddRecurringRequest, UpdateRecurringRequest } from "./types";
 
 export function fetchRecurring(): Promise<RecurringResponse> {
   return api.get<RecurringResponse>("/recurring");
@@ -7,6 +7,10 @@ export function fetchRecurring(): Promise<RecurringResponse> {
 
 export function addRecurring(entry: AddRecurringRequest): Promise<RecurringResponse> {
   return api.post<RecurringResponse>("/recurring", entry);
+}
+
+export function updateRecurring(id: string, entry: UpdateRecurringRequest): Promise<RecurringResponse> {
+  return api.put<RecurringResponse>(`/recurring/${id}`, entry);
 }
 
 export function deleteRecurring(id: string): Promise<RecurringResponse> {

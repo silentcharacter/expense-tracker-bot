@@ -339,6 +339,13 @@ class FirestoreService:
         data = {**entry, "id": eid}
         self._rec_col(user_id).document(eid).set(data)
 
+    def update_recurring(self, user_id: str, entry_id: str, updates: dict) -> bool:
+        doc_ref = self._rec_col(user_id).document(entry_id)
+        if not doc_ref.get().exists:
+            return False
+        doc_ref.update(updates)
+        return True
+
     def delete_recurring(self, user_id: str, entry_id: str) -> bool:
         doc = self._rec_col(user_id).document(entry_id).get()
         if not doc.exists:

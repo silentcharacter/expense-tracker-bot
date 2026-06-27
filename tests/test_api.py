@@ -599,6 +599,44 @@ async def test_budgets_get_status_calculation(mock_sheets, mock_registry) -> Non
     assert isinstance(by_cat["food"]["subcategories"], list)
 
 
+async def test_budgets_get_spent_default_preserves_local(
+    mock_sheets, mock_registry, mock_currency
+) -> None:
+    """spent_default keeps historical amount_local for default-currency rows,
+    and converts base→default for others. (base=USD, default=THB, rate=33.5)"""
+    mock_currency.get_rate = AsyncMock(return_value=33.5)
+    mock_sheets.get_categories.return_value = [
+        UserCategory(slug="housing", label="Housing", subcategories=[
+            UserSubcategory(slug="rent", label="Rent", budget=2000.0),
+        ]),
+    ]
+    mock_sheets.get_transactions.return_value = [
+        # Logged in THB (== default): preserve amount_local verbatim.
+        _make_record(
+            category="housing", subcategory="rent",
+            local_currency="THB", amount_local=40000.0, amount_base=1194.03,
+        ),
+        # Logged in USD (== base): convert amount_base × rate.
+        _make_record(
+            category="housing", subcategory="rent",
+            local_currency="USD", amount_local=100.0, amount_base=100.0,
+        ),
+    ]
+    body, status = await _call(
+        "GET", "/api/budgets", mock_sheets, mock_registry, mock_currency=mock_currency
+    )
+    assert status == 200
+    rent = body["budgets"][0]["subcategories"][0]
+    # base total: 1194.03 + 100.0
+    assert rent["spent"] == pytest.approx(1294.03)
+    # default total: 40000 (preserved) + 100 × 33.5 (converted)
+    assert rent["spent_default"] == pytest.approx(40000.0 + 100.0 * 33.5)
+    # category total mirrors the subcategory here
+    assert body["budgets"][0]["spent_default"] == pytest.approx(40000.0 + 100.0 * 33.5)
+    # percentage stays based on the base-currency spend
+    assert rent["percentage"] == pytest.approx(round(1294.03 / 2000.0 * 100, 1))
+
+
 async def test_budgets_get_unspent_category(mock_sheets, mock_registry) -> None:
     """Categories with a budget but zero spending appear with spent=0."""
     mock_sheets.get_categories.return_value = [

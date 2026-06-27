@@ -116,6 +116,8 @@ export interface SubcategoryBudgetEntry {
   label: string;
   budget: number;
   spent: number;
+  /** Spending in default currency, preserving historical amounts for same-currency rows. */
+  spent_default: number;
   remaining: number;
   percentage: number;
   status: "normal" | "warning" | "exceeded";
@@ -126,6 +128,8 @@ export interface BudgetEntry {
   label: string;
   budget: number;
   spent: number;
+  /** Spending in default currency, preserving historical amounts for same-currency rows. */
+  spent_default: number;
   remaining: number;
   percentage: number;
   status: "normal" | "warning" | "exceeded";

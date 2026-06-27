@@ -1,7 +1,7 @@
 /** Top-of-tab budget summary: total + remaining + arc gauge + status pills.
  *
  * Per spec §3.1: status pills count subcategories re-bucketed by raw % used —
- * <70% on track, 70-90% warning, >90% over. Ignores the API's `status` enum
+ * <70% on track, 70-100% warning, >100% over. Ignores the API's `status` enum
  * because its thresholds differ.
  */
 
@@ -23,7 +23,7 @@ function ArcGauge({ pct }: { pct: number }) {
   const fill = Math.min(pct, 100);
   const fillLen = arcLen * (fill / 100);
   const color =
-    pct > 90 ? "var(--app-danger)" : pct >= 70 ? "#fbbf24" : "var(--app-accent)";
+    pct > 100 ? "var(--app-danger)" : pct >= 70 ? "#fbbf24" : "var(--app-accent)";
   return (
     <svg width={160} height={95} viewBox="0 0 160 95">
       <circle
@@ -85,8 +85,8 @@ export function BudgetSummaryCard({ budgets, totalBudget, totalSpent }: BudgetSu
   const overallPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
 
   const onTrack = activeSubs.filter((s) => s.percentage < 70).length;
-  const warning = activeSubs.filter((s) => s.percentage >= 70 && s.percentage <= 90).length;
-  const over = activeSubs.filter((s) => s.percentage > 90).length;
+  const warning = activeSubs.filter((s) => s.percentage >= 70 && s.percentage <= 100).length;
+  const over = activeSubs.filter((s) => s.percentage > 100).length;
 
   if (totalBudget === 0) {
     return (

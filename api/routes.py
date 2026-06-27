@@ -833,13 +833,43 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
     all_categories = sheets.get_categories(user.spreadsheet_id)
     records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
 
+    # Base→default rate for default-currency spending totals.
+    default_currency = user.default_currency
+    if default_currency.upper() == user.base_currency.upper():
+        base_to_default_rate: float | None = 1.0
+    else:
+        try:
+            base_to_default_rate = round(
+                await _get_currency().get_rate(user.base_currency, default_currency), 6
+            )
+        except Exception as exc:
+            logger.warning("Could not fetch base_to_default_rate for budgets: %s", exc)
+            base_to_default_rate = None
+
+    def _spent_default(r: ExpenseRecord) -> float:
+        """Default-currency contribution of a record.
+
+        Preserves the historical ``amount_local`` for rows already logged in the
+        default currency (no conversion), otherwise converts the base amount at
+        the current rate. Falls back to ``amount_base`` when no rate is available.
+        """
+        if r.local_currency.upper() == default_currency.upper():
+            return r.amount_local
+        if base_to_default_rate is not None:
+            return round(r.amount_base * base_to_default_rate, 4)
+        return r.amount_base
+
     # Aggregate spending at both category and subcategory level
     spent_by_cat: dict[str, float] = defaultdict(float)
     spent_by_subcat: dict[tuple[str, str], float] = defaultdict(float)
+    spent_default_by_cat: dict[str, float] = defaultdict(float)
+    spent_default_by_subcat: dict[tuple[str, str], float] = defaultdict(float)
     for r in records:
         spent_by_cat[r.category] += r.amount_base
+        spent_default_by_cat[r.category] += _spent_default(r)
         if r.subcategory:
             spent_by_subcat[(r.category, r.subcategory)] += r.amount_base
+            spent_default_by_subcat[(r.category, r.subcategory)] += _spent_default(r)
 
     def _status(pct: float) -> str:
         if pct > 100:
@@ -856,6 +886,7 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
             sub_budget = sub.budget or 0.0
             cat_budget += sub_budget
             sub_spent = round(spent_by_subcat.get((cat.slug, sub.slug), 0.0), 4)
+            sub_spent_default = round(spent_default_by_subcat.get((cat.slug, sub.slug), 0.0), 4)
             sub_remaining = round(sub_budget - sub_spent, 4)
             sub_pct = round(sub_spent / sub_budget * 100, 1) if sub_budget > 0 else 0.0
             sub_entries.append({
@@ -863,12 +894,14 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
                 "label": sub.label,
                 "budget": sub_budget,
                 "spent": sub_spent,
+                "spent_default": sub_spent_default,
                 "remaining": sub_remaining,
                 "percentage": sub_pct,
                 "status": _status(sub_pct),
             })
 
         cat_spent = round(spent_by_cat.get(cat.slug, 0.0), 4)
+        cat_spent_default = round(spent_default_by_cat.get(cat.slug, 0.0), 4)
         cat_remaining = round(cat_budget - cat_spent, 4)
         cat_pct = round(cat_spent / cat_budget * 100, 1) if cat_budget > 0 else 0.0
         result_budgets.append({
@@ -876,6 +909,7 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
             "label": cat.label,
             "budget": cat_budget,
             "spent": cat_spent,
+            "spent_default": cat_spent_default,
             "remaining": cat_remaining,
             "percentage": cat_pct,
             "status": _status(cat_pct),

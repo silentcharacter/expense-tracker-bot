@@ -78,7 +78,11 @@ function ExpenseRowContent({ expense, currency, onTap }: {
       <div className="flex-shrink-0 text-right">
         <p className="amount text-sm font-medium" style={{ color: "var(--app-text-primary)" }}>
           {currency
-            ? currency.format({ base: expense.amount_base, default: expense.amount_default }, 0)
+            ? // When the expense was logged in the currently displayed currency,
+              // show its original amount verbatim rather than a converted value.
+              expense.local_currency.toUpperCase() === currency.activeCurrency.toUpperCase()
+              ? formatAmount(expense.amount_local, expense.local_currency, 0)
+              : currency.format({ base: expense.amount_base, default: expense.amount_default }, 0)
             : formatAmount(expense.amount_local, expense.local_currency, 0)}
         </p>
         {!currency && expense.local_currency !== expense.base_currency && (

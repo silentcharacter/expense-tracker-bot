@@ -22,7 +22,7 @@ interface BudgetCategoriesProps {
 }
 
 function pctColor(pct: number): string {
-  if (pct > 90) return "var(--app-danger)";
+  if (pct > 100) return "var(--app-danger)";
   if (pct >= 70) return "#fbbf24";
   return "var(--app-success)";
 }
@@ -165,7 +165,7 @@ export function BudgetCategories({
                         className="h-full rounded-full"
                         style={{
                           width: `${barPct}%`,
-                          background: pct > 90 ? "var(--app-danger)" : catColor,
+                          background: pct > 100 ? "var(--app-danger)" : catColor,
                           transition: "width 0.4s ease",
                         }}
                       />

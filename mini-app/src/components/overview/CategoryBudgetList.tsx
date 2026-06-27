@@ -42,7 +42,11 @@ interface DayTotals {
   totalDefault: number;
 }
 
-function computeDayTotals(expenses: Expense[], day: string | null): DayTotals {
+function computeDayTotals(
+  expenses: Expense[],
+  day: string | null,
+  defaultCurrency: string,
+): DayTotals {
   const byCategory = new Map<string, number>();
   const byCategoryDefault = new Map<string, number>();
   const bySub = new Map<string, number>();
@@ -50,16 +54,20 @@ function computeDayTotals(expenses: Expense[], day: string | null): DayTotals {
   let total = 0;
   let totalDefault = 0;
   if (!day) return { byCategory, byCategoryDefault, bySub, bySubDefault, total, totalDefault };
+  const defaultUpper = defaultCurrency.toUpperCase();
   for (const e of expenses) {
     const iso = e.timestamp.slice(0, 10);
     if (iso !== day) continue;
+    // Preserve historical amount_local for rows already logged in the default
+    // currency (no conversion); otherwise use the converted amount_default.
+    const dflt = e.local_currency.toUpperCase() === defaultUpper ? e.amount_local : e.amount_default;
     byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + e.amount_base);
-    byCategoryDefault.set(e.category, (byCategoryDefault.get(e.category) ?? 0) + e.amount_default);
+    byCategoryDefault.set(e.category, (byCategoryDefault.get(e.category) ?? 0) + dflt);
     const subKey = `${e.category}/${e.subcategory}`;
     bySub.set(subKey, (bySub.get(subKey) ?? 0) + e.amount_base);
-    bySubDefault.set(subKey, (bySubDefault.get(subKey) ?? 0) + e.amount_default);
+    bySubDefault.set(subKey, (bySubDefault.get(subKey) ?? 0) + dflt);
     total += e.amount_base;
-    totalDefault += e.amount_default;
+    totalDefault += dflt;
   }
   return { byCategory, byCategoryDefault, bySub, bySubDefault, total, totalDefault };
 }
@@ -76,11 +84,14 @@ export function CategoryBudgetList({
   selected,
   onSelect,
 }: CategoryBudgetListProps) {
-  const { format, formatLive } = useCurrency();
+  const { format, formatLive, displayMode, defaultCurrency } = useCurrency();
   const { hapticFeedback } = useTelegram();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const dayTotals = useMemo(() => computeDayTotals(expenses, filterDay), [expenses, filterDay]);
+  const dayTotals = useMemo(
+    () => computeDayTotals(expenses, filterDay, defaultCurrency),
+    [expenses, filterDay, defaultCurrency],
+  );
 
   const isDay = filterDay !== null;
 
@@ -249,7 +260,7 @@ export function CategoryBudgetList({
                         ) : (
                           <>
                             <span className="amount" style={{ color: "var(--app-text-primary)" }}>
-                              {formatLive(spent, 0)}
+                              {format({ base: spent, default: cat.spent_default }, 0)}
                             </span>
                             {cat.budget > 0 && <> · {pct.toFixed(0)}%</>}
                           </>
@@ -293,6 +304,7 @@ export function CategoryBudgetList({
                       onSelect={() => selectSub(cat.category, sub.slug)}
                       format={format}
                       formatLive={formatLive}
+                      showPctInsteadOfBudget={displayMode === "default"}
                     />
                   ))}
                 </div>
@@ -316,6 +328,8 @@ interface SubRowProps {
   onSelect: () => void;
   format: (amounts: { base: number; default: number }, decimals?: number) => string;
   formatLive: (amountBase: number, decimals?: number) => string;
+  /** In default-currency mode, show `· %` instead of `/ budget` (budgets are stored in base currency). */
+  showPctInsteadOfBudget: boolean;
 }
 
 function SubRow({
@@ -329,6 +343,7 @@ function SubRow({
   onSelect,
   format,
   formatLive,
+  showPctInsteadOfBudget,
 }: SubRowProps) {
   const hasBudget = sub.budget > 0;
   const spent = isDay ? daySpend : sub.spent;
@@ -370,10 +385,16 @@ function SubRow({
             ) : hasBudget ? (
               <>
                 <span className="amount" style={{ color: "var(--app-text-primary)" }}>
-                  {formatLive(spent, 0)}
+                  {format({ base: spent, default: sub.spent_default }, 0)}
                 </span>
-                {" / "}
-                {formatLive(sub.budget, 0)}
+                {showPctInsteadOfBudget ? (
+                  <> · {pct.toFixed(0)}%</>
+                ) : (
+                  <>
+                    {" / "}
+                    {formatLive(sub.budget, 0)}
+                  </>
+                )}
               </>
             ) : (
               "no budget"

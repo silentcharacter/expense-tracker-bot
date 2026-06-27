@@ -132,9 +132,14 @@ export function MainPage() {
   const dayOfMonth = now.getDate();
 
   const budgetTotal = (budgets?.budgets ?? []).reduce((s, b) => s + b.budget, 0);
+  // Prefer the pace block's default-currency budget total: it is derived as
+  // budget_total − recurring_total_default (historical FX), so the Budget-used
+  // header reconciles with the recurring line. Fall back to a live conversion.
+  const budgetTotalDefault = summary?.spending_pace?.budget_total_default;
   const budgetUsedPercent =
     budgetTotal > 0 && summary ? (summary.total_base / budgetTotal) * 100 : undefined;
   const dayToDayBudget = summary?.spending_pace?.discretionary_budget;
+  const dayToDayBudgetDefault = summary?.spending_pace?.discretionary_budget_default;
   const dayToDayBudgetUsedPercent =
     summary?.spending_pace && dayToDayBudget && dayToDayBudget > 0
       ? (summary.spending_pace.discretionary_spent / dayToDayBudget) * 100
@@ -190,8 +195,10 @@ export function MainPage() {
                 dailyAverageDefault={summary.daily_average_default}
                 dayToDayBudgetUsedPercent={dayToDayBudgetUsedPercent}
                 dayToDayBudgetTotal={dayToDayBudget}
+                dayToDayBudgetTotalDefault={dayToDayBudgetDefault}
                 budgetUsedPercent={budgetUsedPercent}
                 budgetTotal={budgetTotal}
+                budgetTotalDefault={budgetTotalDefault}
                 comparison={summary.comparison}
                 dateRange={summary.date_range}
               />

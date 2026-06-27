@@ -251,15 +251,16 @@ def _amount_default(
 ) -> float:
     """Return the amount in the user's default currency.
 
-    Uses the stored ``amount_local`` when the transaction's local currency
-    matches the default currency (exact sheet value).  Falls back to a live
-    base→default conversion for cross-currency transactions.
+    Always converts the base-currency amount at the current FX rate, so every
+    default-currency figure equals ``amount_base × current_rate`` and the totals
+    reconcile by construction. When no live rate is available, falls back to the
+    stored ``amount_local`` for same-currency rows, otherwise to ``amount_base``.
     """
-    if r.local_currency.upper() == default_currency.upper():
-        return r.amount_local
     if base_to_default_rate:
         return round(r.amount_base * base_to_default_rate, 4)
-    return r.amount_local
+    if r.local_currency.upper() == default_currency.upper():
+        return r.amount_local
+    return r.amount_base
 
 
 def _record_to_dict(
@@ -316,17 +317,14 @@ async def _compute_spending_pace(
         return None
     days_remaining = max(days_in_month - completed_days, 0)
 
+    # All default-currency figures are base × current_rate, so they reconcile
+    # with total_default and with each other by construction.
+    rate = base_to_default_rate if base_to_default_rate is not None else 1.0
+
     recurring_spent = round(sum(r.amount_base for r in records if r.recurring), 4)
     discretionary_spent = round(total_base - recurring_spent, 4)
-    recurring_spent_default = round(
-        sum(
-            _amount_default(r, user.default_currency, base_to_default_rate)
-            for r in records
-            if r.recurring
-        ),
-        4,
-    )
-    discretionary_spent_default = round(total_default - recurring_spent_default, 4)
+    recurring_spent_default = round(recurring_spent * rate, 4)
+    discretionary_spent_default = round(discretionary_spent * rate, 4)
     today_discretionary_spent = round(
         sum(
             r.amount_base
@@ -339,29 +337,40 @@ async def _compute_spending_pace(
         max(discretionary_spent - today_discretionary_spent, 0.0),
         4,
     )
-    today_discretionary_spent_default = round(
-        sum(
-            _amount_default(r, user.default_currency, base_to_default_rate)
-            for r in records
-            if not r.recurring and r.timestamp.date() == today
-        ),
-        4,
-    )
+    today_discretionary_spent_default = round(today_discretionary_spent * rate, 4)
     completed_discretionary_spent_default = round(
         max(discretionary_spent_default - today_discretionary_spent_default, 0.0),
         4,
     )
 
-    # Recurring template total for the month: sum of each template's
-    # amount_local converted to base currency via the FX service.
+    # Recurring template total (base currency) for the month. Templates already
+    # materialised this month contribute their recorded amount_base (locked at
+    # the FX rate of the day they fired); the rest are converted at the current
+    # rate. Otherwise mid-month FX moves would retroactively re-price expenses
+    # that already happened. The default-currency figure is derived below by a
+    # single live conversion so every default total equals base × current_rate.
+    materialised_base_by_template = {
+        r.recurring_template_id: r.amount_base
+        for r in records
+        if r.recurring and r.recurring_template_id
+    }
     try:
         recurring_items = sheets.get_recurring(user.spreadsheet_id)
         recurring_total = await _recurring_base_total(
-            recurring_items, user.base_currency, user.default_currency
+            recurring_items,
+            user.base_currency,
+            user.default_currency,
+            materialised_base_by_template,
         )
     except Exception as exc:
         logger.warning("Could not read recurring sheet for pace calc: %s", exc)
         recurring_total = 0.0
+
+    recurring_total_default = (
+        round(recurring_total * base_to_default_rate, 4)
+        if base_to_default_rate is not None
+        else recurring_total
+    )
 
     # Total budget = sum of effective category budgets (subcategory sums).
     try:
@@ -372,11 +381,17 @@ async def _compute_spending_pace(
         budget_total = 0.0
 
     discretionary_budget = round(max(budget_total - recurring_total, 0.0), 4)
-    discretionary_budget_default = (
-        round(discretionary_budget * base_to_default_rate, 4)
-        if base_to_default_rate is not None
-        else None
-    )
+    # Every default-currency figure is base × current_rate, so the identity
+    # budget_total = recurring_total + discretionary_budget holds automatically
+    # in the default currency too.
+    if base_to_default_rate is not None:
+        budget_total_default = round(budget_total * base_to_default_rate, 4)
+        discretionary_budget_default = round(
+            discretionary_budget * base_to_default_rate, 4
+        )
+    else:
+        budget_total_default = None
+        discretionary_budget_default = None
 
     projected_discretionary = round(
         completed_discretionary_spent / completed_days * days_in_month, 4
@@ -415,8 +430,11 @@ async def _compute_spending_pace(
         "discretionary_spent": discretionary_spent,
         "discretionary_spent_default": discretionary_spent_default,
         "recurring_total": recurring_total,
+        "recurring_total_default": recurring_total_default,
         "discretionary_budget": discretionary_budget,
+        "discretionary_budget_default": discretionary_budget_default,
         "budget_total": budget_total,
+        "budget_total_default": budget_total_default,
         "projected_discretionary": projected_discretionary,
         "projected_discretionary_default": projected_discretionary_default,
         "available_per_day": available_per_day,
@@ -458,15 +476,23 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
             base_to_default_rate = None
 
     total_base = sum(r.amount_base for r in records)
-    total_default = sum(
-        _amount_default(r, default_currency, base_to_default_rate) for r in records
-    )
     discretionary_base = sum(r.amount_base for r in records if not r.recurring)
-    discretionary_default = sum(
-        _amount_default(r, default_currency, base_to_default_rate)
-        for r in records
-        if not r.recurring
-    )
+    # Default-currency totals are the base totals at the current rate, so the
+    # header's Total Spent equals total_base × current_rate exactly (no drift
+    # from rounding each row independently). Per-row amount_default values are
+    # still base × rate, so category breakdowns reconcile to within rounding.
+    if base_to_default_rate is not None:
+        total_default = total_base * base_to_default_rate
+        discretionary_default = discretionary_base * base_to_default_rate
+    else:
+        total_default = sum(
+            _amount_default(r, default_currency, base_to_default_rate) for r in records
+        )
+        discretionary_default = sum(
+            _amount_default(r, default_currency, base_to_default_rate)
+            for r in records
+            if not r.recurring
+        )
     days = max((until - since).days + 1, 1)
 
     # By category
@@ -1125,18 +1151,32 @@ def _parse_recurring_local_amount(row: dict) -> float:
 
 
 async def _recurring_base_total(
-    rows: list[dict], base_currency: str, default_currency: str
+    rows: list[dict],
+    base_currency: str,
+    default_currency: str,
+    materialised_base_by_template: dict[str, float] | None = None,
 ) -> float:
-    """Sum recurring template amounts converted to the user's base currency.
+    """Sum recurring template amounts in the user's base currency.
 
     Each row's ``amount_local`` is interpreted in its ``local_currency`` (or
     the user's default_currency when missing) and converted via the currency
     service. Failed conversions fall back to 1.0 to keep the endpoint working.
+
+    When ``materialised_base_by_template`` maps a template id to the amount_base
+    of an expense already materialised for it this month, that recorded value is
+    used instead of a fresh conversion — preserving the FX rate at the time the
+    expense actually occurred. The default-currency total is derived by the
+    caller as ``total_base × current_rate``.
     """
     currency = _get_currency()
     base_cur = base_currency.upper()
+    materialised = materialised_base_by_template or {}
     total = 0.0
     for row in rows:
+        template_id = str(row.get("id") or "")
+        if template_id in materialised:
+            total += materialised[template_id]
+            continue
         amount_local = _parse_recurring_local_amount(row)
         if amount_local <= 0:
             continue

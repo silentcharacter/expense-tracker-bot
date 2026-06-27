@@ -19,8 +19,10 @@ interface TotalCardProps {
   dailyAverageDefault?: number | null;
   dayToDayBudgetUsedPercent?: number;
   dayToDayBudgetTotal?: number;
+  dayToDayBudgetTotalDefault?: number;
   budgetUsedPercent?: number;
   budgetTotal?: number;
+  budgetTotalDefault?: number;
   comparison?: PeriodComparison;
   /** Legacy DashboardPage only — ignored when CurrencyProvider is mounted. */
   currency?: string;
@@ -75,8 +77,10 @@ export function TotalCard({
   dailyAverageDefault,
   dayToDayBudgetUsedPercent,
   dayToDayBudgetTotal,
+  dayToDayBudgetTotalDefault,
   budgetUsedPercent,
   budgetTotal,
+  budgetTotalDefault,
   comparison,
   currency,
   period,
@@ -103,9 +107,13 @@ export function TotalCard({
   const hasDayToDayBudget =
     dayToDayBudgetUsedPercent != null && dayToDayBudgetTotal != null && dayToDayBudgetTotal > 0;
 
-  const formatBudgetLine = (percent: number | undefined, amount: number | undefined): string => {
+  const formatBudgetLine = (
+    percent: number | undefined,
+    amount: number | undefined,
+    amountDefault?: number,
+  ): string => {
     if (percent == null || amount == null || amount <= 0) return "—";
-    return `${Math.round(percent)}% of ${formatMoney(amount, undefined, 0)}`;
+    return `${Math.round(percent)}% of ${formatMoney(amount, amountDefault, 0)}`;
   };
 
   return (
@@ -150,7 +158,7 @@ export function TotalCard({
                 <div>
                   <p className="text-[9px] uppercase tracking-wide opacity-60">Total</p>
                   <p className="amount text-xs font-semibold">
-                    {formatBudgetLine(budgetUsedPercent, budgetTotal)}
+                    {formatBudgetLine(budgetUsedPercent, budgetTotal, budgetTotalDefault)}
                   </p>
                 </div>
               )}
@@ -158,7 +166,7 @@ export function TotalCard({
                 <div>
                   <p className="text-[9px] uppercase tracking-wide opacity-60">Day-to-day</p>
                   <p className="amount text-xs font-semibold">
-                    {formatBudgetLine(dayToDayBudgetUsedPercent, dayToDayBudgetTotal)}
+                    {formatBudgetLine(dayToDayBudgetUsedPercent, dayToDayBudgetTotal, dayToDayBudgetTotalDefault)}
                   </p>
                 </div>
               )}

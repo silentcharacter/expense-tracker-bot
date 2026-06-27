@@ -18,10 +18,11 @@
 
   /* ── Heatmap (Less → More) gradient + recurring swatch ───────────────── */
   --heatmap-0: color-mix(in srgb, var(--app-secondary-bg) 70%, transparent);
-  --heatmap-1: color-mix(in srgb, var(--app-accent) 20%, var(--app-secondary-bg));
-  --heatmap-2: color-mix(in srgb, var(--app-accent) 45%, var(--app-secondary-bg));
-  --heatmap-3: color-mix(in srgb, var(--app-accent) 70%, var(--app-secondary-bg));
-  --heatmap-4: var(--app-accent);
+  --heatmap-1: color-mix(in srgb, var(--app-accent) 18%, var(--app-secondary-bg));
+  --heatmap-2: color-mix(in srgb, var(--app-accent) 38%, var(--app-secondary-bg));
+  --heatmap-3: color-mix(in srgb, var(--app-accent) 58%, var(--app-secondary-bg));
+  --heatmap-4: color-mix(in srgb, var(--app-accent) 78%, var(--app-secondary-bg));
+  --heatmap-5: var(--app-accent);
   --heatmap-recurring: #8b5cf6;
 
   /* ── Spending pace bar ────────────────────────────────────────────────── */
@@ -209,7 +210,22 @@ body {
 .heatmap-cell[data-level="2"] { background-color: var(--heatmap-2); }
 .heatmap-cell[data-level="3"] { background-color: var(--heatmap-3); }
 .heatmap-cell[data-level="4"] { background-color: var(--heatmap-4); }
-.heatmap-cell[data-recurring="true"] { background-color: var(--heatmap-recurring); }
+.heatmap-cell[data-level="5"] { background-color: var(--heatmap-5); }
+
+/* Recurring marker: triangle in the bottom-left corner of the cell, with the
+   right angle pinned to the corner (legs along the left and bottom edges). */
+.heatmap-cell__recurring {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 22px 0 0 22px;
+  border-color: transparent transparent transparent var(--heatmap-recurring);
+  border-bottom-left-radius: 4px;
+  pointer-events: none;
+}
 
 .heatmap-cell[data-future="true"] {
   opacity: 0.35;
@@ -275,6 +291,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .status-badge[data-tone="success"] {

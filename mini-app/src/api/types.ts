@@ -39,8 +39,11 @@ export interface SpendingPace {
   discretionary_spent: number;
   discretionary_spent_default?: number;
   recurring_total: number;
+  recurring_total_default?: number;
   discretionary_budget: number;
+  discretionary_budget_default?: number;
   budget_total: number;
+  budget_total_default?: number;
   projected_discretionary: number;
   projected_discretionary_default?: number;
   available_per_day: number;

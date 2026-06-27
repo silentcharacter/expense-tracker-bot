@@ -256,11 +256,14 @@ async def test_summary_month_includes_spending_pace(mock_sheets, mock_registry, 
     assert status == 200
     assert "spending_pace" in body
     pace = body["spending_pace"]
+    # Default currency = THB at the current rate 33.5: every default figure is
+    # base × 33.5 (no historical amount_local shortcut).
     assert pace["recurring_spent"] == pytest.approx(500.0)
-    assert pace["recurring_spent_default"] == pytest.approx(100.0)
+    assert pace["recurring_spent_default"] == pytest.approx(500.0 * 33.5)
     assert pace["discretionary_spent"] == pytest.approx(200.0)
-    assert pace["discretionary_spent_default"] == pytest.approx(100.0)
+    assert pace["discretionary_spent_default"] == pytest.approx(200.0 * 33.5)
     assert pace["recurring_total"] == pytest.approx(500.0)
+    assert pace["recurring_total_default"] == pytest.approx(500.0 * 33.5)
     assert pace["budget_total"] == pytest.approx(1100.0)
     assert pace["discretionary_budget"] == pytest.approx(600.0)
     assert pace["projected_discretionary"] == pytest.approx(200.0 / 15 * 31)
@@ -286,16 +289,106 @@ async def test_summary_spending_pace_excludes_today(mock_sheets, mock_registry, 
 
     assert status == 200
     pace = body["spending_pace"]
+    # Default figures are base × current rate (33.5), not the stored amount_local.
     assert body["daily_average"] == pytest.approx(round(200.0 / 15, 4))
-    assert body["daily_average_default"] == pytest.approx(round(6800.0 / 15, 4))
+    assert body["daily_average_default"] == pytest.approx(round(200.0 * 33.5 / 15, 4))
     assert pace["discretionary_spent"] == pytest.approx(300.0)
-    assert pace["discretionary_spent_default"] == pytest.approx(10000.0)
+    assert pace["discretionary_spent_default"] == pytest.approx(300.0 * 33.5)
     assert pace["recurring_spent_default"] == pytest.approx(0.0)
     assert pace["projected_discretionary"] == pytest.approx(200.0 / 15 * 31)
-    assert pace["projected_discretionary_default"] == pytest.approx(6800.0 / 15 * 31)
+    assert pace["projected_discretionary_default"] == pytest.approx(200.0 * 33.5 / 15 * 31)
     assert pace["available_per_day"] == pytest.approx((1000.0 - 200.0) / 16)
-    assert pace["available_per_day_default"] == pytest.approx((33500.0 - 6800.0) / 16)
+    assert pace["available_per_day_default"] == pytest.approx((1000.0 - 200.0) * 33.5 / 16)
     assert pace["days_elapsed"] == 15
+
+
+async def test_recurring_total_uses_historical_rate_for_materialised(
+    mock_sheets, mock_registry, mock_currency
+) -> None:
+    """Already-materialised recurring templates contribute their recorded
+    amount_base (locked at the firing-day FX rate), not a fresh conversion at
+    the current rate. Only not-yet-fired templates use the current rate."""
+    # Current rate THB→USD = 1/40 (THB weakened vs the firing-day rate).
+    mock_currency.get_rate = AsyncMock(return_value=1 / 40)
+    mock_sheets.get_transactions.return_value = [
+        # Fired on the 1st at the old rate: 3500 THB → 100 USD (rate 1/35).
+        _make_record(
+            amount_base=100.0,
+            amount_local=3500.0,
+            local_currency="THB",
+            category="housing",
+            recurring=True,
+            recurring_template_id="rent",
+            timestamp=datetime(2026, 3, 1, 9, 0, 0),
+        ),
+    ]
+    mock_sheets.get_recurring.return_value = [
+        # Already fired this month → use recorded 100 USD, not 3500/40 = 87.5.
+        {"id": "rent", "amount_local": 3500.0, "local_currency": "THB", "day_of_month": 1},
+        # Not yet fired → convert at current rate: 4000/40 = 100 USD.
+        {"id": "internet", "amount_local": 4000.0, "local_currency": "THB", "day_of_month": 28},
+    ]
+    mock_sheets.get_budgets.return_value = {"housing": 500.0}
+
+    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+        body, status = await _call(
+            "GET", "/api/summary", mock_sheets, mock_registry,
+            args={"period": "month"}, mock_currency=mock_currency,
+        )
+
+    assert status == 200
+    pace = body["spending_pace"]
+    # Base total: 100 (historical, recorded) + 100 (current rate) = 200,
+    # not 87.5 + 100 — the materialised "rent" keeps its firing-day amount_base.
+    assert pace["recurring_total"] == pytest.approx(200.0)
+    # Default total is just the base total at the current rate: 200 × (1/40) = 5.
+    assert pace["recurring_total_default"] == pytest.approx(5.0)
+
+
+async def test_budget_total_reconciles_in_default_currency(
+    mock_sheets, mock_registry, mock_currency
+) -> None:
+    """Every default-currency figure is base × current_rate, so the identity
+    budget_total = recurring_total + discretionary_budget holds in the default
+    currency and the Overview's Budget-used header reconciles with recurring."""
+    # base→default (USD→THB) current rate = 35.
+    mock_currency.get_rate = AsyncMock(return_value=35.0)
+    mock_sheets.get_transactions.return_value = [
+        # rent materialised on the 1st (recorded amount_base = 100 USD).
+        _make_record(
+            amount_base=100.0,
+            amount_local=3600.0,
+            local_currency="THB",
+            category="housing",
+            recurring=True,
+            recurring_template_id="rent",
+            timestamp=datetime(2026, 3, 1, 9, 0, 0),
+        ),
+    ]
+    mock_sheets.get_recurring.return_value = [
+        {"id": "rent", "amount_local": 3600.0, "local_currency": "THB", "day_of_month": 1},
+    ]
+    mock_sheets.get_budgets.return_value = {"housing": 500.0}
+
+    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+        body, status = await _call(
+            "GET", "/api/summary", mock_sheets, mock_registry,
+            args={"period": "month"}, mock_currency=mock_currency,
+        )
+
+    assert status == 200
+    pace = body["spending_pace"]
+    # recurring_total (base) = 100 USD → default = 100 × 35 = 3500 THB.
+    assert pace["recurring_total"] == pytest.approx(100.0)
+    assert pace["recurring_total_default"] == pytest.approx(3500.0)
+    # budget_total at the live rate: 500 USD × 35 = 17500 THB.
+    assert pace["budget_total_default"] == pytest.approx(17500.0)
+    # day-to-day = (500 − 100) USD × 35 = 14000 THB.
+    assert pace["discretionary_budget_default"] == pytest.approx(14000.0)
+    # The three reconcile exactly in the default currency.
+    assert pace["budget_total_default"] == pytest.approx(
+        pace["recurring_total_default"] + pace["discretionary_budget_default"]
+    )
 
 
 async def test_summary_spending_pace_omitted_on_first_day(mock_sheets, mock_registry, mock_currency) -> None:

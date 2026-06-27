@@ -1,9 +1,10 @@
 /** GitHub-style heatmap for the current month's daily spending.
  *
- * Color intensity = quartile of non-recurring spend. Days whose spend is
- * dominated by recurring transactions are colored purple so they don't skew
- * the scale. Future days are dimmed and non-interactive. Tapping a day toggles
- * selection; selection is reported via `onDaySelect`.
+ * Color intensity = quartile of non-recurring spend. Days that include a
+ * recurring transaction get a small purple marker in the bottom-left corner,
+ * while the cell itself still reflects the day's total spend. Future days are
+ * dimmed and non-interactive. Tapping a day toggles selection; selection is
+ * reported via `onDaySelect`.
  */
 
 import { useMemo } from "react";
@@ -72,29 +73,37 @@ function computeDays(expenses: Expense[], y: number, m: number): DayStats[] {
   });
 }
 
-/** Split non-recurring daily spend into 4 quartile thresholds. */
+/** Number of non-empty intensity levels (1..LEVELS). */
+const LEVELS = 5;
+
+/** Build LEVELS thresholds geometrically spaced between the min and max
+ *  non-recurring daily spend, so each step covers a constant *ratio* rather
+ *  than a constant amount. This keeps low-spend days distinguishable while
+ *  compressing the long tail of high-spend days. */
 function computeThresholds(days: DayStats[]): number[] {
   const vals = days
     .filter((d) => !d.isFuture && d.total > 0)
     .map((d) => Math.max(0, d.total - d.recurringTotal))
-    .filter((v) => v > 0)
-    .sort((a, b) => a - b);
-  if (vals.length === 0) return [0, 0, 0, 0];
-  const q = (p: number) => vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
-  return [q(0.25), q(0.5), q(0.75), q(1)];
+    .filter((v) => v > 0);
+  if (vals.length === 0) return Array(LEVELS).fill(0);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  if (max <= min) return Array(LEVELS).fill(max);
+  const ratio = Math.pow(max / min, 1 / LEVELS);
+  return Array.from({ length: LEVELS }, (_, i) => min * Math.pow(ratio, i + 1));
 }
 
 function levelFor(day: DayStats, thresholds: number[]): number {
   const discretionary = Math.max(0, day.total - day.recurringTotal);
   if (discretionary <= 0) return 0;
-  if (discretionary <= thresholds[0]) return 1;
-  if (discretionary <= thresholds[1]) return 2;
-  if (discretionary <= thresholds[2]) return 3;
-  return 4;
+  for (let i = 0; i < thresholds.length; i++) {
+    if (discretionary <= thresholds[i]) return i + 1;
+  }
+  return thresholds.length;
 }
 
-function isRecurringDominant(day: DayStats): boolean {
-  return day.total > 0 && day.recurringTotal / day.total >= 0.6;
+function hasRecurring(day: DayStats): boolean {
+  return day.recurringTotal > 0;
 }
 
 function formatBannerDate(iso: string): string {
@@ -165,8 +174,8 @@ export function DailyHeatmap({
         ))}
         {/* Day cells */}
         {days.map((d) => {
-          const recurring = isRecurringDominant(d);
-          const level = recurring ? 0 : levelFor(d, thresholds);
+          const recurring = hasRecurring(d);
+          const level = levelFor(d, thresholds);
           return (
             <button
               key={d.iso}
@@ -176,11 +185,12 @@ export function DailyHeatmap({
               data-recurring={recurring ? "true" : "false"}
               data-future={d.isFuture ? "true" : "false"}
               data-selected={d.iso === selectedDay ? "true" : "false"}
-              aria-label={`${formatBannerDate(d.iso)} ${format({ base: d.total, default: d.totalDefault }, 0)}`}
+              aria-label={`${formatBannerDate(d.iso)} ${format({ base: d.total, default: d.totalDefault }, 0)}${recurring ? " (recurring)" : ""}`}
               onClick={() => handleClick(d)}
               disabled={d.isFuture}
             >
               <span className="heatmap-cell__day">{d.day}</span>
+              {recurring && <span className="heatmap-cell__recurring" />}
             </button>
           );
         })}
@@ -190,7 +200,7 @@ export function DailyHeatmap({
       <div className="mt-3 flex items-center justify-between text-[11px]" style={{ color: "var(--app-text-secondary)" }}>
         <div className="flex items-center gap-1">
           <span>Less</span>
-          {[0, 1, 2, 3, 4].map((lvl) => (
+          {Array.from({ length: LEVELS + 1 }, (_, lvl) => (
             <span
               key={lvl}
               style={{

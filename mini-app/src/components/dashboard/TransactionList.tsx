@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Expense, UpdateExpenseRequest } from "../../api/types";
 import { useCurrencyOptional } from "../../context/CurrencyContext";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../../utils/categories";
@@ -37,12 +37,13 @@ function filterName(filter: CategoryFilterSel): string {
   return getCategoryLabel(filter.category);
 }
 
-function ExpenseRowContent({ expense, currency }: {
+function ExpenseRowContent({ expense, currency, onTap }: {
   expense: Expense;
   currency: ReturnType<typeof useCurrencyOptional>;
+  onTap?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 py-3">
+    <div className="flex items-center gap-3 py-3" onClick={onTap}>
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
         style={{ backgroundColor: `${getCategoryColor(expense.category)}20` }}
@@ -105,6 +106,40 @@ export function TransactionList({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+
+  // Tap a row 5 times in quick succession to reveal its expense id.
+  const tapCounter = useRef<{ id: string; count: number; timer: number } | null>(null);
+
+  function handleRowTap(id: string) {
+    const state = tapCounter.current;
+    if (state && state.id === id) {
+      window.clearTimeout(state.timer);
+      state.count += 1;
+    } else {
+      if (state) window.clearTimeout(state.timer);
+      tapCounter.current = { id, count: 1, timer: 0 };
+    }
+    const current = tapCounter.current;
+    if (!current) return;
+    if (current.count >= 5) {
+      window.clearTimeout(current.timer);
+      tapCounter.current = null;
+      setRevealedId(id);
+      return;
+    }
+    current.timer = window.setTimeout(() => {
+      tapCounter.current = null;
+    }, 600);
+  }
+
+  async function copyId(id: string) {
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      /* clipboard unavailable — non-fatal */
+    }
+  }
 
   const filtered = expenses.filter((e) => {
     if (filterDay && e.timestamp.slice(0, 10) !== filterDay) return false;
@@ -181,7 +216,11 @@ export function TransactionList({
                   animationDelay={i * 30}
                   background="var(--app-bg)"
                 >
-                  <ExpenseRowContent expense={expense} currency={currency} />
+                  <ExpenseRowContent
+                    expense={expense}
+                    currency={currency}
+                    onTap={() => handleRowTap(expense.id)}
+                  />
                 </SwipeableRow>
               ) : (
                 <div
@@ -192,7 +231,11 @@ export function TransactionList({
                     borderBottom: i < filtered.length - 1 ? "1px solid var(--app-border)" : undefined,
                   }}
                 >
-                  <ExpenseRowContent expense={expense} currency={currency} />
+                  <ExpenseRowContent
+                    expense={expense}
+                    currency={currency}
+                    onTap={() => handleRowTap(expense.id)}
+                  />
                 </div>
               )
             )}
@@ -206,6 +249,51 @@ export function TransactionList({
           onConfirm={(data) => onEditExpense(editingExpense.id, data)}
           onClose={() => setEditingExpense(null)}
         />
+      )}
+
+      {revealedId && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center pb-8 px-4"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={(e) => e.target === e.currentTarget && setRevealedId(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: "var(--app-bg)" }}
+          >
+            <div className="px-5 pt-5 pb-4 text-center">
+              <p className="text-base font-semibold mb-1.5" style={{ color: "var(--app-text-primary)" }}>
+                Expense ID
+              </p>
+              <p
+                className="text-xs leading-relaxed break-all select-all"
+                style={{ color: "var(--app-text-secondary)", fontFamily: "monospace" }}
+              >
+                {revealedId}
+              </p>
+            </div>
+
+            <div className="border-t" style={{ borderColor: "var(--app-border)" }} />
+
+            <button
+              className="w-full py-3.5 text-sm font-semibold"
+              style={{ color: "var(--app-accent)" }}
+              onClick={() => void copyId(revealedId)}
+            >
+              Copy
+            </button>
+
+            <div className="border-t" style={{ borderColor: "var(--app-border)" }} />
+
+            <button
+              className="w-full py-3.5 text-sm"
+              style={{ color: "var(--app-text-primary)" }}
+              onClick={() => setRevealedId(null)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
 
       {pendingDeleteId && (

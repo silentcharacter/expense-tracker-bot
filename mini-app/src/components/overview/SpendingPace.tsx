@@ -21,19 +21,40 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
   const projectedPct = Math.min(100, (pace.projected_discretionary / budget) * 100);
   const isOver = pace.status === "over_pace";
   const projectedTotal = pace.projected_discretionary + pace.recurring_total;
+  const totalDeviation = projectedTotal - pace.budget_total;
+  const isOverBudget = totalDeviation > 0;
   const daysRemaining = Math.max(pace.days_in_month - pace.days_elapsed, 0);
+
+  // Default-currency counterparts so the projected/deviation figures reconcile
+  // with the historical recurring total (see backend _recurring_base_total).
+  const hasDefault =
+    pace.projected_discretionary_default != null &&
+    pace.recurring_total_default != null &&
+    pace.budget_total_default != null;
+  const projectedTotalDefault = hasDefault
+    ? pace.projected_discretionary_default! + pace.recurring_total_default!
+    : undefined;
+  const totalDeviationDefault =
+    projectedTotalDefault != null ? projectedTotalDefault - pace.budget_total_default! : undefined;
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
         <span
           className="text-[11px] font-semibold uppercase"
           style={{ color: "var(--app-text-secondary)", letterSpacing: "0.5px" }}
         >
           Spending pace
         </span>
-        <span className="status-badge" data-tone="success">
-          Projected <span className="amount ml-1">{formatLive(projectedTotal, 0)}</span>
+        <span className="status-badge" data-tone={isOverBudget ? "danger" : "success"}>
+          Projected <span className="amount ml-1">{formatSpent(projectedTotal, projectedTotalDefault)}</span>
+          <span className="ml-1" style={{ opacity: 0.8 }}>
+            ({isOverBudget ? "Over" : "Saving"}{" "}
+            {formatSpent(
+              Math.abs(totalDeviation),
+              totalDeviationDefault != null ? Math.abs(totalDeviationDefault) : undefined,
+            )})
+          </span>
         </span>
       </div>
 
@@ -59,12 +80,11 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
       <div className="flex justify-between text-[11px] mb-4" style={{ color: "var(--app-text-secondary)" }}>
         <span>
           Spent <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.discretionary_spent, pace.discretionary_spent_default)}</span>
+          {" of "}
+          <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.discretionary_budget, pace.discretionary_budget_default)}</span>
         </span>
         <span>
           Proj <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.projected_discretionary, pace.projected_discretionary_default)}</span>
-        </span>
-        <span>
-          Budget <span className="amount" style={{ color: "var(--app-text-primary)" }}>{formatLive(pace.discretionary_budget, 0)}</span>
         </span>
       </div>
 
@@ -79,7 +99,7 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
         <span className="amount text-sm" style={{ color: "var(--app-text-secondary)" }}>
           <span style={{ color: "var(--app-text-primary)" }}>{formatSpent(pace.recurring_spent, pace.recurring_spent_default)}</span>
           {" / "}
-          {formatLive(pace.recurring_total, 0)}
+          {formatSpent(pace.recurring_total, pace.recurring_total_default)}
         </span>
       </div>
 

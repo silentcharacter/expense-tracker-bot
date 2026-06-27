@@ -61,6 +61,10 @@ export function SwipeableRow({
   useLayoutEffect(() => { onLeftOpenRef.current = onLeftOpen; }, [onLeftOpen]);
   useLayoutEffect(() => { onLeftCloseRef.current = onLeftClose; }, [onLeftClose]);
 
+  const hasLeftAction = Boolean(leftActionLabel);
+  const hasLeftAction2 = Boolean(leftAction2Label);
+  const leftSnapSize = hasLeftAction && hasLeftAction2 ? SWIPE_SNAP_DOUBLE : SWIPE_SNAP;
+
   const initialX = isLeftOpen ? leftSnapSize : isOpen ? -SWIPE_SNAP : 0;
   const [translateX, setTranslateX] = useState(initialX);
   const [isDragging, setIsDragging] = useState(false);
@@ -68,10 +72,6 @@ export function SwipeableRow({
   useLayoutEffect(() => {
     setTranslateX(isLeftOpen ? leftSnapSize : isOpen ? -SWIPE_SNAP : 0);
   }, [isOpen, isLeftOpen, leftSnapSize]);
-
-  const hasLeftAction = Boolean(leftActionLabel);
-  const hasLeftAction2 = Boolean(leftAction2Label);
-  const leftSnapSize = hasLeftAction && hasLeftAction2 ? SWIPE_SNAP_DOUBLE : SWIPE_SNAP;
 
   useEffect(() => {
     const el = rowRef.current;

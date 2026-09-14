@@ -10,6 +10,8 @@ from models.expense import ExpenseRecord, ExpenseSource
 from models.category import category_label, subcategory_label
 from handlers.callbacks import saved_keyboard, _format_confirmation, currency_keyboard, CB_ONBOARD_BASE
 from services.tracing import RequestTracer
+from services.trip_service import resolve_active_trip
+from handlers.trips import AWAITING_TRIP_NAME, handle_trip_name_input
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             fx_rate = 1.0
 
         # ── Build pending record ────────────────────────────────────────────
+        with tracer.step("active_trip_lookup"):
+            trip = resolve_active_trip(sheets, user)
+
         record = ExpenseRecord(
+            trip_id=trip.id if trip else "",
             amount_local=expense.amount,
             local_currency=expense.currency,
             amount_base=amount_base,
@@ -123,14 +129,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
         cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
 
+        saved_line = f"✓ Saved to {trip.label()}" if trip else "✓ Saved"
         confirmation = (
             f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n"
-            f"✓ Saved"
+            f"{saved_line}"
         )
         with tracer.step("send_confirmation"):
             await status_msg.edit_text(
                 confirmation,
-                reply_markup=saved_keyboard(record.id),
+                reply_markup=saved_keyboard(record.id, in_trip=bool(trip)),
                 parse_mode="Markdown",
             )
 
@@ -199,6 +206,11 @@ async def _handle_awaiting_input(
             await update.message.reply_text(f"Description updated: {text}")
         else:
             await update.message.reply_text("Could not find the expense to update.")
+        return
+
+    if awaiting == AWAITING_TRIP_NAME:
+        context.user_data.pop("awaiting", None)
+        await handle_trip_name_input(update, context, text)
         return
 
     if awaiting == "feedback_text":

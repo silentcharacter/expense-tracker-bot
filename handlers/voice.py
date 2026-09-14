@@ -9,6 +9,7 @@ from models.expense import ExpenseRecord, ExpenseSource
 from models.category import category_label, subcategory_label
 from handlers.callbacks import saved_keyboard, _format_confirmation
 from services.tracing import RequestTracer
+from services.trip_service import resolve_active_trip
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # ── 4. Build pending record ─────────────────────────────────────────
         raw_transcript = getattr(expense, "_raw_transcript", "")
+        with tracer.step("active_trip_lookup"):
+            trip = resolve_active_trip(sheets, user)
+
         record = ExpenseRecord(
+            trip_id=trip.id if trip else "",
             amount_local=expense.amount,
             local_currency=expense.currency,
             amount_base=amount_base,
@@ -114,13 +119,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
         cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
 
+        saved_line = f"✓ Saved to {trip.label()}" if trip else "✓ Saved"
         text = (
             f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n"
-            f"✓ Saved"
+            f"{saved_line}"
         )
         with tracer.step("send_confirmation"):
             await status_msg.edit_text(
                 text,
-                reply_markup=saved_keyboard(record.id),
+                reply_markup=saved_keyboard(record.id, in_trip=bool(trip)),
                 parse_mode="Markdown",
             )

@@ -9,8 +9,11 @@ Run:
 
 import pytest
 
+from datetime import date, datetime
+
 from models.expense import ExpenseRecord, ExpenseSource
 from models.category import CATEGORIES
+from models.trip import Trip
 
 TEST_USER_ID = "test_integration_999"
 
@@ -196,3 +199,106 @@ def test_recurring_add_get_delete(firestore_service):
 
     entries_after = firestore_service.get_recurring(TEST_USER_ID)
     assert not any(e["id"] == entry["id"] for e in entries_after)
+
+
+
+# ── trips ─────────────────────────────────────────────────────────────────────
+
+def _trip_record(day: int, amount: float, **kwargs) -> ExpenseRecord:
+    """Expense on a fixed date, for date-range assignment tests."""
+    defaults = dict(
+        amount_local=amount,
+        local_currency="USD",
+        amount_base=amount,
+        base_currency="USD",
+        fx_rate=1.0,
+        category="food",
+        subcategory="cafe",
+        description="integration trip expense",
+        source=ExpenseSource.text,
+        timestamp=datetime(2026, 9, day, 12, 0, 0),
+    )
+    defaults.update(kwargs)
+    return ExpenseRecord(**defaults)
+
+
+@pytest.fixture
+def clean_trips(firestore_service):
+    """Remove any trips left behind by a previous run."""
+    for trip in firestore_service.get_trips(TEST_USER_ID):
+        firestore_service.delete_trip(TEST_USER_ID, trip.id)
+    yield
+    for trip in firestore_service.get_trips(TEST_USER_ID):
+        firestore_service.delete_trip(TEST_USER_ID, trip.id)
+
+
+@pytest.mark.integration
+def test_trip_add_get_update_delete(firestore_service, clean_trips):
+    """Trips round-trip through Firestore, including the date-only fields."""
+    trip = Trip(name="Georgia", start_date=date(2026, 9, 10), budget=1500.0)
+    firestore_service.add_trip(TEST_USER_ID, trip)
+
+    got = firestore_service.get_trip(TEST_USER_ID, trip.id)
+    assert got is not None
+    assert got.name == "Georgia"
+    assert got.start_date == date(2026, 9, 10)
+    assert got.end_date is None
+    assert got.budget == pytest.approx(1500.0)
+
+    updated = firestore_service.update_trip(
+        TEST_USER_ID, trip.id, {"end_date": "2026-09-20", "name": "Georgia, autumn"}
+    )
+    assert updated.end_date == date(2026, 9, 20)
+    assert updated.name == "Georgia, autumn"
+
+    assert firestore_service.delete_trip(TEST_USER_ID, trip.id) is True
+    assert firestore_service.get_trip(TEST_USER_ID, trip.id) is None
+
+
+@pytest.mark.integration
+def test_get_transactions_filters_by_trip(firestore_service, clean_trips):
+    """trip_id=<id> keeps only that trip; trip_id="" keeps only home expenses."""
+    trip = Trip(name="Georgia", start_date=date(2026, 9, 10))
+    firestore_service.add_trip(TEST_USER_ID, trip)
+
+    tagged = _trip_record(11, 30.0, trip_id=trip.id)
+    home = _trip_record(11, 20.0)
+    firestore_service.append_transaction(TEST_USER_ID, tagged)
+    firestore_service.append_transaction(TEST_USER_ID, home)
+
+    in_trip = firestore_service.get_transactions(TEST_USER_ID, trip_id=trip.id)
+    assert [r.id for r in in_trip] == [tagged.id]
+
+    at_home = firestore_service.get_transactions(TEST_USER_ID, trip_id="")
+    assert [r.id for r in at_home] == [home.id]
+
+    assert len(firestore_service.get_transactions(TEST_USER_ID)) == 2
+
+
+@pytest.mark.integration
+def test_assign_transactions_skips_recurring_and_detaches_on_delete(
+    firestore_service, clean_trips
+):
+    """Back-filling a past trip picks up its window but never recurring expenses."""
+    trip = Trip(name="Georgia", start_date=date(2026, 9, 10), end_date=date(2026, 9, 12))
+    firestore_service.add_trip(TEST_USER_ID, trip)
+
+    inside = _trip_record(11, 30.0)
+    outside = _trip_record(20, 40.0)
+    rent = _trip_record(11, 800.0, category="housing", recurring=True, recurring_template_id="t1")
+    for record in (inside, outside, rent):
+        firestore_service.append_transaction(TEST_USER_ID, record)
+
+    assigned = firestore_service.assign_transactions_to_trip(
+        TEST_USER_ID, trip.id, trip.start_date, trip.end_date
+    )
+    assert assigned == 1
+
+    in_trip = firestore_service.get_transactions(TEST_USER_ID, trip_id=trip.id)
+    assert [r.id for r in in_trip] == [inside.id]
+
+    # Deleting the trip keeps the expense and only clears its tag.
+    firestore_service.delete_trip(TEST_USER_ID, trip.id)
+    still_there = firestore_service.get_transactions(TEST_USER_ID)
+    assert inside.id in {r.id for r in still_there}
+    assert all(r.trip_id == "" for r in still_there)

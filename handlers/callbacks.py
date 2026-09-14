@@ -29,6 +29,12 @@ CB_SETTINGS_DEFAULT = "set_default"
 CB_SHOW_SETTINGS_BASE = "show_settings_base"
 CB_SHOW_SETTINGS_DEFAULT = "show_settings_default"
 CB_EDIT_DESCRIPTION = "edit_desc"
+CB_TRIP_PICK_FOR_RECORD = "trip_for"   # trip_for:<record_id>  → show trip picker
+CB_TRIP_SET_ON_RECORD = "trip_set"     # trip_set:<record_id>:<trip_id|-> → assign
+CB_TRIP_START = "trip_start"           # ask for a new trip name
+CB_TRIP_END = "trip_end"               # finish the active trip
+CB_TRIP_LIST = "trip_list"             # show all trips
+CB_TRIP_RESUME = "trip_resume"         # trip_resume:<trip_id> → make active
 
 # Popular currencies shown on inline keyboards
 POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
@@ -36,8 +42,14 @@ POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
 
 # ── Keyboard builders ────────────────────────────────────────────────────────
 
-def saved_keyboard(record_id: str) -> InlineKeyboardMarkup:
-    """Build the undo / edit-category / edit-description keyboard for a just-saved expense."""
+def saved_keyboard(record_id: str, in_trip: bool = False) -> InlineKeyboardMarkup:
+    """Build the undo / edit / trip keyboard for a just-saved expense.
+
+    Args:
+        record_id: Id of the saved expense.
+        in_trip:   Whether the expense is already attributed to a trip — only
+                   changes the button label.
+    """
     return InlineKeyboardMarkup(
         [
             [
@@ -46,6 +58,10 @@ def saved_keyboard(record_id: str) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton("✏ Description", callback_data=f"{CB_EDIT_DESCRIPTION}:{record_id}"),
+                InlineKeyboardButton(
+                    "🧳 Change trip" if in_trip else "🧳 Trip",
+                    callback_data=f"{CB_TRIP_PICK_FOR_RECORD}:{record_id}",
+                ),
             ],
         ]
     )
@@ -127,6 +143,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         CB_SHOW_SETTINGS_DEFAULT: _handle_show_settings_default,
         CB_EDIT_DESCRIPTION: _handle_edit_description,
     }
+
+    # Trip callbacks live in handlers/trips.py; imported lazily because that
+    # module imports the callback-data constants from this one.
+    from handlers import trips as trip_handlers
+
+    handlers.update(trip_handlers.callback_handlers())
 
     handler = handlers.get(prefix)
     if handler:
@@ -222,13 +244,13 @@ async def _apply_category_update(
         await check_and_send_budget_alert(context.bot, user, updated, context.bot_data["sheets"])
         await query.edit_message_text(
             f"{_format_confirmation(updated, user.base_currency, cat_display)}\n\n✓ Saved",
-            reply_markup=saved_keyboard(record_id),
+            reply_markup=saved_keyboard(record_id, in_trip=bool(updated.trip_id)),
             parse_mode="Markdown",
         )
     else:
         await query.edit_message_text(
             f"Category updated to {cat_display}.",
-            reply_markup=saved_keyboard(record_id),
+            reply_markup=saved_keyboard(record_id, in_trip=False),
         )
 
 

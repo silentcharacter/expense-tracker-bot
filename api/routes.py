@@ -718,7 +718,11 @@ async def _api_summary(
             )
 
     if trip is not None:
-        result["trip"] = {**trip.to_api_dict(), **trip_totals(trip, records)}
+        # Same shape as the trip list: the Mini App formats these amounts in the
+        # display currency, so the *_default figures must be there too.
+        result["trip"] = _trip_entry(
+            trip, records, (user.active_trip_id or "").strip(), base_to_default_rate
+        )
 
     return jsonify(result), 200
 

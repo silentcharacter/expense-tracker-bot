@@ -475,6 +475,24 @@ async def test_summary_scoped_to_trip_uses_trip_date_range() -> None:
     assert {c["category"] for c in body["by_category"]} == {"food", "transport"}
     assert body["trip"]["name"] == "Georgia"
     assert body["trip"]["budget_percentage"] == 50.0
+    # The Mini App renders these in the display currency — missing keys showed NaN.
+    assert body["trip"]["total_default"] == pytest.approx(50.0)
+    assert body["trip"]["daily_average_default"] is not None
+    assert body["trip"]["is_active"] is False
+
+
+async def test_trip_summary_carries_every_field_the_trip_list_has() -> None:
+    """GET /trips/:id/summary feeds the same UI as GET /trips, so shapes must match."""
+    trip = _trip()
+    user = _user(active_trip_id=trip.id)
+    storage = FakeStorage(records=[_record(10, 30.0, trip_id=trip.id)], trips=[trip])
+    registry = _registry_for(user)
+
+    listed, _ = await _call("GET", "/api/trips", storage, registry)
+    detail, _ = await _call(f"GET", f"/api/trips/{trip.id}/summary", storage, registry)
+
+    assert set(listed["trips"][0]) == set(detail["trip"])
+    assert detail["trip"]["is_active"] is True
 
 
 async def test_summary_for_missing_trip_returns_404() -> None:

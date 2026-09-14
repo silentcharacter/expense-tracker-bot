@@ -45,7 +45,8 @@ User
  │       │       ├─ GET/PUT /api/budgets
  │       │       ├─ GET/PUT /api/settings
  │       │       ├─ GET/PUT /api/categories (custom categories)
- │       │       └─ GET/PUT/DELETE /api/recurring
+ │       │       ├─ GET/PUT/DELETE /api/recurring
+ │       │       └─ /api/trips            (trips + per-trip reports)
  │       │
  │       └─ /cron/* routes ──► Cloud Scheduler jobs
  │               ├─ /cron/recurring      (daily: materialise recurring expenses)
@@ -54,7 +55,8 @@ User
  ├─ Telegram Mini App  (React SPA, served from GCS)
  │       ├─ Overview tab   — category breakdown, daily heatmap
  │       ├─ Trends tab     — period-over-period bar charts
- │       └─ Budget tab     — per-category budgets, spending pace
+ │       ├─ Budget tab     — per-category budgets, spending pace
+ │       └─ Trips tab      — per-trip totals and reports
  │
  └─ Error tracking: Sentry (sentry-sdk[gcp])
 
@@ -68,6 +70,7 @@ User
 ## Key Features
 
 - **Natural language input** — voice (OGG) and text messages parsed by Gemini into structured expense records (amount, currency, category, note).
+- **Trip tracking** — `/trip Georgia` starts a trip; every expense recorded while it runs is tagged with it, on top of its normal category. Reports, budgets and CSV export can then be filtered to a single journey, while monthly budgets keep measuring home spending only.
 - **Multi-user** — each Telegram user gets their own isolated data; `/start` auto-provisions the account. Admin role for broadcast and user management.
 - **Telegram Mini App** — embedded React SPA with three tabs: Overview (category breakdown, daily heatmap), Trends (period charts), Budget (category budgets + pace). Supports expense deletion from the UI.
 - **Spending pace projection** — API computes a projected month-end total from daily averages, split by fixed (recurring) vs discretionary spend.

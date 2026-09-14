@@ -86,6 +86,7 @@ class ExpenseRecord(BaseModel):
     raw_input: str = Field(default="", description="Original voice transcript or text")
     recurring: bool = Field(default=False, description="True if materialised by the recurring cron job")
     recurring_template_id: str = Field(default="", description="Source recurring template id (for cron idempotency)")
+    trip_id: str = Field(default="", description="Trip this expense belongs to; empty means a regular (home) expense")
 
     @field_validator("recurring", mode="before")
     @classmethod
@@ -116,6 +117,7 @@ class ExpenseRecord(BaseModel):
             "raw_input": self.raw_input,
             "recurring": self.recurring,
             "recurring_template_id": self.recurring_template_id,
+            "trip_id": self.trip_id,
         }
 
     @classmethod
@@ -144,6 +146,7 @@ class ExpenseRecord(BaseModel):
             self.raw_input,
             "TRUE" if self.recurring else "FALSE",
             self.recurring_template_id,
+            self.trip_id,
         ]
 
     @classmethod
@@ -164,6 +167,7 @@ class ExpenseRecord(BaseModel):
             "raw_input",
             "recurring",
             "recurring_template_id",
+            "trip_id",
         ]
 
     @classmethod
@@ -205,6 +209,9 @@ class User(BaseModel):
     budget_alerts: bool = Field(default=True, description="Notify when budget reaches 80%")
     weekly_summary: bool = Field(default=True, description="Send weekly summary every Monday")
     insights: bool = Field(default=True, description="Send spending pattern tips")
+    active_trip_id: str = Field(
+        default="", description="Trip that new expenses are tagged with; empty means none"
+    )
 
     @field_validator("base_currency", "default_currency")
     @classmethod
@@ -237,6 +244,7 @@ class User(BaseModel):
             "budget_alerts": self.budget_alerts,
             "weekly_summary": self.weekly_summary,
             "insights": self.insights,
+            "active_trip_id": self.active_trip_id,
         }
 
     @classmethod
@@ -264,6 +272,7 @@ class User(BaseModel):
             str(self.budget_alerts).upper(),
             str(self.weekly_summary).upper(),
             str(self.insights).upper(),
+            self.active_trip_id,
         ]
 
     @classmethod
@@ -283,6 +292,7 @@ class User(BaseModel):
             "budget_alerts",
             "weekly_summary",
             "insights",
+            "active_trip_id",
         ]
 
     @classmethod

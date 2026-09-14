@@ -32,9 +32,11 @@ import flask
 from flask import jsonify
 
 from models.expense import ExpenseRecord, User
+from models.trip import Trip
 from services.auth import validate_init_data
 from services.currency import CurrencyService
 from services.storage import get_storage
+from services.trip_service import resolve_active_trip, trip_totals
 from services.user_registry import UserRegistry
 
 logger = logging.getLogger(__name__)
@@ -159,6 +161,18 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
     elif path.startswith("/categories/") and method == "DELETE":
         cat_slug = path.split("/")[2]
         return await _api_category_delete(user, cat_slug)
+    elif path == "/trips" and method == "GET":
+        return await _api_trips_get(user)
+    elif path == "/trips" and method == "POST":
+        return await _api_trip_create(request, user)
+    elif path.startswith("/trips/") and path.endswith("/assign") and method == "POST":
+        return await _api_trip_assign(request, user, path.split("/")[2])
+    elif path.startswith("/trips/") and path.endswith("/summary") and method == "GET":
+        return await _api_summary(request, user, trip_id=path.split("/")[2])
+    elif path.startswith("/trips/") and method == "PUT":
+        return await _api_trip_update(request, user, path.split("/")[2])
+    elif path.startswith("/trips/") and method == "DELETE":
+        return await _api_trip_delete(user, path.split("/")[2])
     elif path == "/recurring" and method == "GET":
         return await _api_recurring_get(user)
     elif path == "/recurring" and method == "POST":
@@ -284,6 +298,7 @@ def _record_to_dict(
         "description": r.description,
         "source": r.source.value,
         "is_recurring": bool(r.recurring),
+        "trip_id": r.trip_id,
     }
     if default_currency is not None:
         d["amount_default"] = _amount_default(r, default_currency, base_to_default_rate)
@@ -449,7 +464,18 @@ async def _compute_spending_pace(
 # ── GET /api/summary ────────────────────────────────────────────────────────
 
 
-async def _api_summary(request: flask.Request, user: User) -> tuple:
+async def _api_summary(
+    request: flask.Request, user: User, trip_id: Optional[str] = None
+) -> tuple:
+    """Aggregated spending for a period, or for a single trip.
+
+    Args:
+        request: Flask request; ``period``/``offset``/``compare``/``trip_id`` args.
+        user:    Authenticated user.
+        trip_id: Set by ``GET /api/trips/<id>/summary``; overrides the query arg.
+                 When a trip is in play the date range comes from the trip
+                 itself and only that trip's expenses are aggregated.
+    """
     period = request.args.get("period", "week")
     compare = request.args.get("compare", "false").lower() == "true"
     try:
@@ -457,13 +483,34 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     except ValueError:
         offset = 0
 
-    try:
-        since, until = _period_dates(period, offset)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
     sheets = _get_sheets()
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
+
+    requested_trip_id = trip_id if trip_id is not None else request.args.get("trip_id")
+    trip: Optional[Trip] = None
+    if requested_trip_id:
+        try:
+            trip = sheets.get_trip(user.spreadsheet_id, requested_trip_id)
+        except NotImplementedError:
+            return jsonify({"error": "trips require the firestore backend"}), 501
+        if trip is None:
+            return jsonify({"error": "trip not found"}), 404
+        since, until = trip.start_date, trip.end_date or date.today()
+        period = "trip"
+        offset = 0
+        # A trip has no natural previous period to compare against.
+        compare = False
+    else:
+        try:
+            since, until = _period_dates(period, offset)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    records = sheets.get_transactions(
+        user.spreadsheet_id,
+        since=since,
+        until=until,
+        trip_id=trip.id if trip else None,
+    )
 
     # ── Fetch base→default rate up front so aggregations can use it ────────
     default_currency = user.default_currency
@@ -497,6 +544,24 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
             if not r.recurring
         )
     days = max((until - since).days + 1, 1)
+
+    # ── Trip vs home split ─────────────────────────────────────────────────
+    # Totals above cover every expense, so the header still shows all the money
+    # that left the account. Budgets and the spending pace, however, only make
+    # sense against home spending — a two-week trip would otherwise blow through
+    # every monthly category budget on day three.
+    trip_records = [r for r in records if r.trip_id]
+    home_records = [r for r in records if not r.trip_id]
+    trip_spent_base = round(sum(r.amount_base for r in trip_records), 4)
+    non_trip_total_base = round(total_base - trip_spent_base, 4)
+    if base_to_default_rate is not None:
+        trip_spent_default = round(trip_spent_base * base_to_default_rate, 4)
+        non_trip_total_default = round(non_trip_total_base * base_to_default_rate, 4)
+    else:
+        trip_spent_default = round(
+            sum(_amount_default(r, default_currency, base_to_default_rate) for r in trip_records), 4
+        )
+        non_trip_total_default = round(total_default - trip_spent_default, 4)
 
     # By category
     cat_totals: dict[str, dict] = defaultdict(
@@ -620,6 +685,10 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
         "default_currency": default_currency,
         "default_currency_rate": base_to_default_rate,
         "transaction_count": len(records),
+        "trip_spent_base": trip_spent_base,
+        "trip_spent_default": trip_spent_default,
+        "non_trip_total_base": non_trip_total_base,
+        "non_trip_total_default": non_trip_total_default,
         "daily_average": daily_average,
         "daily_average_default": daily_average_default,
         "days_remaining": days_remaining,
@@ -629,13 +698,14 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
     }
 
     # ── spending_pace (current month only) ──────────────────────────────────
+    # Computed on home spending only, to match how budgets are measured.
     if period == "month" and offset == 0:
         spending_pace = await _compute_spending_pace(
             sheets,
             user,
-            records,
-            total_base,
-            total_default,
+            home_records,
+            non_trip_total_base,
+            non_trip_total_default,
             base_to_default_rate,
             since,
             until,
@@ -670,6 +740,9 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
                 else 0.0
             )
 
+    if trip is not None:
+        result["trip"] = {**trip.to_api_dict(), **trip_totals(trip, records)}
+
     return jsonify(result), 200
 
 
@@ -677,9 +750,15 @@ async def _api_summary(request: flask.Request, user: User) -> tuple:
 
 
 async def _api_expenses_list(request: flask.Request, user: User) -> tuple:
+    """List expenses, optionally narrowed by date range, category and/or trip.
+
+    ``trip_id=<id>`` keeps only that trip's expenses; ``trip_id=none`` keeps only
+    regular (home) ones; omitting it returns everything.
+    """
     since_str = request.args.get("since")
     until_str = request.args.get("until")
     category_filter = request.args.get("category")
+    trip_filter = request.args.get("trip_id")
 
     try:
         limit = min(int(request.args.get("limit", 50)), 200)
@@ -693,8 +772,17 @@ async def _api_expenses_list(request: flask.Request, user: User) -> tuple:
     except ValueError:
         return jsonify({"error": "since and until must be ISO dates (YYYY-MM-DD)"}), 400
 
+    if trip_filter is None:
+        trip_scope: Optional[str] = None
+    elif trip_filter.lower() in ("none", "home", ""):
+        trip_scope = ""
+    else:
+        trip_scope = trip_filter
+
     sheets = _get_sheets()
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
+    records = sheets.get_transactions(
+        user.spreadsheet_id, since=since, until=until, trip_id=trip_scope
+    )
 
     if category_filter:
         records = [r for r in records if r.category == category_filter]
@@ -796,6 +884,11 @@ async def _api_expense_update(request: flask.Request, expense_id: str, user: Use
         "timestamp": _dt.combine(expense_date, _dt.min.time()),
     }
 
+    # trip_id is optional: omit the key to leave the current attribution alone,
+    # send an empty string to detach the expense from its trip.
+    if "trip_id" in body:
+        updates["trip_id"] = str(body.get("trip_id") or "").strip()
+
     sheets = _get_sheets()
     updated = sheets.update_transaction(user.spreadsheet_id, expense_id, updates)
     if updated is None:
@@ -831,7 +924,11 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
 
     sheets = _get_sheets()
     all_categories = sheets.get_categories(user.spreadsheet_id)
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
+    # Monthly budgets measure home spending: trip expenses are budgeted per trip
+    # (Trip.budget), so counting them here would flag every category as exceeded.
+    records = sheets.get_transactions(
+        user.spreadsheet_id, since=since, until=until, trip_id=""
+    )
 
     # Base→default rate for default-currency spending totals.
     default_currency = user.default_currency
@@ -968,6 +1065,7 @@ def _api_settings_get(user: User) -> tuple:
         "budget_alerts": user.budget_alerts,
         "weekly_summary": user.weekly_summary,
         "insights": user.insights,
+        "active_trip_id": user.active_trip_id,
     }), 200
 
 
@@ -1048,14 +1146,35 @@ async def _api_export(request: flask.Request, user: User) -> tuple:
         return jsonify({"error": "start and end must be ISO dates (YYYY-MM-DD)"}), 400
 
     sheets = _get_sheets()
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
+
+    trip_filter = request.args.get("trip_id")
+    trip = None
+    if trip_filter:
+        try:
+            trip = sheets.get_trip(user.spreadsheet_id, trip_filter)
+        except NotImplementedError:
+            return jsonify({"error": "trips require the firestore backend"}), 501
+        if trip is None:
+            return jsonify({"error": "trip not found"}), 404
+        # A trip export covers the whole trip, not the caller's date window.
+        since, until = trip.start_date, trip.end_date or today
+
+    records = sheets.get_transactions(
+        user.spreadsheet_id, since=since, until=until, trip_id=trip.id if trip else None
+    )
+
+    try:
+        trip_names = {t.id: t.name for t in sheets.get_trips(user.spreadsheet_id)}
+    except Exception as exc:
+        logger.warning("Could not read trips for export: %s", exc)
+        trip_names = {}
 
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
         "id", "timestamp", "amount_local", "local_currency",
         "amount_base", "base_currency", "fx_rate",
-        "category", "subcategory", "description", "source",
+        "category", "subcategory", "description", "source", "trip",
     ])
     for r in records:
         writer.writerow([
@@ -1070,9 +1189,11 @@ async def _api_export(request: flask.Request, user: User) -> tuple:
             r.subcategory,
             r.description,
             r.source.value,
+            trip_names.get(r.trip_id, "") if r.trip_id else "",
         ])
 
-    filename = f"expenses_{since.isoformat()}_{until.isoformat()}.csv"
+    prefix = f"trip_{_slugify(trip.name) or trip.id}" if trip else "expenses"
+    filename = f"{prefix}_{since.isoformat()}_{until.isoformat()}.csv"
     csv_bytes = buf.getvalue().encode("utf-8")
     response = flask.make_response(csv_bytes)
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
@@ -1231,6 +1352,282 @@ async def _recurring_base_total(
             rate = 1.0
         total += amount_local * rate
     return round(total, 4)
+
+
+# ── Trips ───────────────────────────────────────────────────────────────────
+
+
+def _parse_iso_date(value, field: str) -> tuple[Optional[date], Optional[str]]:
+    """Parse an ISO date from a request body. Returns (date, error_message)."""
+    if value in (None, ""):
+        return None, None
+    try:
+        return date.fromisoformat(str(value)), None
+    except ValueError:
+        return None, f"{field} must be an ISO date (YYYY-MM-DD)"
+
+
+def _trip_entry(
+    trip: Trip,
+    records: list[ExpenseRecord],
+    active_trip_id: str,
+    base_to_default_rate: float | None,
+) -> dict:
+    """Trip plus its totals, as the Mini App's trip list renders it."""
+    stats = trip_totals(trip, records)
+    rate = base_to_default_rate if base_to_default_rate is not None else 1.0
+    return {
+        **trip.to_api_dict(),
+        **stats,
+        "total_default": round(stats["total_base"] * rate, 4),
+        "daily_average_default": round(stats["daily_average"] * rate, 4),
+        "is_active": trip.id == active_trip_id,
+    }
+
+
+async def _base_to_default_rate(user: User) -> float | None:
+    """Live base→default FX rate, or None when the rate service is unavailable."""
+    if user.default_currency.upper() == user.base_currency.upper():
+        return 1.0
+    try:
+        return round(
+            await _get_currency().get_rate(user.base_currency, user.default_currency), 6
+        )
+    except Exception as exc:
+        logger.warning("Could not fetch base→default rate: %s", exc)
+        return None
+
+
+async def _api_trips_get(user: User) -> tuple:
+    """GET /api/trips — every trip with its totals, newest first."""
+    sheets = _get_sheets()
+    try:
+        trips = sheets.get_trips(user.spreadsheet_id)
+    except NotImplementedError:
+        return jsonify({"error": "trips require the firestore backend"}), 501
+
+    # One read, grouped in memory: a query per trip would be N round-trips.
+    by_trip: dict[str, list[ExpenseRecord]] = defaultdict(list)
+    for r in sheets.get_transactions(user.spreadsheet_id):
+        if r.trip_id:
+            by_trip[r.trip_id].append(r)
+
+    rate = await _base_to_default_rate(user)
+    # resolve_active_trip also clears the pointer when the trip is gone or over.
+    active = resolve_active_trip(sheets, user)
+    active_id = active.id if active else ""
+    return jsonify({
+        "base_currency": user.base_currency,
+        "default_currency": user.default_currency,
+        "default_currency_rate": rate,
+        "active_trip_id": active_id,
+        "trips": [
+            _trip_entry(t, by_trip.get(t.id, []), active_id, rate) for t in trips
+        ],
+    }), 200
+
+
+async def _api_trip_create(request: flask.Request, user: User) -> tuple:
+    """POST /api/trips — create a trip, optionally activating and back-filling it."""
+    body = request.get_json(silent=True) or {}
+
+    name = str(body.get("name", "")).strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    today = date.today()
+    start, err = _parse_iso_date(body.get("start_date"), "start_date")
+    if err:
+        return jsonify({"error": err}), 400
+    end, err = _parse_iso_date(body.get("end_date"), "end_date")
+    if err:
+        return jsonify({"error": err}), 400
+    start = start or today
+
+    budget = body.get("budget")
+    if budget in ("", None):
+        budget = None
+    else:
+        try:
+            budget = float(budget)
+        except (TypeError, ValueError):
+            return jsonify({"error": "budget must be a number"}), 400
+
+    try:
+        trip = Trip(
+            name=name,
+            emoji=str(body.get("emoji") or "🧳"),
+            start_date=start,
+            end_date=end,
+            trip_currency=str(body.get("trip_currency") or ""),
+            budget=budget,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    sheets = _get_sheets()
+    try:
+        sheets.add_trip(user.spreadsheet_id, trip)
+    except NotImplementedError:
+        return jsonify({"error": "trips require the firestore backend"}), 501
+
+    # Default: a trip whose range covers today starts collecting new expenses.
+    activate = body.get("activate")
+    if activate is None:
+        activate = trip.covers(today)
+    if activate:
+        sheets.set_active_trip(user.telegram_id, trip.id)
+        user.active_trip_id = trip.id
+
+    assigned = 0
+    if body.get("assign_existing"):
+        assigned = sheets.assign_transactions_to_trip(
+            user.spreadsheet_id, trip.id, trip.start_date, trip.end_date
+        )
+
+    records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip.id)
+    rate = await _base_to_default_rate(user)
+    return jsonify({
+        "trip": _trip_entry(trip, records, user.active_trip_id or "", rate),
+        "assigned": assigned,
+    }), 201
+
+
+async def _api_trip_update(request: flask.Request, user: User, trip_id: str) -> tuple:
+    """PUT /api/trips/:id — rename, re-date, re-budget, finish, or (de)activate."""
+    body = request.get_json(silent=True) or {}
+
+    sheets = _get_sheets()
+    try:
+        trip = sheets.get_trip(user.spreadsheet_id, trip_id)
+    except NotImplementedError:
+        return jsonify({"error": "trips require the firestore backend"}), 501
+    if trip is None:
+        return jsonify({"error": "trip not found"}), 404
+
+    updates: dict = {}
+
+    if "name" in body:
+        name = str(body.get("name", "")).strip()
+        if not name:
+            return jsonify({"error": "name must not be empty"}), 400
+        updates["name"] = name[:60]
+
+    if "emoji" in body:
+        updates["emoji"] = (str(body.get("emoji") or "").strip()[:4]) or "🧳"
+
+    if "trip_currency" in body:
+        updates["trip_currency"] = str(body.get("trip_currency") or "").strip().upper()
+
+    if "start_date" in body:
+        start, err = _parse_iso_date(body.get("start_date"), "start_date")
+        if err or start is None:
+            return jsonify({"error": err or "start_date is required"}), 400
+        updates["start_date"] = start.isoformat()
+
+    if "end_date" in body:
+        end, err = _parse_iso_date(body.get("end_date"), "end_date")
+        if err:
+            return jsonify({"error": err}), 400
+        updates["end_date"] = end.isoformat() if end else ""
+
+    if "budget" in body:
+        raw = body.get("budget")
+        if raw in ("", None):
+            updates["budget"] = None
+        else:
+            try:
+                updates["budget"] = float(raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": "budget must be a number"}), 400
+
+    # Validate the merged result before persisting a half-valid document
+    # (e.g. an end date moved before the start date).
+    merged = trip.model_dump()
+    for key, value in updates.items():
+        if key in ("start_date", "end_date"):
+            merged[key] = date.fromisoformat(value) if value else None
+        else:
+            merged[key] = value
+    try:
+        Trip(**merged)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if updates:
+        sheets.update_trip(user.spreadsheet_id, trip_id, updates)
+
+    if "active" in body:
+        if body.get("active"):
+            sheets.set_active_trip(user.telegram_id, trip_id)
+            user.active_trip_id = trip_id
+        elif (user.active_trip_id or "") == trip_id:
+            sheets.set_active_trip(user.telegram_id, "")
+            user.active_trip_id = ""
+
+    updated = sheets.get_trip(user.spreadsheet_id, trip_id) or trip
+    records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip_id)
+    rate = await _base_to_default_rate(user)
+    return jsonify(_trip_entry(updated, records, user.active_trip_id or "", rate)), 200
+
+
+async def _api_trip_delete(user: User, trip_id: str) -> tuple:
+    """DELETE /api/trips/:id — remove the trip; its expenses stay, untagged."""
+    sheets = _get_sheets()
+    try:
+        detached = len(sheets.get_transactions(user.spreadsheet_id, trip_id=trip_id))
+        # delete_trip detaches the expenses itself, so they survive the delete.
+        deleted = sheets.delete_trip(user.spreadsheet_id, trip_id)
+    except NotImplementedError:
+        return jsonify({"error": "trips require the firestore backend"}), 501
+    if not deleted:
+        return jsonify({"error": "trip not found"}), 404
+
+    if (user.active_trip_id or "") == trip_id:
+        sheets.set_active_trip(user.telegram_id, "")
+        user.active_trip_id = ""
+
+    return jsonify({"deleted": True, "detached_expenses": detached}), 200
+
+
+async def _api_trip_assign(request: flask.Request, user: User, trip_id: str) -> tuple:
+    """POST /api/trips/:id/assign — back-fill the trip from its own date range.
+
+    This is how past journeys get labelled: create the trip with its real dates,
+    then pull every expense in that window into it. Recurring expenses are never
+    pulled in (see FirestoreService.assign_transactions_to_trip).
+    """
+    body = request.get_json(silent=True) or {}
+
+    sheets = _get_sheets()
+    try:
+        trip = sheets.get_trip(user.spreadsheet_id, trip_id)
+    except NotImplementedError:
+        return jsonify({"error": "trips require the firestore backend"}), 501
+    if trip is None:
+        return jsonify({"error": "trip not found"}), 404
+
+    since, err = _parse_iso_date(body.get("since"), "since")
+    if err:
+        return jsonify({"error": err}), 400
+    until, err = _parse_iso_date(body.get("until"), "until")
+    if err:
+        return jsonify({"error": err}), 400
+
+    assigned = sheets.assign_transactions_to_trip(
+        user.spreadsheet_id,
+        trip_id,
+        since or trip.start_date,
+        until or trip.end_date,
+        overwrite=bool(body.get("overwrite")),
+    )
+
+    records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip_id)
+    rate = await _base_to_default_rate(user)
+    return jsonify({
+        "assigned": assigned,
+        "trip": _trip_entry(trip, records, user.active_trip_id or "", rate),
+    }), 200
 
 
 # ── GET /api/recurring ───────────────────────────────────────────────────────

@@ -28,10 +28,16 @@ async def check_and_send_budget_alert(
     """
     if not user.budget_alerts or not record.amount_base:
         return
+    # Trip spending has its own budget and would otherwise blow through every
+    # monthly category budget in the first days of a journey.
+    if record.trip_id:
+        return
     try:
         today = date.today()
         month_start = today.replace(day=1)
-        transactions = sheets.get_transactions(user.spreadsheet_id, since=month_start, until=today)
+        transactions = sheets.get_transactions(
+            user.spreadsheet_id, since=month_start, until=today, trip_id=""
+        )
         categories = sheets.get_categories(user.spreadsheet_id)
 
         cat_obj = next((c for c in categories if c.slug == record.category), None)

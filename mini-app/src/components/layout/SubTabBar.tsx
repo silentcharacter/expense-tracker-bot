@@ -1,8 +1,8 @@
-/** Pill-style sub-tab bar for MainPage: Overview / Trends / Budget. */
+/** Pill-style sub-tab bar for MainPage: Overview / Trends / Budget / Trips. */
 
 import { useTelegram } from "../../hooks/useTelegram";
 
-export type SubTab = "overview" | "trends" | "budget";
+export type SubTab = "overview" | "trends" | "budget" | "trips";
 
 interface SubTabBarProps {
   active: SubTab;
@@ -13,6 +13,7 @@ const TABS: { key: SubTab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "trends", label: "Trends" },
   { key: "budget", label: "Budget" },
+  { key: "trips", label: "Trips" },
 ];
 
 export function SubTabBar({ active, onChange }: SubTabBarProps) {

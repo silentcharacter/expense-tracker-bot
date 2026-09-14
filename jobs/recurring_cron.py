@@ -182,4 +182,7 @@ async def _build_record(
         source=ExpenseSource.text,
         recurring=True,
         recurring_template_id=str(item.get("id", "")),
+        # Never attributed to a trip: rent and subscriptions keep running at home
+        # while the user travels, so tagging them would inflate the trip report.
+        trip_id="",
     )

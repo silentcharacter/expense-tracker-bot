@@ -14,6 +14,7 @@ import { SettingsModal } from "../components/settings/SettingsModal";
 import { OverviewTab } from "../components/tabs/OverviewTab";
 import { TrendsTab } from "../components/tabs/TrendsTab";
 import { BudgetTab } from "../components/tabs/BudgetTab";
+import { TripsTab } from "../components/trips/TripsTab";
 import type { CategoryFilter } from "../components/overview/CategoryBudgetList";
 import { SkeletonBlock, SkeletonLine } from "../components/shared/Skeleton";
 
@@ -82,12 +83,15 @@ export function MainPage() {
     budgets,
     expenses,
     recurring,
+    trips,
     isLoading,
     error,
     refetch,
   } = useMainData(monthOffset);
 
   const [activeTab, setActiveTab] = useState<SubTab>("overview");
+  const activeTrip = (trips?.trips ?? []).find((t) => t.is_active) ?? null;
+  const tripNames = Object.fromEntries((trips?.trips ?? []).map((t) => [t.id, t.name]));
   const [showSettings, setShowSettings] = useState(false);
   const [filterDay, setFilterDay] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<CategoryFilter | null>(null);
@@ -136,8 +140,13 @@ export function MainPage() {
   // budget_total − recurring_total_default (historical FX), so the Budget-used
   // header reconciles with the recurring line. Fall back to a live conversion.
   const budgetTotalDefault = summary?.spending_pace?.budget_total_default;
+  // Budgets exclude trip spending (so do /api/budgets and the pace block), so
+  // the header percentage must be measured against home spending too.
+  const homeTotalBase = summary?.non_trip_total_base ?? summary?.total_base;
   const budgetUsedPercent =
-    budgetTotal > 0 && summary ? (summary.total_base / budgetTotal) * 100 : undefined;
+    budgetTotal > 0 && homeTotalBase !== undefined
+      ? (homeTotalBase / budgetTotal) * 100
+      : undefined;
   const dayToDayBudget = summary?.spending_pace?.discretionary_budget;
   const dayToDayBudgetDefault = summary?.spending_pace?.discretionary_budget_default;
   const dayToDayBudgetUsedPercent =
@@ -217,6 +226,9 @@ export function MainPage() {
                     summary={summary}
                     budgets={budgets}
                     expenses={expenses}
+                    activeTrip={activeTrip}
+                    onOpenTrips={() => setActiveTab("trips")}
+                    tripNames={tripNames}
                     referenceYear={viewedYear}
                     referenceMonth={viewedMonthIndex}
                     filterDay={filterDay}
@@ -236,6 +248,18 @@ export function MainPage() {
                   <BudgetSkeleton />
                 ) : (
                   <BudgetTab budgets={budgets} recurring={recurring} refetch={refetch} />
+                ))}
+
+              {activeTab === "trips" &&
+                (isLoading && !trips ? (
+                  <SkeletonBlock height={120} className="rounded-xl" />
+                ) : (
+                  <TripsTab
+                    trips={trips}
+                    refetch={refetch}
+                    onDeleteExpense={handleDeleteExpense}
+                    onEditExpense={handleEditExpense}
+                  />
                 ))}
             </div>
           </>

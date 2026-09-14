@@ -383,7 +383,7 @@ async def test_exception_in_bot_send_does_not_propagate():
 
 @pytest.mark.asyncio
 async def test_get_transactions_called_with_current_month_range():
-    """Verify that since=month_start and until=today are passed correctly."""
+    """Verify the month range and the home-only (trip_id="") scope are passed."""
     from datetime import date
 
     user = _make_user()
@@ -401,4 +401,5 @@ async def test_get_transactions_called_with_current_month_range():
         SPREADSHEET_ID,
         since=date(2026, 4, 1),
         until=fixed_today,
+        trip_id="",
     )

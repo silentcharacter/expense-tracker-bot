@@ -383,7 +383,7 @@ async def test_exception_in_bot_send_does_not_propagate():
 
 @pytest.mark.asyncio
 async def test_get_transactions_called_with_current_month_range():
-    """Verify the month range and the home-only (trip_id="") scope are passed."""
+    """Verify that since=month_start and until=today are passed correctly."""
     from datetime import date
 
     user = _make_user()
@@ -401,5 +401,22 @@ async def test_get_transactions_called_with_current_month_range():
         SPREADSHEET_ID,
         since=date(2026, 4, 1),
         until=fixed_today,
-        trip_id="",
     )
+
+
+# ── trips count towards category budgets ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_alert_fires_for_a_trip_expense():
+    """Trip spending is budgeted like any other spending, alerts included."""
+    user = _make_user()
+    bot = _make_bot()
+    record = _make_record(amount_base=100.0, trip_id="georgia1")
+    existing = [_make_tx("food", 700.0)]
+    sheets = _make_sheets(existing + [record], [_food_cat(budget=1000.0)])
+
+    await check_and_send_budget_alert(bot, user, record, sheets)
+
+    bot.send_message.assert_called_once()
+    assert "⚠️" in bot.send_message.call_args.kwargs["text"]

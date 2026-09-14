@@ -545,24 +545,6 @@ async def _api_summary(
         )
     days = max((until - since).days + 1, 1)
 
-    # ── Trip vs home split ─────────────────────────────────────────────────
-    # Totals above cover every expense, so the header still shows all the money
-    # that left the account. Budgets and the spending pace, however, only make
-    # sense against home spending — a two-week trip would otherwise blow through
-    # every monthly category budget on day three.
-    trip_records = [r for r in records if r.trip_id]
-    home_records = [r for r in records if not r.trip_id]
-    trip_spent_base = round(sum(r.amount_base for r in trip_records), 4)
-    non_trip_total_base = round(total_base - trip_spent_base, 4)
-    if base_to_default_rate is not None:
-        trip_spent_default = round(trip_spent_base * base_to_default_rate, 4)
-        non_trip_total_default = round(non_trip_total_base * base_to_default_rate, 4)
-    else:
-        trip_spent_default = round(
-            sum(_amount_default(r, default_currency, base_to_default_rate) for r in trip_records), 4
-        )
-        non_trip_total_default = round(total_default - trip_spent_default, 4)
-
     # By category
     cat_totals: dict[str, dict] = defaultdict(
         lambda: {"amount_base": 0.0, "amount_default": 0.0, "count": 0}
@@ -685,10 +667,6 @@ async def _api_summary(
         "default_currency": default_currency,
         "default_currency_rate": base_to_default_rate,
         "transaction_count": len(records),
-        "trip_spent_base": trip_spent_base,
-        "trip_spent_default": trip_spent_default,
-        "non_trip_total_base": non_trip_total_base,
-        "non_trip_total_default": non_trip_total_default,
         "daily_average": daily_average,
         "daily_average_default": daily_average_default,
         "days_remaining": days_remaining,
@@ -698,14 +676,13 @@ async def _api_summary(
     }
 
     # ── spending_pace (current month only) ──────────────────────────────────
-    # Computed on home spending only, to match how budgets are measured.
     if period == "month" and offset == 0:
         spending_pace = await _compute_spending_pace(
             sheets,
             user,
-            home_records,
-            non_trip_total_base,
-            non_trip_total_default,
+            records,
+            total_base,
+            total_default,
             base_to_default_rate,
             since,
             until,
@@ -924,11 +901,9 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
 
     sheets = _get_sheets()
     all_categories = sheets.get_categories(user.spreadsheet_id)
-    # Monthly budgets measure home spending: trip expenses are budgeted per trip
-    # (Trip.budget), so counting them here would flag every category as exceeded.
-    records = sheets.get_transactions(
-        user.spreadsheet_id, since=since, until=until, trip_id=""
-    )
+    # Budgets measure everything that left the account, trips included; the trip
+    # share is reported separately so a category over budget can be explained.
+    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
 
     # Base→default rate for default-currency spending totals.
     default_currency = user.default_currency
@@ -1015,12 +990,14 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
 
     total_budget = round(sum(b["budget"] for b in result_budgets), 4)
     total_spent = round(sum(r.amount_base for r in records), 4)
+    total_spent_trip = round(sum(r.amount_base for r in records if r.trip_id), 4)
 
     return jsonify({
         "base_currency": user.base_currency,
         "month": since.strftime("%Y-%m"),
         "total_budget": total_budget,
         "total_spent": total_spent,
+        "total_spent_trip": total_spent_trip,
         "budgets": result_budgets,
     }), 200
 

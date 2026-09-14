@@ -70,7 +70,7 @@ User
 ## Key Features
 
 - **Natural language input** — voice (OGG) and text messages parsed by Gemini into structured expense records (amount, currency, category, note).
-- **Trip tracking** — `/trip Georgia` starts a trip; every expense recorded while it runs is tagged with it, on top of its normal category. Reports, budgets and CSV export can then be filtered to a single journey, while monthly budgets keep measuring home spending only.
+- **Trip tracking** — `/trip Georgia` starts a trip; every expense recorded while it runs is tagged with it, on top of its normal category. Reports and CSV export can then be filtered to a single journey, and a trip can carry its own budget — while monthly budgets keep counting every expense, trips included.
 - **Multi-user** — each Telegram user gets their own isolated data; `/start` auto-provisions the account. Admin role for broadcast and user management.
 - **Telegram Mini App** — embedded React SPA with three tabs: Overview (category breakdown, daily heatmap), Trends (period charts), Budget (category budgets + pace). Supports expense deletion from the UI.
 - **Spending pace projection** — API computes a projected month-end total from daily averages, split by fixed (recurring) vs discretionary spend.

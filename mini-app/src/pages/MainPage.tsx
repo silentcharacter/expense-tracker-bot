@@ -140,13 +140,8 @@ export function MainPage() {
   // budget_total − recurring_total_default (historical FX), so the Budget-used
   // header reconciles with the recurring line. Fall back to a live conversion.
   const budgetTotalDefault = summary?.spending_pace?.budget_total_default;
-  // Budgets exclude trip spending (so do /api/budgets and the pace block), so
-  // the header percentage must be measured against home spending too.
-  const homeTotalBase = summary?.non_trip_total_base ?? summary?.total_base;
   const budgetUsedPercent =
-    budgetTotal > 0 && homeTotalBase !== undefined
-      ? (homeTotalBase / budgetTotal) * 100
-      : undefined;
+    budgetTotal > 0 && summary ? (summary.total_base / budgetTotal) * 100 : undefined;
   const dayToDayBudget = summary?.spending_pace?.discretionary_budget;
   const dayToDayBudgetDefault = summary?.spending_pace?.discretionary_budget_default;
   const dayToDayBudgetUsedPercent =

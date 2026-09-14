@@ -484,7 +484,7 @@ async def test_summary_for_missing_trip_returns_404() -> None:
     assert status == 404
 
 
-async def test_summary_splits_trip_and_home_totals() -> None:
+async def test_summary_counts_trip_and_home_expenses_together() -> None:
     trip = _trip()
     storage = FakeStorage(
         records=[_record(10, 30.0, trip_id=trip.id), _record(11, 20.0)],
@@ -496,8 +496,7 @@ async def test_summary_splits_trip_and_home_totals() -> None:
 
     assert status == 200
     assert body["total_base"] == pytest.approx(50.0)
-    assert body["trip_spent_base"] == pytest.approx(30.0)
-    assert body["non_trip_total_base"] == pytest.approx(20.0)
+    assert body["transaction_count"] == 2
 
 
 async def test_expenses_can_be_filtered_by_trip_or_home() -> None:
@@ -519,8 +518,8 @@ async def test_expenses_can_be_filtered_by_trip_or_home() -> None:
     assert body["total"] == 2
 
 
-async def test_budgets_ignore_trip_spending() -> None:
-    """A trip must not consume the monthly food budget."""
+async def test_budgets_count_trip_spending_and_report_its_share() -> None:
+    """Budgets cover every expense; the trip part is reported separately."""
     trip = _trip()
     categories = [
         UserCategory(
@@ -539,9 +538,10 @@ async def test_budgets_ignore_trip_spending() -> None:
 
     assert status == 200
     food = next(b for b in body["budgets"] if b["category"] == "food")
-    assert food["spent"] == pytest.approx(20.0)
-    assert food["status"] == "normal"
-    assert body["total_spent"] == pytest.approx(20.0)
+    assert food["spent"] == pytest.approx(110.0)
+    assert food["status"] == "exceeded"
+    assert body["total_spent"] == pytest.approx(110.0)
+    assert body["total_spent_trip"] == pytest.approx(90.0)
 
 
 async def test_patch_expense_can_move_it_into_a_trip() -> None:

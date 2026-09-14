@@ -118,9 +118,10 @@ tests/test_config.yaml is committed to the repo and contains all required keys
   trip ends or is deleted (`services/trip_service.resolve_active_trip`).
 - The recurring cron never tags its expenses — rent and subscriptions keep running
   at home while the user travels.
-- Monthly budgets, budget alerts and the spending pace measure home spending only
-  (`trip_id=""`); a trip has its own optional `Trip.budget`. Summary totals still
-  cover everything and report the trip/home split.
+- Monthly budgets, budget alerts and the spending pace count trip expenses like
+  any other spending; `/api/budgets` additionally returns `total_spent_trip` so
+  the Budget tab can show how much of the month came from trips. A trip also has
+  its own optional `Trip.budget`, shown only inside the trip.
 - Trip ids are 8 chars because they travel inside Telegram `callback_data` (64 bytes).
 - Trips require `STORAGE_BACKEND=firestore`; the Sheets backend answers 501.
 

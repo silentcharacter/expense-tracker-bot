@@ -12,6 +12,8 @@ interface BudgetSummaryCardProps {
   budgets: BudgetEntry[];
   totalBudget: number;
   totalSpent: number;
+  /** Part of totalSpent that came from trips, shown as a footnote under the gauge. */
+  totalSpentTrip?: number;
 }
 
 function ArcGauge({ pct }: { pct: number }) {
@@ -74,7 +76,12 @@ function ArcGauge({ pct }: { pct: number }) {
   );
 }
 
-export function BudgetSummaryCard({ budgets, totalBudget, totalSpent }: BudgetSummaryCardProps) {
+export function BudgetSummaryCard({
+  budgets,
+  totalBudget,
+  totalSpent,
+  totalSpentTrip = 0,
+}: BudgetSummaryCardProps) {
   const { formatLive: format } = useCurrency();
 
   const activeSubs = budgets
@@ -126,9 +133,15 @@ export function BudgetSummaryCard({ budgets, totalBudget, totalSpent }: BudgetSu
         </div>
       </div>
 
-      <div className="flex justify-center mb-3">
+      <div className={`flex justify-center ${totalSpentTrip > 0 ? "mb-1" : "mb-3"}`}>
         <ArcGauge pct={overallPct} />
       </div>
+
+      {totalSpentTrip > 0 && (
+        <p className="text-[11px] text-center mb-3" style={{ color: "var(--app-text-secondary)" }}>
+          includes 🧳 {format(totalSpentTrip, 0)} spent on trips
+        </p>
+      )}
 
       <div className="flex gap-2">
         <Pill count={onTrack} label="On track" color="var(--app-success)" />

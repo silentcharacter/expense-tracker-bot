@@ -65,12 +65,6 @@ export interface SummaryResponse {
   daily_totals: DailyTotal[];
   comparison?: PeriodComparison;
   days_remaining?: number;
-  /** Part of total_base spent inside trips. */
-  trip_spent_base?: number;
-  trip_spent_default?: number;
-  /** total_base minus trip spending — what monthly budgets are measured against. */
-  non_trip_total_base?: number;
-  non_trip_total_default?: number;
   /** Present only on a trip-scoped summary (GET /api/trips/:id/summary). */
   trip?: TripEntry;
   spending_pace?: SpendingPace;
@@ -152,7 +146,10 @@ export interface BudgetsResponse {
   base_currency: string;
   month: string;
   total_budget: number;
+  /** Everything spent this month, trips included. */
   total_spent: number;
+  /** The part of total_spent that belongs to trips. */
+  total_spent_trip?: number;
   budgets: BudgetEntry[];
 }
 

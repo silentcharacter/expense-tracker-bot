@@ -5,6 +5,8 @@ export interface FetchExpensesParams {
   since?: string;
   until?: string;
   category?: string;
+  /** A trip id keeps only that trip; "none" keeps only regular (home) expenses. */
+  trip_id?: string;
   limit?: number;
   offset?: number;
 }
@@ -14,6 +16,7 @@ export function fetchExpenses(params: FetchExpensesParams = {}): Promise<Expense
   if (params.since) query.since = params.since;
   if (params.until) query.until = params.until;
   if (params.category) query.category = params.category;
+  if (params.trip_id) query.trip_id = params.trip_id;
   if (params.limit !== undefined) query.limit = String(params.limit);
   if (params.offset !== undefined) query.offset = String(params.offset);
   return api.get<ExpensesResponse>("/expenses", query);

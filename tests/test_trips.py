@@ -579,3 +579,101 @@ async def test_export_has_a_trip_column() -> None:
     text = body.decode("utf-8")
     assert text.splitlines()[0].endswith(",trip")
     assert "Georgia" in text
+
+
+# ── Bot: /trip ───────────────────────────────────────────────────────────────
+
+
+def test_start_trip_creates_and_activates() -> None:
+    from handlers.trips import _start_trip
+
+    user = _user()
+    storage = FakeStorage()
+    text, _ = _start_trip(storage, user, "Georgia")
+
+    assert len(storage.trips) == 1
+    trip = next(iter(storage.trips.values()))
+    assert trip.name == "Georgia"
+    assert trip.start_date == date.today()
+    assert trip.is_open
+    assert storage.active_trip[TG_ID] == trip.id
+    assert user.active_trip_id == trip.id
+    assert "Georgia" in text
+
+
+def test_starting_a_second_trip_finishes_the_first() -> None:
+    """Two trips can't both collect expenses, so the previous one is closed."""
+    from handlers.trips import _start_trip
+
+    user = _user()
+    storage = FakeStorage()
+    _start_trip(storage, user, "Georgia")
+    first_id = user.active_trip_id
+
+    text, _ = _start_trip(storage, user, "Armenia")
+
+    assert storage.trips[first_id].end_date == date.today()
+    assert user.active_trip_id != first_id
+    assert "Finished" in text
+
+
+def test_end_trip_reports_totals_and_stops_tagging() -> None:
+    from handlers.trips import _end_active_trip
+
+    trip = _trip()
+    user = _user(active_trip_id=trip.id)
+    storage = FakeStorage(records=[_record(10, 30.0, trip_id=trip.id)], trips=[trip])
+
+    text, _ = _end_active_trip(storage, user)
+
+    assert storage.trips[trip.id].end_date == date.today()
+    assert user.active_trip_id == ""
+    assert "30.00 USD" in text
+
+
+def test_end_trip_without_an_active_one_is_harmless() -> None:
+    from handlers.trips import _end_active_trip
+
+    text, _ = _end_active_trip(FakeStorage(), _user())
+    assert "no active trip" in text.lower()
+
+
+def test_trip_status_without_a_trip_invites_to_start_one() -> None:
+    from handlers.trips import _trip_status
+
+    text, _ = _trip_status(FakeStorage(), _user())
+    assert "/trip" in text
+
+
+def test_trip_status_shows_spend_for_the_active_trip() -> None:
+    from handlers.trips import _trip_status
+
+    trip = _trip(budget=100.0)
+    user = _user(active_trip_id=trip.id)
+    storage = FakeStorage(
+        records=[_record(10, 30.0, trip_id=trip.id), _record(11, 20.0)],
+        trips=[trip],
+    )
+    text, _ = _trip_status(storage, user)
+
+    assert "Georgia" in text
+    assert "30.00 USD" in text       # the home expense is not counted
+    assert "30% used" in text
+
+
+def test_trip_callback_data_fits_telegram_limit() -> None:
+    """Telegram caps callback_data at 64 bytes: expense uuid + trip id must fit."""
+    from handlers.trips import trip_picker_keyboard
+    from handlers.callbacks import saved_keyboard
+
+    record_id = "0123456789abcdef0123456789abcdef0123"  # uuid4 length
+    trips = [_trip(id=f"trip{i:04d}", name=f"Trip {i}") for i in range(6)]
+
+    keyboards = [
+        saved_keyboard(record_id, in_trip=True),
+        trip_picker_keyboard(record_id, trips, trips[0].id),
+    ]
+    for markup in keyboards:
+        for row in markup.inline_keyboard:
+            for button in row:
+                assert len(button.callback_data.encode("utf-8")) <= 64, button.callback_data

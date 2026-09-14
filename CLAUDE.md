@@ -32,11 +32,12 @@ expense-bot/
 ├── main.py                  # Cloud Function entry: webhook + /api/* routing + CORS
 ├── handlers/                # Telegram message handlers
 │   ├── commands.py          #   /start, /cat, /last, /undo, /export, /settings, /email, /broadcast
+│   ├── trips.py             #   /trip (start/end/list) + trip inline callbacks
 │   ├── text.py              #   Plain text → Gemini → expense
 │   ├── voice.py             #   Voice OGG → Gemini → expense
 │   └── callbacks.py         #   Inline keyboard callbacks (confirm/edit/cancel, currency)
 ├── api/                     # Mini App REST API
-│   └── routes.py            #   /api/summary, /api/expenses, /api/budgets, /api/settings
+│   └── routes.py            #   /api/summary, /api/expenses, /api/budgets, /api/settings, /api/trips
 ├── services/                # Business logic
 │   ├── gemini.py            #   Gemini Flash: audio/text → structured JSON
 │   ├── firestore_service.py #   Firestore CRUD (transactions, categories, users, recurring)
@@ -44,10 +45,12 @@ expense-bot/
 │   ├── sheets.py            #   Legacy Sheets backend (STORAGE_BACKEND=sheets)
 │   ├── user_registry.py     #   Registration, user provisioning
 │   ├── currency.py          #   FX rates (ExchangeRate-API) with 24h cache
+│   ├── trip_service.py      #   Active-trip resolution and per-trip totals
 │   └── auth.py              #   Telegram Mini App initData HMAC validation
 ├── models/                  # Pydantic models
 │   ├── expense.py           #   Expense, ExpenseRecord, User, enums (ExpenseSource, UserRole)
-│   └── category.py          #   Category/subcategory registry
+│   ├── category.py          #   Category/subcategory registry
+│   └── trip.py              #   Trip (named date range tagged onto expenses)
 ├── mini-app/                # Telegram Mini App (React SPA)
 │   ├── src/
 │   │   ├── api/             #   API client (summary, expenses, budgets, settings)
@@ -62,6 +65,7 @@ expense-bot/
 │   ├── test_api.py          #   Mini App API routes
 │   ├── test_auth.py         #   initData validation
 │   ├── test_budget_alerts.py
+│   ├── test_trips.py        #   Trip model, trip_service, /api/trips, /trip command
 │   ├── test_recurring_cron.py
 │   ├── test_firestore_integration.py  # requires Firestore emulator
 │   ├── test_currency_integration.py   # requires EXCHANGE_RATE_API_KEY env var
@@ -106,8 +110,24 @@ tests/test_config.yaml is committed to the repo and contains all required keys
 - ISO 4217 validation on registration
 - amount_base = amount converted to user's base currency
 
+## Trips
+- A trip is a scope tag, not a category: an expense keeps `food/restaurant` and
+  additionally carries `trip_id` (empty string = regular/home expense).
+- `users/{id}/trips/{trip_id}` holds the registry; `User.active_trip_id` points at
+  the trip new expenses are tagged with, and is cleared automatically once that
+  trip ends or is deleted (`services/trip_service.resolve_active_trip`).
+- The recurring cron never tags its expenses — rent and subscriptions keep running
+  at home while the user travels.
+- Monthly budgets, budget alerts and the spending pace measure home spending only
+  (`trip_id=""`); a trip has its own optional `Trip.budget`. Summary totals still
+  cover everything and report the trip/home split.
+- Trip ids are 8 chars because they travel inside Telegram `callback_data` (64 bytes).
+- Trips require `STORAGE_BACKEND=firestore`; the Sheets backend answers 501.
+
 ## Mini App API
 - Auth: `Authorization: tma <initData>` header, HMAC validated via bot token
 - Single Cloud Function serves both Telegram webhook (POST /) and Mini App REST (/api/*)
 - Endpoints: GET/PUT /api/settings, GET /api/summary, GET /api/expenses, DELETE /api/expenses/:id, GET/PUT /api/budgets
+- Trips: GET/POST /api/trips, PUT/DELETE /api/trips/:id, POST /api/trips/:id/assign, GET /api/trips/:id/summary
+- Trip filters: `trip_id` on /api/summary, /api/expenses (`none` = home only) and /api/export
 - CORS enabled for cross-origin Mini App requests

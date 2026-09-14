@@ -6,7 +6,7 @@
  */
 
 const TTL_MS = 60 * 1000;
-const PREFIX = "expbot:cache:v1:";
+const PREFIX = "expbot:cache:v2:";
 
 interface Entry<T> {
   data: T;

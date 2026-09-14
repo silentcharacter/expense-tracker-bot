@@ -20,6 +20,8 @@ interface TransactionListProps {
   onDeleteExpense?: (id: string) => Promise<void>;
   onEditExpense?: (id: string, data: UpdateExpenseRequest) => Promise<void>;
   showHeader?: boolean;
+  /** trip id → trip name, for the 🧳 badge. Omit inside a single-trip list. */
+  tripNames?: Record<string, string>;
 }
 
 function formatShortDate(isoString: string): string {
@@ -37,9 +39,10 @@ function filterName(filter: CategoryFilterSel): string {
   return getCategoryLabel(filter.category);
 }
 
-function ExpenseRowContent({ expense, currency, onTap }: {
+function ExpenseRowContent({ expense, currency, tripName, onTap }: {
   expense: Expense;
   currency: ReturnType<typeof useCurrencyOptional>;
+  tripName?: string;
   onTap?: () => void;
 }) {
   return (
@@ -67,6 +70,18 @@ function ExpenseRowContent({ expense, currency, onTap }: {
               }}
             >
               ↻ auto
+            </span>
+          )}
+          {tripName && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 truncate max-w-[40%]"
+              style={{
+                backgroundColor: "color-mix(in srgb, var(--app-accent) 18%, transparent)",
+                color: "var(--app-accent)",
+                fontWeight: 600,
+              }}
+            >
+              🧳 {tripName}
             </span>
           )}
         </p>
@@ -103,6 +118,7 @@ export function TransactionList({
   onDeleteExpense,
   onEditExpense,
   showHeader = false,
+  tripNames,
 }: TransactionListProps) {
   const currency = useCurrencyOptional();
   const [swipedId, setSwipedId] = useState<string | null>(null);
@@ -223,6 +239,7 @@ export function TransactionList({
                   <ExpenseRowContent
                     expense={expense}
                     currency={currency}
+                    tripName={expense.trip_id ? tripNames?.[expense.trip_id] : undefined}
                     onTap={() => handleRowTap(expense.id)}
                   />
                 </SwipeableRow>
@@ -238,6 +255,7 @@ export function TransactionList({
                   <ExpenseRowContent
                     expense={expense}
                     currency={currency}
+                    tripName={expense.trip_id ? tripNames?.[expense.trip_id] : undefined}
                     onTap={() => handleRowTap(expense.id)}
                   />
                 </div>

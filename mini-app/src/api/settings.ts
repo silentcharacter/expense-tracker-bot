@@ -13,6 +13,7 @@ export async function exportExpenses(params?: ExportParams): Promise<void> {
   const queryParams: Record<string, string> = {};
   if (params?.start) queryParams.start = params.start;
   if (params?.end) queryParams.end = params.end;
+  if (params?.trip_id) queryParams.trip_id = params.trip_id;
 
   const { blob, filename } = await api.getBlob("/export", queryParams);
   const url = URL.createObjectURL(blob);

@@ -302,3 +302,36 @@ def test_assign_transactions_skips_recurring_and_detaches_on_delete(
     still_there = firestore_service.get_transactions(TEST_USER_ID)
     assert inside.id in {r.id for r in still_there}
     assert all(r.trip_id == "" for r in still_there)
+
+
+@pytest.mark.integration
+def test_active_trip_pointer_round_trips_and_self_heals(firestore_service, clean_trips):
+    """active_trip_id survives a user round-trip and is cleared once the trip ends."""
+    from models.expense import User
+    from services.trip_service import resolve_active_trip
+
+    trip = Trip(name="Georgia", start_date=date(2026, 9, 10))
+    firestore_service.add_trip(TEST_USER_ID, trip)
+
+    user = User(
+        telegram_id=int(TEST_USER_ID.split("_")[-1]),
+        display_name="Integration User",
+        spreadsheet_id=TEST_USER_ID,
+        base_currency="USD",
+        default_currency="USD",
+    )
+    firestore_service.register_user(user)
+    try:
+        firestore_service.set_active_trip(user.telegram_id, trip.id)
+
+        stored = firestore_service.find_user(user.telegram_id)
+        assert stored.active_trip_id == trip.id
+        assert resolve_active_trip(firestore_service, stored, date(2026, 9, 14)) is not None
+
+        # Finish the trip: the pointer must stop capturing new expenses.
+        firestore_service.update_trip(TEST_USER_ID, trip.id, {"end_date": "2026-09-12"})
+        assert resolve_active_trip(firestore_service, stored, date(2026, 9, 14)) is None
+        assert stored.active_trip_id == ""
+        assert firestore_service.find_user(user.telegram_id).active_trip_id == ""
+    finally:
+        firestore_service._db.collection("users").document(str(user.telegram_id)).delete()

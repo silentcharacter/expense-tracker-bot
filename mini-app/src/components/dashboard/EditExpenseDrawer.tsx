@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchCategories } from "../../api/categories";
-import type { CategoryInfo, Expense, UpdateExpenseRequest } from "../../api/types";
+import { fetchTrips } from "../../api/trips";
+import type { CategoryInfo, Expense, TripEntry, UpdateExpenseRequest } from "../../api/types";
 import { getCategoryEmoji } from "../../utils/categories";
 
 interface EditExpenseDrawerProps {
@@ -19,6 +20,8 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
   const [subcategory, setSubcategory] = useState(expense.subcategory ?? "");
   const [date, setDate] = useState(expense.timestamp.slice(0, 10));
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
+  const [tripId, setTripId] = useState(expense.trip_id ?? "");
+  const [trips, setTrips] = useState<TripEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const descRef = useRef<HTMLInputElement>(null);
@@ -26,6 +29,10 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
   useEffect(() => {
     fetchCategories()
       .then((r) => setCategories(r.categories))
+      .catch(() => {});
+    // Trips are optional (Sheets backend answers 501) — the form still works.
+    fetchTrips()
+      .then((r) => setTrips(r.trips))
       .catch(() => {});
   }, []);
 
@@ -60,6 +67,7 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
         category,
         subcategory,
         date,
+        trip_id: tripId,
       });
       onClose();
     } catch (e) {
@@ -182,6 +190,26 @@ export function EditExpenseDrawer({ expense, onConfirm, onClose }: EditExpenseDr
             {subcategories.map((s) => (
               <option key={s.slug} value={s.slug}>
                 {s.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {trips.length > 0 && (
+          <select
+            value={tripId}
+            onChange={(e) => setTripId(e.target.value)}
+            className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+            style={{
+              background: "var(--app-secondary-bg)",
+              color: tripId ? "var(--app-text-primary)" : "var(--app-text-secondary)",
+              border: "1px solid var(--app-border)",
+            }}
+          >
+            <option value="">🧳 No trip</option>
+            {trips.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.emoji} {t.name}
               </option>
             ))}
           </select>

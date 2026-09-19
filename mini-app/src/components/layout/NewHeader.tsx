@@ -119,7 +119,7 @@ export function NewHeader({
           </svg>
         </button>
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-tight truncate">{monthLabel}</h1>
+          <h1 className="text-base font-semibold leading-tight truncate">{monthLabel}</h1>
           {isCurrentMonth ? (
             <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
               Day {dayOfMonth} of {daysInMonth}

@@ -15,12 +15,14 @@ import { fetchCategories } from "../api/categories";
 import { fetchExpenses } from "../api/expenses";
 import { fetchRecurring } from "../api/recurring";
 import { fetchSummary } from "../api/summary";
+import { fetchTrips } from "../api/trips";
 import type {
   BudgetsResponse,
   CategoriesResponse,
   ExpensesResponse,
   RecurringResponse,
   SummaryResponse,
+  TripsResponse,
 } from "../api/types";
 
 export interface MainData {
@@ -29,6 +31,7 @@ export interface MainData {
   expenses: ExpensesResponse | null;
   categories: CategoriesResponse | null;
   recurring: RecurringResponse | null;
+  trips: TripsResponse | null;
 }
 
 export interface UseMainDataResult extends MainData {
@@ -43,6 +46,7 @@ const EMPTY: MainData = {
   expenses: null,
   categories: null,
   recurring: null,
+  trips: null,
 };
 
 function monthBounds(offset: number): { since: string; until: string } {
@@ -70,7 +74,10 @@ async function fetchBundle(monthOffset: number): Promise<MainData> {
   const expenses = await fetchExpenses({ since, until, limit: 200 });
   const categories = await fetchCategories();
   const recurring = await fetchRecurring();
-  return { summary, budgets, expenses, categories, recurring };
+  // Trips are optional: the Sheets backend answers 501, and the rest of the
+  // page must still render.
+  const trips = await fetchTrips().catch(() => null);
+  return { summary, budgets, expenses, categories, recurring, trips };
 }
 
 export function useMainData(monthOffset = 0): UseMainDataResult {

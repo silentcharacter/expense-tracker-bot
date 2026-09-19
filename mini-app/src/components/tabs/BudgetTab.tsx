@@ -94,6 +94,7 @@ export function BudgetTab({ budgets, recurring, refetch }: BudgetTabProps) {
         budgets={entries}
         totalBudget={budgets?.total_budget ?? 0}
         totalSpent={budgets?.total_spent ?? 0}
+        totalSpentTrip={budgets?.total_spent_trip ?? 0}
       />
       <BudgetAllocationChart budgets={entries} />
       <BudgetCategories

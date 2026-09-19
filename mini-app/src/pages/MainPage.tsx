@@ -14,6 +14,7 @@ import { SettingsModal } from "../components/settings/SettingsModal";
 import { OverviewTab } from "../components/tabs/OverviewTab";
 import { TrendsTab } from "../components/tabs/TrendsTab";
 import { BudgetTab } from "../components/tabs/BudgetTab";
+import { TripsTab } from "../components/trips/TripsTab";
 import type { CategoryFilter } from "../components/overview/CategoryBudgetList";
 import { SkeletonBlock, SkeletonLine } from "../components/shared/Skeleton";
 
@@ -82,12 +83,15 @@ export function MainPage() {
     budgets,
     expenses,
     recurring,
+    trips,
     isLoading,
     error,
     refetch,
   } = useMainData(monthOffset);
 
   const [activeTab, setActiveTab] = useState<SubTab>("overview");
+  const activeTrip = (trips?.trips ?? []).find((t) => t.is_active) ?? null;
+  const tripNames = Object.fromEntries((trips?.trips ?? []).map((t) => [t.id, t.name]));
   const [showSettings, setShowSettings] = useState(false);
   const [filterDay, setFilterDay] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<CategoryFilter | null>(null);
@@ -217,6 +221,9 @@ export function MainPage() {
                     summary={summary}
                     budgets={budgets}
                     expenses={expenses}
+                    activeTrip={activeTrip}
+                    onOpenTrips={() => setActiveTab("trips")}
+                    tripNames={tripNames}
                     referenceYear={viewedYear}
                     referenceMonth={viewedMonthIndex}
                     filterDay={filterDay}
@@ -236,6 +243,18 @@ export function MainPage() {
                   <BudgetSkeleton />
                 ) : (
                   <BudgetTab budgets={budgets} recurring={recurring} refetch={refetch} />
+                ))}
+
+              {activeTab === "trips" &&
+                (isLoading && !trips ? (
+                  <SkeletonBlock height={120} className="rounded-xl" />
+                ) : (
+                  <TripsTab
+                    trips={trips}
+                    refetch={refetch}
+                    onDeleteExpense={handleDeleteExpense}
+                    onEditExpense={handleEditExpense}
+                  />
                 ))}
             </div>
           </>

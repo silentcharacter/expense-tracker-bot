@@ -31,6 +31,7 @@ async def check_and_send_budget_alert(
     try:
         today = date.today()
         month_start = today.replace(day=1)
+        # Trip expenses count towards category budgets like any other spending.
         transactions = sheets.get_transactions(user.spreadsheet_id, since=month_start, until=today)
         categories = sheets.get_categories(user.spreadsheet_id)
 

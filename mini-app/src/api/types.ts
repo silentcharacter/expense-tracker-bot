@@ -65,6 +65,8 @@ export interface SummaryResponse {
   daily_totals: DailyTotal[];
   comparison?: PeriodComparison;
   days_remaining?: number;
+  /** Present only on a trip-scoped summary (GET /api/trips/:id/summary). */
+  trip?: TripEntry;
   spending_pace?: SpendingPace;
   default_currency?: string;
   default_currency_rate?: number | null;
@@ -86,6 +88,8 @@ export interface Expense {
   description: string;
   source: "voice" | "text" | "photo";
   is_recurring?: boolean;
+  /** Trip this expense belongs to; empty string means a regular (home) expense. */
+  trip_id?: string;
 }
 
 export interface ExpensesResponse {
@@ -107,6 +111,8 @@ export interface UpdateExpenseRequest {
   category: string;
   subcategory: string;
   date: string; // YYYY-MM-DD
+  /** Omit to keep the current attribution; "" detaches the expense from its trip. */
+  trip_id?: string;
 }
 
 // ── Budgets ───────────────────────────────────────────────────────────────────
@@ -140,7 +146,10 @@ export interface BudgetsResponse {
   base_currency: string;
   month: string;
   total_budget: number;
+  /** Everything spent this month, trips included. */
   total_spent: number;
+  /** The part of total_spent that belongs to trips. */
+  total_spent_trip?: number;
   budgets: BudgetEntry[];
 }
 
@@ -159,6 +168,7 @@ export interface UserSettings {
   budget_alerts: boolean;
   weekly_summary: boolean;
   insights: boolean;
+  active_trip_id?: string;
 }
 
 export interface UpdateSettingsRequest {
@@ -172,6 +182,7 @@ export interface UpdateSettingsRequest {
 export interface ExportParams {
   start?: string;
   end?: string;
+  trip_id?: string;
 }
 
 export interface UpdateBudgetsRequest {
@@ -236,4 +247,79 @@ export interface UpdateRecurringRequest {
   day_of_month: number;
   category: string;
   subcategory: string;
+}
+
+
+// ── Trips ─────────────────────────────────────────────────────────────────────
+
+export interface Trip {
+  id: string;
+  name: string;
+  emoji: string;
+  start_date: string; // YYYY-MM-DD
+  end_date: string | null; // null while the trip is still running
+  trip_currency: string;
+  budget: number | null;
+  is_open: boolean;
+  total_days: number | null;
+  created_at: string;
+}
+
+/** A trip plus the totals of the expenses attributed to it. */
+export interface TripEntry extends Trip {
+  total_base: number;
+  total_default: number;
+  transaction_count: number;
+  days: number;
+  daily_average: number;
+  daily_average_default: number;
+  budget_remaining: number | null;
+  budget_percentage: number | null;
+  is_active: boolean;
+}
+
+export interface TripsResponse {
+  base_currency: string;
+  default_currency: string;
+  default_currency_rate: number | null;
+  active_trip_id: string;
+  trips: TripEntry[];
+}
+
+export interface CreateTripRequest {
+  name: string;
+  start_date?: string;
+  end_date?: string | null;
+  emoji?: string;
+  trip_currency?: string;
+  budget?: number | null;
+  /** Tag new expenses with this trip. Defaults to true when it covers today. */
+  activate?: boolean;
+  /** Pull existing expenses inside the date range into the trip. */
+  assign_existing?: boolean;
+}
+
+export interface CreateTripResponse {
+  trip: TripEntry;
+  assigned: number;
+}
+
+export interface UpdateTripRequest {
+  name?: string;
+  start_date?: string;
+  end_date?: string | null;
+  emoji?: string;
+  trip_currency?: string;
+  budget?: number | null;
+  active?: boolean;
+}
+
+export interface AssignTripResponse {
+  assigned: number;
+  trip: TripEntry;
+}
+
+export interface DeleteTripResponse {
+  deleted: boolean;
+  detached_expenses: number;
 }

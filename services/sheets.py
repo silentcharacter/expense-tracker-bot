@@ -271,6 +271,7 @@ class SheetsService:
         since: Optional[date] = None,
         until: Optional[date] = None,
         limit: Optional[int] = None,
+        trip_id: Optional[str] = None,
     ) -> list[ExpenseRecord]:
         """Fetch transactions optionally filtered by date range.
 
@@ -283,11 +284,16 @@ class SheetsService:
             since:          Inclusive start date (UTC).
             until:          Inclusive end date (UTC).
             limit:          Maximum number of rows to return (most recent first).
+            trip_id:        None applies no trip filter; "" keeps only regular
+                            (non-trip) expenses; any other value keeps that trip.
 
         Returns:
             List of ExpenseRecord ordered by timestamp descending.
         """
         all_records = self._get_all_transactions(spreadsheet_id)
+
+        if trip_id is not None:
+            all_records = [r for r in all_records if r.trip_id == trip_id]
 
         if since or until:
             filtered: list[ExpenseRecord] = []
@@ -939,6 +945,43 @@ class SheetsService:
                 sheet.delete_rows(i + 1)
                 return True
         return False
+
+    # ── Trips (Firestore-only feature) ────────────────────────────────────────
+    #
+    # Trips live in a per-user Firestore subcollection. The legacy Sheets backend
+    # keeps the ``trip_id`` column on transactions (so records round-trip without
+    # loss) but cannot store the trip registry itself; the API turns these into
+    # a 501 rather than failing with an AttributeError.
+
+    def get_trips(self, spreadsheet_id: str) -> list:
+        """No trip registry in Sheets — always empty."""
+        return []
+
+    def get_trip(self, spreadsheet_id: str, trip_id: str):
+        return None
+
+    def add_trip(self, spreadsheet_id: str, trip):
+        raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
+
+    def update_trip(self, spreadsheet_id: str, trip_id: str, updates: dict):
+        raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
+
+    def delete_trip(self, spreadsheet_id: str, trip_id: str) -> bool:
+        raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
+
+    def set_transaction_trip(self, spreadsheet_id: str, record_id: str, trip_id: str) -> bool:
+        raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
+
+    def assign_transactions_to_trip(
+        self, spreadsheet_id: str, trip_id: str, since, until=None, overwrite: bool = False
+    ) -> int:
+        raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
+
+    def unassign_trip(self, spreadsheet_id: str, trip_id: str) -> int:
+        raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
+
+    def set_active_trip(self, telegram_id: int, trip_id: str) -> bool:
+        raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
 
     def clear_all_transactions(self, spreadsheet_id: str) -> int:
         """Delete every data row from the Transactions sheet, keeping the header.

@@ -10,6 +10,7 @@ from google.cloud import firestore as _fs
 
 from models.expense import ExpenseRecord, User
 from models.category import UserCategory, UserSubcategory, default_user_categories
+from models.trip import Trip
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,9 @@ class FirestoreService:
 
     def _rec_col(self, user_id: str) -> _fs.CollectionReference:
         return self._user_ref(user_id).collection("recurring")
+
+    def _trip_col(self, user_id: str) -> _fs.CollectionReference:
+        return self._user_ref(user_id).collection("trips")
 
     # ── Transactions ─────────────────────────────────────────────────────────
 
@@ -116,8 +120,17 @@ class FirestoreService:
         since: Optional[date] = None,
         until: Optional[date] = None,
         limit: Optional[int] = None,
+        trip_id: Optional[str] = None,
     ) -> list[ExpenseRecord]:
+        """Read transactions, optionally narrowed to a date range and/or a trip.
+
+        ``trip_id=None`` applies no trip filter; ``trip_id=""`` keeps only
+        regular (non-trip) expenses; any other value keeps that trip's expenses.
+        """
         all_records = self._get_all_transactions(user_id)
+
+        if trip_id is not None:
+            all_records = [r for r in all_records if r.trip_id == trip_id]
 
         if since or until:
             filtered = []
@@ -351,6 +364,123 @@ class FirestoreService:
         if not doc.exists:
             return False
         doc.reference.delete()
+        return True
+
+    # ── Trips ─────────────────────────────────────────────────────────────────
+
+    def get_trips(self, user_id: str) -> list[Trip]:
+        """Return every trip, newest start date first."""
+        trips: list[Trip] = []
+        for doc in self._trip_col(user_id).stream():
+            try:
+                trips.append(Trip.from_firestore_dict(doc.to_dict()))
+            except Exception as exc:
+                logger.warning("Malformed trip document for user %s: %s", user_id, exc)
+        return sorted(trips, key=lambda t: t.start_date, reverse=True)
+
+    def get_trip(self, user_id: str, trip_id: str) -> Optional[Trip]:
+        if not trip_id:
+            return None
+        doc = self._trip_col(user_id).document(trip_id).get()
+        if not doc.exists:
+            return None
+        try:
+            return Trip.from_firestore_dict(doc.to_dict())
+        except Exception as exc:
+            logger.warning("Malformed trip %s for user %s: %s", trip_id, user_id, exc)
+            return None
+
+    def add_trip(self, user_id: str, trip: Trip) -> Trip:
+        self._trip_col(user_id).document(trip.id).set(trip.to_firestore_dict())
+        logger.info("Added trip %s (%s) for user %s", trip.id, trip.name, user_id)
+        return trip
+
+    def update_trip(self, user_id: str, trip_id: str, updates: dict) -> Optional[Trip]:
+        """Patch a trip document; returns the updated trip or None if missing."""
+        doc_ref = self._trip_col(user_id).document(trip_id)
+        if not doc_ref.get().exists:
+            return None
+        doc_ref.update(updates)
+        logger.info("Updated trip %s for user %s", trip_id, user_id)
+        return self.get_trip(user_id, trip_id)
+
+    def delete_trip(self, user_id: str, trip_id: str) -> bool:
+        """Delete a trip and detach its expenses (the expenses themselves stay)."""
+        doc = self._trip_col(user_id).document(trip_id).get()
+        if not doc.exists:
+            return False
+        self.unassign_trip(user_id, trip_id)
+        doc.reference.delete()
+        logger.info("Deleted trip %s for user %s", trip_id, user_id)
+        return True
+
+    # ── Trip ↔ transaction assignment ─────────────────────────────────────────
+
+    def set_transaction_trip(self, user_id: str, record_id: str, trip_id: str) -> bool:
+        """Attach a single transaction to a trip (or detach it with an empty id)."""
+        doc_ref = self._tx_col(user_id).document(record_id)
+        if not doc_ref.get().exists:
+            return False
+        doc_ref.update({"trip_id": trip_id})
+        logger.info("Set trip_id=%r on transaction %s (user %s)", trip_id, record_id, user_id)
+        return True
+
+    def assign_transactions_to_trip(
+        self,
+        user_id: str,
+        trip_id: str,
+        since: date,
+        until: Optional[date] = None,
+        overwrite: bool = False,
+    ) -> int:
+        """Back-fill ``trip_id`` on every expense inside a date range.
+
+        Recurring expenses are never assigned: rent and subscriptions at home are
+        not trip spending, even when the cron fires mid-trip. Expenses already
+        belonging to another trip are skipped unless ``overwrite`` is set.
+
+        Returns:
+            Number of transactions updated.
+        """
+        records = self.get_transactions(user_id, since=since, until=until)
+        targets = [
+            r for r in records
+            if not r.recurring
+            and r.trip_id != trip_id
+            and (overwrite or not r.trip_id)
+        ]
+        for i in range(0, len(targets), 500):
+            batch = self._db.batch()
+            for r in targets[i : i + 500]:
+                batch.update(self._tx_col(user_id).document(r.id), {"trip_id": trip_id})
+            batch.commit()
+
+        logger.info(
+            "Assigned %d transactions to trip %s for user %s", len(targets), trip_id, user_id
+        )
+        return len(targets)
+
+    def unassign_trip(self, user_id: str, trip_id: str) -> int:
+        """Clear ``trip_id`` from every transaction of a trip. Returns the count."""
+        records = self.get_transactions(user_id, trip_id=trip_id)
+        for i in range(0, len(records), 500):
+            batch = self._db.batch()
+            for r in records[i : i + 500]:
+                batch.update(self._tx_col(user_id).document(r.id), {"trip_id": ""})
+            batch.commit()
+        if records:
+            logger.info(
+                "Detached %d transactions from trip %s (user %s)", len(records), trip_id, user_id
+            )
+        return len(records)
+
+    def set_active_trip(self, telegram_id: int, trip_id: str) -> bool:
+        """Point the user's "expenses go here" marker at a trip (or clear it)."""
+        ref = self._db.collection("users").document(str(telegram_id))
+        if not ref.get().exists:
+            return False
+        ref.update({"active_trip_id": trip_id})
+        logger.info("Active trip for user %s set to %r", telegram_id, trip_id)
         return True
 
     # ── Master Registry ───────────────────────────────────────────────────────

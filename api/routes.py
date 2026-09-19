@@ -457,6 +457,8 @@ async def _compute_spending_pace(
         "projected_discretionary_default": projected_discretionary_default,
         "available_per_day": available_per_day,
         "available_per_day_default": available_per_day_default,
+        "today_discretionary_spent": today_discretionary_spent,
+        "today_discretionary_spent_default": today_discretionary_spent_default,
         "status": status,
     }
 

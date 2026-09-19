@@ -25,6 +25,17 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
   const isOverBudget = totalDeviation > 0;
   const daysRemaining = Math.max(pace.days_in_month - pace.days_elapsed, 0);
 
+  // Today's allowance: the per-day figure is computed from completed days only,
+  // so today's own spending is still unaccounted for and subtracts from it.
+  const todaySpent = pace.today_discretionary_spent ?? 0;
+  const todaySpentDefault = pace.today_discretionary_spent_default;
+  const remainingToday = pace.available_per_day - todaySpent;
+  const remainingTodayDefault =
+    pace.available_per_day_default != null && todaySpentDefault != null
+      ? pace.available_per_day_default - todaySpentDefault
+      : undefined;
+  const isTodayOver = remainingToday < 0;
+
   // Default-currency counterparts so the projected/deviation figures reconcile
   // with the historical recurring total (see backend _recurring_base_total).
   const hasDefault =
@@ -118,6 +129,28 @@ export function SpendingPace({ pace }: SpendingPaceProps) {
         </div>
         <span className="amount text-base font-semibold" style={{ color: "var(--app-text-primary)" }}>
           {formatSpent(pace.available_per_day, pace.available_per_day_default ?? undefined)}
+        </span>
+      </div>
+
+      {/* Today's remaining allowance = per-day figure minus what today already cost */}
+      <div
+        className="rounded-lg p-3 flex items-center justify-between mt-2"
+        style={{ backgroundColor: "var(--app-secondary-bg)" }}
+      >
+        <div className="flex flex-col">
+          <span className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
+            Today you can spend
+          </span>
+          <span className="text-[11px]" style={{ color: "var(--app-text-secondary)" }}>
+            already spent today{" "}
+            <span className="amount">{formatSpent(todaySpent, todaySpentDefault)}</span>
+          </span>
+        </div>
+        <span
+          className="amount text-base font-semibold"
+          style={{ color: isTodayOver ? "var(--app-danger)" : "var(--app-text-primary)" }}
+        >
+          {formatSpent(remainingToday, remainingTodayDefault)}
         </span>
       </div>
     </div>

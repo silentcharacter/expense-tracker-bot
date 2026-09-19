@@ -299,6 +299,10 @@ async def test_summary_spending_pace_excludes_today(mock_sheets, mock_registry, 
     assert pace["projected_discretionary_default"] == pytest.approx(200.0 * 33.5 / 15 * 31)
     assert pace["available_per_day"] == pytest.approx((1000.0 - 200.0) / 16)
     assert pace["available_per_day_default"] == pytest.approx((1000.0 - 200.0) * 33.5 / 16)
+    # Today's own discretionary spend is reported separately so the UI can show
+    # what is left for today: available_per_day − today_discretionary_spent.
+    assert pace["today_discretionary_spent"] == pytest.approx(100.0)
+    assert pace["today_discretionary_spent_default"] == pytest.approx(100.0 * 33.5)
     assert pace["days_elapsed"] == 15
 
 

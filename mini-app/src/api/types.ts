@@ -48,6 +48,9 @@ export interface SpendingPace {
   projected_discretionary_default?: number;
   available_per_day: number;
   available_per_day_default?: number | null;
+  /** Non-recurring spending booked today (excluded from available_per_day). */
+  today_discretionary_spent?: number;
+  today_discretionary_spent_default?: number;
   status: "on_track" | "over_pace";
 }
 

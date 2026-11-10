@@ -62,7 +62,7 @@ export function OverviewTab({
         <ActiveTripBanner trip={activeTrip} onOpen={onOpenTrips} />
       )}
 
-      {filterDay === null && pace && <SpendingPace pace={pace} />}
+      {pace && <SpendingPace pace={pace} />}
 
       <DailyHeatmap
         expenses={expenseList}

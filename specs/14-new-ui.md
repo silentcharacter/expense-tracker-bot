@@ -133,7 +133,7 @@ The Overview tab has two filter dimensions that combine via AND:
 | none | Food & Drinks | Show all month, list filtered to Food & Drinks |
 | Apr 3 | Food & Drinks > Grocery | Show Apr 3 categories, list filtered to Grocery items on Apr 3 |
 
-Spending Pace is hidden when a day is selected (it's only meaningful for the full month).
+Spending Pace stays visible when a day is selected and keeps showing whole-month figures; it sits above the heatmap so the calendar does not shift.
 The category list always shows breakdown for the day filter context (or full month). The category filter affects only the transaction list.
 
 ## Interactions Summary

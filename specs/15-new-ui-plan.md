@@ -208,7 +208,7 @@ Per spec §1.1 — GitHub-style 30-day grid:
 ### 4.2 `SpendingPace`
 **New file:** `mini-app/src/components/overview/SpendingPace.tsx`
 
-Per spec §1.2 — **only shown when no day is selected**. Hidden in day-detail mode (rendered conditionally by OverviewTab based on `filterDay`).
+Per spec §1.2 — **always shown**, including when a day is selected in the heatmap (always reflects the whole month). Rendered above the heatmap so selecting a day does not shift the calendar.
 
 Two tracks:
 - **Day-to-day (discretionary)**:
@@ -261,8 +261,8 @@ Per spec §1.4:
 **New file:** `mini-app/src/components/tabs/OverviewTab.tsx`
 
 Composition order:
-1. `DailyHeatmap`
-2. `SpendingPace` — **rendered only when `filterDay === null`** (hidden in day-detail mode per spec §1.2)
+1. `SpendingPace` — always rendered (whole-month figures, independent of `filterDay`, per spec §1.2)
+2. `DailyHeatmap`
 3. `CategoryBudgetList` — always rendered, shows breakdown for the day filter context (or full month). The category filter affects only the transaction list, not the breakdown
 4. `TransactionList` — filtered by both `filterDay` AND `filterCategory` (composed via AND per spec Filter Composition table)
 
@@ -435,7 +435,7 @@ Keep: `pages/SettingsPage.tsx` (reused inside SettingsModal)
 7. Click day in heatmap → transactions filtered to that day
 8. Click category in By Category → transactions filtered to that category
 9. Spending pace shows correct projection: manually verify `projected_discretionary = (discretionary_spent / days_elapsed) × days_in_month` (recurring excluded)
-10. Spending Pace card is **hidden** when a day is selected in the heatmap
+10. Spending Pace card sits above the heatmap and stays visible (unchanged) when a day is selected
 11. Heatmap: future days are non-interactive; recurring-dominant days are purple; selected day scales up with white outline
 12. Category list: arrow toggles expand, row body toggles filter; subcategory click overrides parent; >90% bars are red
 13. Filter chip with × appears in Transactions header when category filter is active

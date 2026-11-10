@@ -1,4 +1,4 @@
-/** Overview sub-tab: active trip → heatmap → pace → category breakdown → transactions. */
+/** Overview sub-tab: active trip → pace → heatmap → category breakdown → transactions. */
 
 import type {
   BudgetsResponse,
@@ -62,6 +62,8 @@ export function OverviewTab({
         <ActiveTripBanner trip={activeTrip} onOpen={onOpenTrips} />
       )}
 
+      {filterDay === null && pace && <SpendingPace pace={pace} />}
+
       <DailyHeatmap
         expenses={expenseList}
         referenceYear={referenceYear}
@@ -69,8 +71,6 @@ export function OverviewTab({
         selectedDay={filterDay}
         onDaySelect={onSelectDay}
       />
-
-      {filterDay === null && pace && <SpendingPace pace={pace} />}
 
       <CategoryBudgetList
         budgets={budgetEntries}

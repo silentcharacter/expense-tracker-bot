@@ -35,6 +35,10 @@ CB_TRIP_START = "trip_start"           # ask for a new trip name
 CB_TRIP_END = "trip_end"               # finish the active trip
 CB_TRIP_LIST = "trip_list"             # show all trips
 CB_TRIP_RESUME = "trip_resume"         # trip_resume:<trip_id> → make active
+CB_QUICK_ADD = "qe_add"                # qe_add:<record_id> → make a quick-expense preset
+CB_QUICK_PRESS = "qe"                  # qe:<preset_id> → save a quick expense (/quick list)
+CB_QUICK_KEYBOARD = "qe_kb"            # qe_kb:show|hide → toggle the reply keyboard
+CB_QUICK_CANCEL = "qe_cancel"          # cancel a pending "how much?" prompt
 
 # Popular currencies shown on inline keyboards
 POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
@@ -42,29 +46,36 @@ POPULAR_CURRENCIES = ["USD", "EUR", "THB", "GBP", "JPY", "GEL", "ILS", "AED"]
 
 # ── Keyboard builders ────────────────────────────────────────────────────────
 
-def saved_keyboard(record_id: str, in_trip: bool = False) -> InlineKeyboardMarkup:
+def saved_keyboard(
+    record_id: str, in_trip: bool = False, can_add_quick: bool = True
+) -> InlineKeyboardMarkup:
     """Build the undo / edit / trip keyboard for a just-saved expense.
 
     Args:
-        record_id: Id of the saved expense.
-        in_trip:   Whether the expense is already attributed to a trip — only
-                   changes the button label.
+        record_id:     Id of the saved expense.
+        in_trip:       Whether the expense is already attributed to a trip — only
+                       changes the button label.
+        can_add_quick: Offer "⚡ Quick button" (turn this expense into a preset).
+                       Off for expenses that came from a quick button already.
     """
-    return InlineKeyboardMarkup(
+    rows = [
         [
-            [
-                InlineKeyboardButton("↩ Undo", callback_data=f"{CB_UNDO}:{record_id}"),
-                InlineKeyboardButton("✎ Category", callback_data=f"{CB_EDIT_CATEGORY}:{record_id}"),
-            ],
-            [
-                InlineKeyboardButton("✏ Description", callback_data=f"{CB_EDIT_DESCRIPTION}:{record_id}"),
-                InlineKeyboardButton(
-                    "🧳 Change trip" if in_trip else "🧳 Trip",
-                    callback_data=f"{CB_TRIP_PICK_FOR_RECORD}:{record_id}",
-                ),
-            ],
-        ]
-    )
+            InlineKeyboardButton("↩ Undo", callback_data=f"{CB_UNDO}:{record_id}"),
+            InlineKeyboardButton("✎ Category", callback_data=f"{CB_EDIT_CATEGORY}:{record_id}"),
+        ],
+        [
+            InlineKeyboardButton("✏ Description", callback_data=f"{CB_EDIT_DESCRIPTION}:{record_id}"),
+            InlineKeyboardButton(
+                "🧳 Change trip" if in_trip else "🧳 Trip",
+                callback_data=f"{CB_TRIP_PICK_FOR_RECORD}:{record_id}",
+            ),
+        ],
+    ]
+    if can_add_quick:
+        rows.append([
+            InlineKeyboardButton("⚡ Quick button", callback_data=f"{CB_QUICK_ADD}:{record_id}")
+        ])
+    return InlineKeyboardMarkup(rows)
 
 
 async def category_keyboard(
@@ -148,7 +159,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # module imports the callback-data constants from this one.
     from handlers import trips as trip_handlers
 
+    from handlers import quick as quick_handlers
+
     handlers.update(trip_handlers.callback_handlers())
+    handlers.update(quick_handlers.callback_handlers())
 
     handler = handlers.get(prefix)
     if handler:
@@ -244,7 +258,11 @@ async def _apply_category_update(
         await check_and_send_budget_alert(context.bot, user, updated, context.bot_data["sheets"])
         await query.edit_message_text(
             f"{_format_confirmation(updated, user.base_currency, cat_display)}\n\n✓ Saved",
-            reply_markup=saved_keyboard(record_id, in_trip=bool(updated.trip_id)),
+            reply_markup=saved_keyboard(
+                record_id,
+                in_trip=bool(updated.trip_id),
+                can_add_quick=updated.source != ExpenseSource.quick,
+            ),
             parse_mode="Markdown",
         )
     else:

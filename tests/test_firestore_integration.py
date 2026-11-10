@@ -335,3 +335,42 @@ def test_active_trip_pointer_round_trips_and_self_heals(firestore_service, clean
         assert firestore_service.find_user(user.telegram_id).active_trip_id == ""
     finally:
         firestore_service._db.collection("users").document(str(user.telegram_id)).delete()
+
+
+@pytest.mark.integration
+def test_quick_expenses_round_trip_on_the_user_document(firestore_service):
+    """Presets keep their order; the hidden flag and get_transaction work too."""
+    from models.expense import User
+    from models.quick_expense import QuickExpense
+
+    user = User(
+        telegram_id=int(TEST_USER_ID.split("_")[-1]),
+        display_name="Integration User",
+        spreadsheet_id=TEST_USER_ID,
+        base_currency="USD",
+        default_currency="THB",
+    )
+    firestore_service.register_user(user)
+    try:
+        items = [
+            QuickExpense(name="Taxi", category="transport", amount=150),
+            QuickExpense(name="Cafe", emoji="☕", category="food", amount=100),
+            QuickExpense(name="Groceries", category="food"),
+        ]
+        assert firestore_service.set_quick_expenses(user.telegram_id, items)
+        assert firestore_service.set_quick_keyboard_hidden(user.telegram_id, True)
+
+        stored = firestore_service.find_user(user.telegram_id)
+        assert [q.name for q in stored.quick_expenses] == ["Taxi", "Cafe", "Groceries"]
+        assert stored.quick_expenses[2].amount is None
+        assert stored.quick_keyboard_hidden is True
+        assert [q.id for q in firestore_service.get_quick_expenses(user.telegram_id)] == [
+            q.id for q in items
+        ]
+
+        record = _trip_record(1, 42.0)
+        firestore_service.append_transaction(TEST_USER_ID, record)
+        assert firestore_service.get_transaction(TEST_USER_ID, record.id).id == record.id
+        assert firestore_service.get_transaction(TEST_USER_ID, "missing") is None
+    finally:
+        firestore_service._db.collection("users").document(str(user.telegram_id)).delete()

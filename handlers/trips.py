@@ -21,7 +21,7 @@ from handlers.callbacks import (
     CB_TRIP_SET_ON_RECORD,
     CB_TRIP_START,
 )
-from models.expense import ExpenseRecord, User
+from models.expense import ExpenseRecord, ExpenseSource, User
 from models.trip import Trip
 from services.trip_service import resolve_active_trip, trip_totals
 
@@ -448,7 +448,11 @@ async def _cb_set_on_record(
         cat_display = f"{cat} / {sub}" if sub else cat
         await query.edit_message_text(
             f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n{status}",
-            reply_markup=saved_keyboard(record_id, in_trip=bool(trip_id)),
+            reply_markup=saved_keyboard(
+                record_id,
+                in_trip=bool(trip_id),
+                can_add_quick=record.source != ExpenseSource.quick,
+            ),
             parse_mode="Markdown",
         )
     else:

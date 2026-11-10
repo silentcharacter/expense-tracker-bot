@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from models.quick_expense import QuickExpense
+
 
 class ExpenseSource(str, Enum):
     """Source of an expense entry."""
@@ -14,6 +16,7 @@ class ExpenseSource(str, Enum):
     voice = "voice"
     text = "text"
     photo = "photo"
+    quick = "quick"
 
 
 class UserRole(str, Enum):
@@ -212,6 +215,29 @@ class User(BaseModel):
     active_trip_id: str = Field(
         default="", description="Trip that new expenses are tagged with; empty means none"
     )
+    quick_expenses: list[QuickExpense] = Field(
+        default_factory=list, description="One-tap presets shown as chat buttons (Firestore only)"
+    )
+    quick_keyboard_hidden: bool = Field(
+        default=False, description="User hid the quick-expense keyboard via /quick"
+    )
+
+    @field_validator("quick_expenses", mode="before")
+    @classmethod
+    def drop_malformed_quick(cls, v: object) -> list:
+        """Skip presets that no longer validate instead of failing the whole user."""
+        if not v:
+            return []
+        out = []
+        for item in v if isinstance(v, list) else []:
+            if isinstance(item, QuickExpense):
+                out.append(item)
+                continue
+            try:
+                out.append(QuickExpense.model_validate(item))
+            except Exception:  # noqa: BLE001 — one bad preset must not lock the user out
+                continue
+        return out
 
     @field_validator("base_currency", "default_currency")
     @classmethod
@@ -245,6 +271,8 @@ class User(BaseModel):
             "weekly_summary": self.weekly_summary,
             "insights": self.insights,
             "active_trip_id": self.active_trip_id,
+            "quick_expenses": [q.to_dict() for q in self.quick_expenses],
+            "quick_keyboard_hidden": self.quick_keyboard_hidden,
         }
 
     @classmethod

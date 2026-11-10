@@ -5,11 +5,9 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from models.expense import ExpenseRecord, ExpenseSource
-from models.category import category_label, subcategory_label
-from handlers.callbacks import saved_keyboard, _format_confirmation
+from models.expense import ExpenseSource
+from handlers.expense_saving import save_expense
 from services.tracing import RequestTracer
-from services.trip_service import resolve_active_trip
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +29,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     from services.user_registry import UserRegistry
     from services.gemini import GeminiService
-    from services.currency import CurrencyService
 
     registry: UserRegistry = context.bot_data["registry"]
     gemini: GeminiService = context.bot_data["gemini"]
-    currency_svc: CurrencyService = context.bot_data["currency"]
     sheets = context.bot_data["sheets"]
 
     tg_user = update.effective_user
@@ -76,57 +72,25 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
-        # ── 3. Convert currency ─────────────────────────────────────────────
-        try:
-            with tracer.step("currency_convert"):
-                amount_base, fx_rate = await currency_svc.convert(
-                    expense.amount, expense.currency, user.base_currency
-                )
-        except Exception as exc:
-            logger.exception("Currency conversion failed for %s→%s: %s", expense.currency, user.base_currency, exc)
-            amount_base = expense.amount
-            fx_rate = 1.0
-
-        # ── 4. Build pending record ─────────────────────────────────────────
+        # ── 3. Convert, save, alert ─────────────────────────────────────────
         raw_transcript = getattr(expense, "_raw_transcript", "")
-        with tracer.step("active_trip_lookup"):
-            trip = resolve_active_trip(sheets, user)
-
-        record = ExpenseRecord(
-            trip_id=trip.id if trip else "",
-            amount_local=expense.amount,
-            local_currency=expense.currency,
-            amount_base=amount_base,
-            base_currency=user.base_currency,
-            fx_rate=fx_rate,
+        record, text, keyboard = await save_expense(
+            context,
+            user,
+            amount=expense.amount,
+            currency=expense.currency,
             category=expense.category,
             subcategory=expense.subcategory,
             description=expense.description,
             source=ExpenseSource.voice,
             raw_input=raw_transcript,
+            tracer=tracer,
         )
 
-        # ── 5. Save immediately ─────────────────────────────────────────────
-        with tracer.step("sheets_write"):
-            sheets.append_transaction(user.spreadsheet_id, record)
-        context.user_data["last_expense"] = {"record": record}
-
-        from handlers.budget_alerts import check_and_send_budget_alert
-        await check_and_send_budget_alert(context.bot, user, record, sheets)
-
-        # ── 6. Show saved card ──────────────────────────────────────────────
-        cat_label = category_label(record.category)
-        sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
-        cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
-
-        saved_line = f"✓ Saved to {trip.label()}" if trip else "✓ Saved"
-        text = (
-            f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n"
-            f"{saved_line}"
-        )
+        # ── 4. Show saved card ──────────────────────────────────────────────
         with tracer.step("send_confirmation"):
             await status_msg.edit_text(
                 text,
-                reply_markup=saved_keyboard(record.id, in_trip=bool(trip)),
+                reply_markup=keyboard,
                 parse_mode="Markdown",
             )

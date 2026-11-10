@@ -30,7 +30,7 @@ from telegram.ext import (
 
 from models.expense import UserRole
 
-from handlers import commands, voice, text, callbacks, trips
+from handlers import commands, voice, text, callbacks, trips, quick
 from services.gemini import GeminiService
 from services.storage import get_storage
 from services.currency import CurrencyService
@@ -58,6 +58,7 @@ _PUBLIC_COMMANDS = [
     BotCommand("undo", "Delete last transaction"),
     BotCommand("export", "Export CSV"),
     BotCommand("trip", "Trip tracking on/off"),
+    BotCommand("quick", "Quick expense buttons"),
     BotCommand("settings", "Currency settings"),
     BotCommand("email", "Share spreadsheet"),
     BotCommand("feedback", "Send feedback"),
@@ -92,6 +93,7 @@ def _build_application() -> Application:
     app.add_handler(CommandHandler("email", commands.email))
     app.add_handler(CommandHandler("settings", commands.settings))
     app.add_handler(CommandHandler("trip", trips.trip_command))
+    app.add_handler(CommandHandler("quick", quick.quick_command))
     app.add_handler(CommandHandler("last", commands.last))
     app.add_handler(CommandHandler("undo", commands.undo))
     app.add_handler(CommandHandler("export", commands.export))

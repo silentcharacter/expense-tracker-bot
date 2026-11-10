@@ -33,6 +33,8 @@ expense-bot/
 ├── handlers/                # Telegram message handlers
 │   ├── commands.py          #   /start, /cat, /last, /undo, /export, /settings, /email, /broadcast
 │   ├── trips.py             #   /trip (start/end/list) + trip inline callbacks
+│   ├── quick.py             #   Quick-expense reply keyboard, /quick, presses, "⚡ Quick button"
+│   ├── expense_saving.py    #   Shared convert → save → alert → confirmation card
 │   ├── text.py              #   Plain text → Gemini → expense
 │   ├── voice.py             #   Voice OGG → Gemini → expense
 │   └── callbacks.py         #   Inline keyboard callbacks (confirm/edit/cancel, currency)
@@ -50,7 +52,8 @@ expense-bot/
 ├── models/                  # Pydantic models
 │   ├── expense.py           #   Expense, ExpenseRecord, User, enums (ExpenseSource, UserRole)
 │   ├── category.py          #   Category/subcategory registry
-│   └── trip.py              #   Trip (named date range tagged onto expenses)
+│   ├── trip.py              #   Trip (named date range tagged onto expenses)
+│   └── quick_expense.py     #   QuickExpense (one-tap preset shown as a chat button)
 ├── mini-app/                # Telegram Mini App (React SPA)
 │   ├── src/
 │   │   ├── api/             #   API client (summary, expenses, budgets, settings)
@@ -66,6 +69,7 @@ expense-bot/
 │   ├── test_auth.py         #   initData validation
 │   ├── test_budget_alerts.py
 │   ├── test_trips.py        #   Trip model, trip_service, /api/trips, /trip command
+│   ├── test_quick_expenses.py #  Quick expenses: model, bot flow, /api/quick-expenses
 │   ├── test_recurring_cron.py
 │   ├── test_firestore_integration.py  # requires Firestore emulator
 │   ├── test_currency_integration.py   # requires EXCHANGE_RATE_API_KEY env var
@@ -125,10 +129,27 @@ tests/test_config.yaml is committed to the repo and contains all required keys
 - Trip ids are 8 chars because they travel inside Telegram `callback_data` (64 bytes).
 - Trips require `STORAGE_BACKEND=firestore`; the Sheets backend answers 501.
 
+## Quick Expenses
+- One-tap presets (`models/quick_expense.QuickExpense`), max 9, stored as the
+  `quick_expenses` array on the user document (button order = array order).
+  Firestore only; the Sheets backend answers 501 / "requires Firestore".
+- Shown as a persistent reply keyboard (3 per row). A press arrives as plain text;
+  `handle_text` sends messages starting with an emoji to `handlers/quick.py`,
+  which matches the exact button text and saves without Gemini
+  (`ExpenseSource.quick`). Presets with `amount=None` ask for the amount
+  (`awaiting = "quick_amount:<id>"`). A press cancels any other pending prompt.
+- The bot caches users in memory, so an unmatched emoji message triggers one
+  fresh `find_user` before falling through to Gemini.
+- "⚡ Quick button" under a saved expense turns it into a preset; `/quick` lists
+  presets inline and shows/hides the keyboard (`User.quick_keyboard_hidden`).
+- A reply keyboard only changes when a message carries it: `PUT /api/quick-expenses`
+  makes the bot send one (`handlers.quick.send_keyboard_update`).
+
 ## Mini App API
 - Auth: `Authorization: tma <initData>` header, HMAC validated via bot token
 - Single Cloud Function serves both Telegram webhook (POST /) and Mini App REST (/api/*)
 - Endpoints: GET/PUT /api/settings, GET /api/summary, GET /api/expenses, DELETE /api/expenses/:id, GET/PUT /api/budgets
 - Trips: GET/POST /api/trips, PUT/DELETE /api/trips/:id, POST /api/trips/:id/assign, GET /api/trips/:id/summary
+- Quick expenses: GET/PUT /api/quick-expenses (PUT replaces the whole list)
 - Trip filters: `trip_id` on /api/summary, /api/expenses (`none` = home only) and /api/export
 - CORS enabled for cross-origin Mini App requests

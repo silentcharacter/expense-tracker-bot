@@ -76,7 +76,9 @@ class GeminiService:
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         self._client = genai.Client(
-            api_key=api_key or os.environ["GOOGLE_API_KEY"]
+            api_key=api_key or os.environ["GOOGLE_API_KEY"],
+            # system_instruction ("developer instruction") is rejected on v1.
+            http_options=types.HttpOptions(api_version="v1beta"),
         )
 
     # ── Public API ──────────────────────────────────────────────────────────

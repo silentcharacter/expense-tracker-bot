@@ -248,6 +248,46 @@ class UserRegistry:
         self._cache[telegram_id] = updated
         return updated
 
+    async def refresh_user(self, telegram_id: int) -> Optional[User]:
+        """Re-read the user from storage, bypassing and then updating the cache.
+
+        Needed where another process (the Mini App API on a different Cloud
+        Function instance) may have changed the user document.
+        """
+        user = self._sheets.find_user(telegram_id)
+        if user:
+            self._cache[telegram_id] = user
+        else:
+            self._cache.pop(telegram_id, None)
+        return user
+
+    async def set_quick_expenses(self, telegram_id: int, items: list) -> User:
+        """Persist the user's quick-expense presets and update the cache.
+
+        Raises:
+            NotImplementedError: On the Sheets backend.
+            UserRegistryError:   If the user is not found.
+        """
+        if not self._sheets.set_quick_expenses(telegram_id, items):
+            raise UserRegistryError(f"User {telegram_id} not found")
+        user = await self.get_user(telegram_id)
+        if user is None:
+            raise UserRegistryError(f"User {telegram_id} not found")
+        updated = user.model_copy(update={"quick_expenses": list(items)})
+        self._cache[telegram_id] = updated
+        return updated
+
+    async def set_quick_keyboard_hidden(self, telegram_id: int, hidden: bool) -> User:
+        """Persist whether the quick-expense keyboard is hidden and update the cache."""
+        if not self._sheets.set_quick_keyboard_hidden(telegram_id, hidden):
+            raise UserRegistryError(f"User {telegram_id} not found")
+        user = await self.get_user(telegram_id)
+        if user is None:
+            raise UserRegistryError(f"User {telegram_id} not found")
+        updated = user.model_copy(update={"quick_keyboard_hidden": hidden})
+        self._cache[telegram_id] = updated
+        return updated
+
     async def get_all_active_users(self) -> list[User]:
         """Return all active users, populating the cache along the way."""
         users = self._sheets.get_all_active_users()

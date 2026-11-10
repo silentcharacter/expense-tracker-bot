@@ -27,7 +27,7 @@ The Overview tab is the default landing screen. It supports two independent filt
 - Legend below: Less → More gradient and a "Recurring" swatch
 
 #### 1.2 Spending Pace
-**Only shown when no day is selected.** Hidden in day-detail mode.
+**Always shown**, above the daily heatmap, including when a day is selected — it always reflects the whole month.
 
 The pace card splits spending into two tracks:
 - **Day-to-day** (discretionary): excludes recurring expenses. Has a progress bar with:
@@ -133,7 +133,7 @@ The Overview tab has two filter dimensions that combine via AND:
 | none | Food & Drinks | Show all month, list filtered to Food & Drinks |
 | Apr 3 | Food & Drinks > Grocery | Show Apr 3 categories, list filtered to Grocery items on Apr 3 |
 
-Spending Pace is hidden when a day is selected (it's only meaningful for the full month).
+Spending Pace stays visible when a day is selected and keeps showing whole-month figures; it sits above the heatmap so the calendar does not shift.
 The category list always shows breakdown for the day filter context (or full month). The category filter affects only the transaction list.
 
 ## Interactions Summary

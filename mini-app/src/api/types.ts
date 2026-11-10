@@ -89,7 +89,7 @@ export interface Expense {
   category: string;
   subcategory: string;
   description: string;
-  source: "voice" | "text" | "photo";
+  source: "voice" | "text" | "photo" | "quick";
   is_recurring?: boolean;
   /** Trip this expense belongs to; empty string means a regular (home) expense. */
   trip_id?: string;
@@ -325,4 +325,28 @@ export interface AssignTripResponse {
 export interface DeleteTripResponse {
   deleted: boolean;
   detached_expenses: number;
+}
+
+// ── Quick expenses ────────────────────────────────────────────────────────────
+
+/** One-tap preset shown as a button in the bot chat. */
+export interface QuickExpense {
+  /** 8-char id; omit for new items and the server assigns one. */
+  id?: string;
+  name: string;
+  /** Leading emoji; empty means the category's emoji. */
+  emoji: string;
+  category: string;
+  subcategory: string;
+  /** Saved expense description; empty means `name`. */
+  description: string;
+  /** Fixed amount, or null to ask for it on every press. */
+  amount: number | null;
+  /** ISO 4217; empty means the user's default currency. */
+  currency: string;
+}
+
+export interface QuickExpensesResponse {
+  items: QuickExpense[];
+  limit: number;
 }

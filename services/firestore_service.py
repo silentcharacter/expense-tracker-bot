@@ -10,6 +10,7 @@ from google.cloud import firestore as _fs
 
 from models.expense import ExpenseRecord, User
 from models.category import UserCategory, UserSubcategory, default_user_categories
+from models.quick_expense import QuickExpense
 from models.trip import Trip
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,15 @@ class FirestoreService:
     def append_transaction(self, user_id: str, record: ExpenseRecord) -> None:
         self._tx_col(user_id).document(record.id).set(record.to_firestore_dict())
         logger.info("Appended transaction %s for user %s", record.id, user_id)
+
+    def get_transaction(self, user_id: str, expense_id: str) -> Optional[ExpenseRecord]:
+        """Return one transaction by id, or None."""
+        if not expense_id:
+            return None
+        doc = self._tx_col(user_id).document(expense_id).get()
+        if not doc.exists:
+            return None
+        return ExpenseRecord.from_firestore_dict(doc.to_dict())
 
     def delete_last_transaction(self, user_id: str) -> Optional[ExpenseRecord]:
         docs = list(
@@ -481,6 +491,34 @@ class FirestoreService:
             return False
         ref.update({"active_trip_id": trip_id})
         logger.info("Active trip for user %s set to %r", telegram_id, trip_id)
+        return True
+
+    # ── Quick expenses ────────────────────────────────────────────────────────
+    #
+    # Stored as an array on the user document rather than a subcollection: the
+    # bot reads the user document for every message anyway, so recognising a
+    # button press costs no extra read, and the array order is the button order.
+
+    def get_quick_expenses(self, telegram_id: int) -> list[QuickExpense]:
+        """Return the user's quick-expense presets, read fresh (bypassing caches)."""
+        user = self.find_user(telegram_id)
+        return list(user.quick_expenses) if user else []
+
+    def set_quick_expenses(self, telegram_id: int, items: list[QuickExpense]) -> bool:
+        """Replace the whole preset list (order included). Returns False if no user."""
+        ref = self._db.collection("users").document(str(telegram_id))
+        if not ref.get().exists:
+            return False
+        ref.update({"quick_expenses": [q.to_dict() for q in items]})
+        logger.info("Saved %d quick expenses for user %s", len(items), telegram_id)
+        return True
+
+    def set_quick_keyboard_hidden(self, telegram_id: int, hidden: bool) -> bool:
+        """Remember whether the user hid the quick-expense keyboard."""
+        ref = self._db.collection("users").document(str(telegram_id))
+        if not ref.get().exists:
+            return False
+        ref.update({"quick_keyboard_hidden": hidden})
         return True
 
     # ── Master Registry ───────────────────────────────────────────────────────

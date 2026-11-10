@@ -32,11 +32,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = await registry.get_user(tg_user.id)
 
     if user is not None:
+        from handlers.quick import quick_reply_markup
+
+        quick_hint = (
+            "\nTap a quick button below to save a usual expense in one go."
+            if user.quick_expenses and not user.quick_keyboard_hidden
+            else ""
+        )
         await update.message.reply_text(
             f"Welcome back, {user.display_name}!\n"
             f"Base currency: *{user.base_currency}* | Default: *{user.default_currency}*\n\n"
-            f"Send a voice message or type an expense.",
+            f"Send a voice message or type an expense.{quick_hint}",
             parse_mode="Markdown",
+            # Re-attaches the quick keyboard (or clears a stale one).
+            reply_markup=quick_reply_markup(user),
         )
         return
 

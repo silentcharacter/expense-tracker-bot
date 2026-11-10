@@ -32,6 +32,7 @@ import flask
 from flask import jsonify
 
 from models.expense import ExpenseRecord, User
+from models.quick_expense import QUICK_EXPENSES_LIMIT, QuickExpense, find_duplicate_button
 from models.trip import Trip
 from services.auth import validate_init_data
 from services.currency import CurrencyService
@@ -173,6 +174,10 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
         return await _api_trip_update(request, user, path.split("/")[2])
     elif path.startswith("/trips/") and method == "DELETE":
         return await _api_trip_delete(user, path.split("/")[2])
+    elif path == "/quick-expenses" and method == "GET":
+        return await _api_quick_get(user)
+    elif path == "/quick-expenses" and method == "PUT":
+        return await _api_quick_put(request, user)
     elif path == "/recurring" and method == "GET":
         return await _api_recurring_get(user)
     elif path == "/recurring" and method == "POST":
@@ -1792,3 +1797,92 @@ async def _api_recurring_log(user: User, entry_id: str) -> tuple:
 
     sheets.append_transaction(user.spreadsheet_id, record)
     return jsonify({"ok": True}), 201
+
+
+# ── Quick expenses ───────────────────────────────────────────────────────────
+
+_QUICK_UNSUPPORTED = "quick expenses require the firestore backend"
+
+
+def _quick_response(items: list[QuickExpense]) -> dict:
+    return {"items": [q.to_dict() for q in items], "limit": QUICK_EXPENSES_LIMIT}
+
+
+async def _api_quick_get(user: User) -> tuple:
+    """Return the user's quick-expense presets, in button order.
+
+    Read from storage rather than the cached user: the bot may have added a
+    preset ("⚡ Quick button") on another instance.
+    """
+    try:
+        items = _get_sheets().get_quick_expenses(user.telegram_id)
+    except NotImplementedError:
+        return jsonify({"error": _QUICK_UNSUPPORTED}), 501
+    return jsonify(_quick_response(items)), 200
+
+
+def _validate_quick_items(raw: object, user: User, categories: list) -> tuple[list[QuickExpense], str]:
+    """Validate the PUT body's items. Returns (items, error message or "")."""
+    if not isinstance(raw, list):
+        return [], "items must be a list"
+    if len(raw) > QUICK_EXPENSES_LIMIT:
+        return [], f"at most {QUICK_EXPENSES_LIMIT} quick expenses are allowed"
+
+    subs_by_cat = {c.slug: {s.slug for s in c.subcategories} for c in categories}
+    items: list[QuickExpense] = []
+    for i, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            return [], f"items[{i}] must be an object"
+        try:
+            item = QuickExpense.model_validate(entry)
+        except ValueError as exc:
+            errors = getattr(exc, "errors", None)
+            detail = errors()[0].get("msg", str(exc)) if callable(errors) else str(exc)
+            return [], f"items[{i}]: {detail}"
+        if item.category not in subs_by_cat:
+            return [], f"items[{i}]: unknown category '{item.category}'"
+        if item.subcategory and item.subcategory not in subs_by_cat[item.category]:
+            return [], f"items[{i}]: unknown subcategory '{item.subcategory}'"
+        if item.currency and not UserRegistry.validate_currency(item.currency):
+            return [], f"items[{i}]: '{item.currency}' is not a valid ISO 4217 code"
+        items.append(item)
+
+    ids = [q.id for q in items]
+    if len(ids) != len(set(ids)):
+        return [], "quick expense ids must be unique"
+    duplicate = find_duplicate_button(items, user.default_currency)
+    if duplicate:
+        return [], f"two quick expenses would show the same button: {duplicate}"
+    return items, ""
+
+
+async def _api_quick_put(request: flask.Request, user: User) -> tuple:
+    """Replace the whole preset list (create, edit, delete and reorder in one call).
+
+    After saving, the bot sends a short message carrying the new keyboard —
+    a reply keyboard only changes when a message brings it.
+    """
+    from handlers.quick import send_keyboard_update
+
+    body = request.get_json(silent=True) or {}
+    sheets = _get_sheets()
+    try:
+        categories = sheets.get_categories(user.spreadsheet_id)
+    except Exception as exc:
+        logger.exception("Could not load categories for %s: %s", user.telegram_id, exc)
+        return jsonify({"error": "could not load categories"}), 500
+
+    items, error = _validate_quick_items(body.get("items"), user, categories)
+    if error:
+        return jsonify({"error": error}), 400
+
+    try:
+        sheets.set_quick_expenses(user.telegram_id, items)
+    except NotImplementedError:
+        return jsonify({"error": _QUICK_UNSUPPORTED}), 501
+
+    # Fresh read: quick_keyboard_hidden may have changed via the bot.
+    fresh = sheets.find_user(user.telegram_id)
+    if fresh is not None:
+        await send_keyboard_update(fresh)
+    return jsonify(_quick_response(items)), 200

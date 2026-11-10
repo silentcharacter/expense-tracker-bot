@@ -70,8 +70,8 @@ function createApiClient(): ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { message?: string };
-      throw new ApiError(response.status, error.message ?? "Request failed");
+      const error = await response.json().catch(() => ({})) as { message?: string; error?: string };
+      throw new ApiError(response.status, error.message ?? error.error ?? "Request failed");
     }
 
     return response.json() as Promise<T>;
@@ -99,8 +99,8 @@ function createApiClient(): ApiClient {
         headers: { Authorization: `tma ${getInitData()}` },
       });
       if (!response.ok) {
-        const error = await response.json().catch(() => ({})) as { message?: string };
-        throw new ApiError(response.status, error.message ?? "Request failed");
+        const error = await response.json().catch(() => ({})) as { message?: string; error?: string };
+        throw new ApiError(response.status, error.message ?? error.error ?? "Request failed");
       }
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="([^"]+)"/);

@@ -983,6 +983,24 @@ class SheetsService:
     def set_active_trip(self, telegram_id: int, trip_id: str) -> bool:
         raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
 
+    # ── Quick expenses (Firestore only) ──────────────────────────────────────
+
+    def get_quick_expenses(self, telegram_id: int) -> list:
+        raise NotImplementedError("Quick expenses require STORAGE_BACKEND=firestore")
+
+    def set_quick_expenses(self, telegram_id: int, items: list) -> bool:
+        raise NotImplementedError("Quick expenses require STORAGE_BACKEND=firestore")
+
+    def set_quick_keyboard_hidden(self, telegram_id: int, hidden: bool) -> bool:
+        raise NotImplementedError("Quick expenses require STORAGE_BACKEND=firestore")
+
+    def get_transaction(self, spreadsheet_id: str, expense_id: str):
+        """Look the expense up among the most recent rows."""
+        for record in self.get_last_n_transactions(spreadsheet_id, 50):
+            if record.id == expense_id:
+                return record
+        return None
+
     def clear_all_transactions(self, spreadsheet_id: str) -> int:
         """Delete every data row from the Transactions sheet, keeping the header.
 

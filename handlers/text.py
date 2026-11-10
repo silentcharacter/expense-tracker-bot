@@ -6,12 +6,12 @@ import re
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from models.expense import ExpenseRecord, ExpenseSource
-from models.category import category_label, subcategory_label
-from handlers.callbacks import saved_keyboard, _format_confirmation, currency_keyboard, CB_ONBOARD_BASE
+from models.expense import ExpenseSource
+from handlers.callbacks import AWAITING_EDIT_AMOUNT
+from handlers.expense_saving import render_card, save_expense, update_expense_amount
 from services.tracing import RequestTracer
-from services.trip_service import resolve_active_trip
 from handlers.trips import AWAITING_TRIP_NAME, handle_trip_name_input
+from handlers import quick
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     message = update.message
     text = (message.text or "").strip()
 
-    # ── Handle awaiting states (onboarding / settings) ──────────────────────
     awaiting = context.user_data.get("awaiting")
+
+    # ── Quick-expense button press (takes over any pending prompt) ─────────
+    if not (awaiting or "").startswith("onboard_"):
+        if await quick.handle_quick_press(update, context, text):
+            return
+
+    # ── Handle awaiting states (onboarding / settings) ──────────────────────
     if awaiting:
         await _handle_awaiting_input(update, context, awaiting, text)
         return
@@ -53,11 +59,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     from services.user_registry import UserRegistry
     from services.gemini import GeminiService
-    from services.currency import CurrencyService
 
     registry: UserRegistry = context.bot_data["registry"]
     gemini: GeminiService = context.bot_data["gemini"]
-    currency_svc: CurrencyService = context.bot_data["currency"]
     sheets = context.bot_data["sheets"]
 
     tg_user = update.effective_user
@@ -88,58 +92,62 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             return
 
-        # ── Currency conversion ─────────────────────────────────────────────
-        try:
-            with tracer.step("currency_convert"):
-                amount_base, fx_rate = await currency_svc.convert(
-                    expense.amount, expense.currency, user.base_currency
-                )
-        except Exception as exc:
-            logger.exception("Currency conversion failed %s→%s: %s", expense.currency, user.base_currency, exc)
-            amount_base = expense.amount
-            fx_rate = 1.0
-
-        # ── Build pending record ────────────────────────────────────────────
-        with tracer.step("active_trip_lookup"):
-            trip = resolve_active_trip(sheets, user)
-
-        record = ExpenseRecord(
-            trip_id=trip.id if trip else "",
-            amount_local=expense.amount,
-            local_currency=expense.currency,
-            amount_base=amount_base,
-            base_currency=user.base_currency,
-            fx_rate=fx_rate,
+        record, confirmation, keyboard = await save_expense(
+            context,
+            user,
+            amount=expense.amount,
+            currency=expense.currency,
             category=expense.category,
             subcategory=expense.subcategory,
             description=expense.description,
             source=ExpenseSource.text,
             raw_input=text,
-        )
-        # ── Save immediately ────────────────────────────────────────────────
-        with tracer.step("sheets_write"):
-            sheets.append_transaction(user.spreadsheet_id, record)
-        context.user_data["last_expense"] = {"record": record}
-
-        from handlers.budget_alerts import check_and_send_budget_alert
-        await check_and_send_budget_alert(context.bot, user, record, sheets)
-
-        # ── Show saved card ─────────────────────────────────────────────────
-        cat_label = category_label(record.category)
-        sub_label = subcategory_label(record.category, record.subcategory) if record.subcategory else ""
-        cat_display = f"{cat_label} / {sub_label}" if sub_label else cat_label
-
-        saved_line = f"✓ Saved to {trip.label()}" if trip else "✓ Saved"
-        confirmation = (
-            f"{_format_confirmation(record, user.base_currency, cat_display)}\n\n"
-            f"{saved_line}"
+            tracer=tracer,
         )
         with tracer.step("send_confirmation"):
             await status_msg.edit_text(
                 confirmation,
-                reply_markup=saved_keyboard(record.id, in_trip=bool(trip)),
+                reply_markup=keyboard,
                 parse_mode="Markdown",
             )
+
+
+async def _handle_edit_amount_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, record_id: str, text: str
+) -> None:
+    """Apply a new amount typed after "💰 Amount"; an invalid reply keeps the prompt."""
+    from services.user_registry import UserRegistry
+
+    parsed = quick.parse_amount(text)
+    if parsed is None:
+        await update.message.reply_text("Send just the amount, e.g. 150 or 12 USD — or tap ✖ Cancel.")
+        return
+    amount, currency = parsed
+    if currency and not UserRegistry.validate_currency(currency):
+        await update.message.reply_text(f"'{currency}' is not a currency code I know. Send e.g. 150 or 12 USD.")
+        return
+
+    registry: UserRegistry = context.bot_data["registry"]
+    user = await registry.get_user(update.effective_user.id)
+    context.user_data.pop("awaiting", None)
+    if user is None:
+        await update.message.reply_text("You are not registered. Send /start to sign up.")
+        return
+
+    try:
+        record = await update_expense_amount(context, user, record_id, amount, currency)
+    except NotImplementedError:
+        await update.message.reply_text("Editing amounts requires the Firestore backend.")
+        return
+    if record is None:
+        await update.message.reply_text("Could not find the expense to update.")
+        return
+
+    storage = context.bot_data["sheets"]
+    trip = storage.get_trip(user.spreadsheet_id, record.trip_id) if record.trip_id else None
+    status = f"✓ Amount updated · {trip.label()}" if trip else "✓ Amount updated"
+    card, keyboard = render_card(record, user, status=status)
+    await update.message.reply_text(card, reply_markup=keyboard, parse_mode="Markdown")
 
 
 # ── Awaiting-state handler ───────────────────────────────────────────────────
@@ -154,6 +162,15 @@ async def _handle_awaiting_input(
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
+
+    if awaiting.startswith(AWAITING_EDIT_AMOUNT):
+        await _handle_edit_amount_input(update, context, awaiting[len(AWAITING_EDIT_AMOUNT):], text)
+        return
+
+    if awaiting.startswith(quick.AWAITING_QUICK_AMOUNT):
+        # The quick handler clears the state itself: an invalid amount keeps it.
+        await quick.handle_quick_amount_input(update, context, awaiting, text)
+        return
 
     if awaiting == "email_address":
         google_email = text.strip()

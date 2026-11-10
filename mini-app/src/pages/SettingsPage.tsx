@@ -7,6 +7,7 @@ import { SettingsRow } from "../components/settings/SettingsRow";
 import { ToggleRow } from "../components/settings/ToggleRow";
 import { CurrencyPickerModal } from "../components/settings/CurrencyPickerModal";
 import { ConfirmDialog } from "../components/settings/ConfirmDialog";
+import { QuickExpensesScreen } from "../components/settings/QuickExpensesScreen";
 import { SkeletonLine } from "../components/shared/Skeleton";
 import type { UserSettings } from "../api/types";
 
@@ -172,6 +173,7 @@ export function SettingsPage() {
   const [exportLoading, setExportLoading] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const [savingField, setSavingField] = useState<string | null>(null);
+  const [showQuick, setShowQuick] = useState(false);
 
   if (isLoading && !user) return <SettingsSkeleton />;
   if (!user) {
@@ -307,6 +309,17 @@ export function SettingsPage() {
         </div>
       </div>
 
+      {/* ── Bot ────────────────────────────────────────────────────────────── */}
+      <SectionHeader label="Bot" />
+      <div className="card">
+        <SettingsRow
+          icon="⚡"
+          label="Quick expenses"
+          subtitle="One-tap buttons in the bot chat"
+          onClick={() => setShowQuick(true)}
+        />
+      </div>
+
       {/* ── Data ───────────────────────────────────────────────────────────── */}
       <SectionHeader label="Data" />
       <div className="card">
@@ -390,6 +403,14 @@ export function SettingsPage() {
           current={settings[currencyPicker]}
           onSelect={(code) => handleCurrencySelect(currencyPicker, code)}
           onCancel={() => setCurrencyPicker(null)}
+        />
+      )}
+
+      {showQuick && (
+        <QuickExpensesScreen
+          defaultCurrency={settings.default_currency}
+          baseCurrency={settings.base_currency}
+          onClose={() => setShowQuick(false)}
         />
       )}
 

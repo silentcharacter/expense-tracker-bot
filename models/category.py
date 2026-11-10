@@ -183,6 +183,30 @@ def subcategory_label(category_slug: str, subcategory_slug: str) -> str:
     return sub.label if sub else subcategory_slug.replace("_", " ").capitalize()
 
 
+# Kept in sync with CATEGORY_CONFIG in mini-app/src/utils/categories.ts.
+CATEGORY_EMOJI: dict[str, str] = {
+    "food": "🍕",
+    "transport": "🚗",
+    "housing": "🏠",
+    "health": "💊",
+    "entertainment": "🎮",
+    "shopping": "🛍️",
+    "education": "📚",
+    "services": "✂️",
+    "subscriptions": "📱",
+    "travel": "✈️",
+    "other": "📦",
+}
+
+DEFAULT_CATEGORY_EMOJI = "⚡"
+"""Used for user-defined categories that have no emoji of their own."""
+
+
+def category_emoji(slug: str) -> str:
+    """Return the emoji for a category slug, or a generic one for custom categories."""
+    return CATEGORY_EMOJI.get((slug or "").lower(), DEFAULT_CATEGORY_EMOJI)
+
+
 # ── Per-user dynamic categories ──────────────────────────────────────────────
 
 from pydantic import BaseModel  # noqa: E402

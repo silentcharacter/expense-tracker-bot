@@ -72,6 +72,15 @@ function ExpenseRowContent({ expense, currency, tripName, onTap }: {
               ↻ auto
             </span>
           )}
+          {expense.source === "quick" && (
+            <span
+              className="text-[10px] flex-shrink-0"
+              title="Saved with a quick button"
+              aria-label="Saved with a quick button"
+            >
+              ⚡
+            </span>
+          )}
           {tripName && (
             <span
               className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 truncate max-w-[40%]"

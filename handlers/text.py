@@ -7,7 +7,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from models.expense import ExpenseSource
-from handlers.expense_saving import save_expense
+from handlers.callbacks import AWAITING_EDIT_AMOUNT
+from handlers.expense_saving import render_card, save_expense, update_expense_amount
 from services.tracing import RequestTracer
 from handlers.trips import AWAITING_TRIP_NAME, handle_trip_name_input
 from handlers import quick
@@ -111,6 +112,44 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
 
 
+async def _handle_edit_amount_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, record_id: str, text: str
+) -> None:
+    """Apply a new amount typed after "💰 Amount"; an invalid reply keeps the prompt."""
+    from services.user_registry import UserRegistry
+
+    parsed = quick.parse_amount(text)
+    if parsed is None:
+        await update.message.reply_text("Send just the amount, e.g. 150 or 12 USD — or tap ✖ Cancel.")
+        return
+    amount, currency = parsed
+    if currency and not UserRegistry.validate_currency(currency):
+        await update.message.reply_text(f"'{currency}' is not a currency code I know. Send e.g. 150 or 12 USD.")
+        return
+
+    registry: UserRegistry = context.bot_data["registry"]
+    user = await registry.get_user(update.effective_user.id)
+    context.user_data.pop("awaiting", None)
+    if user is None:
+        await update.message.reply_text("You are not registered. Send /start to sign up.")
+        return
+
+    try:
+        record = await update_expense_amount(context, user, record_id, amount, currency)
+    except NotImplementedError:
+        await update.message.reply_text("Editing amounts requires the Firestore backend.")
+        return
+    if record is None:
+        await update.message.reply_text("Could not find the expense to update.")
+        return
+
+    storage = context.bot_data["sheets"]
+    trip = storage.get_trip(user.spreadsheet_id, record.trip_id) if record.trip_id else None
+    status = f"✓ Amount updated · {trip.label()}" if trip else "✓ Amount updated"
+    card, keyboard = render_card(record, user, status=status)
+    await update.message.reply_text(card, reply_markup=keyboard, parse_mode="Markdown")
+
+
 # ── Awaiting-state handler ───────────────────────────────────────────────────
 
 async def _handle_awaiting_input(
@@ -123,6 +162,10 @@ async def _handle_awaiting_input(
     from services.user_registry import UserRegistry
 
     registry: UserRegistry = context.bot_data["registry"]
+
+    if awaiting.startswith(AWAITING_EDIT_AMOUNT):
+        await _handle_edit_amount_input(update, context, awaiting[len(AWAITING_EDIT_AMOUNT):], text)
+        return
 
     if awaiting.startswith(quick.AWAITING_QUICK_AMOUNT):
         # The quick handler clears the state itself: an invalid amount keeps it.

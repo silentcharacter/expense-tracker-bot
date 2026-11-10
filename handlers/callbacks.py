@@ -29,6 +29,8 @@ CB_SETTINGS_DEFAULT = "set_default"
 CB_SHOW_SETTINGS_BASE = "show_settings_base"
 CB_SHOW_SETTINGS_DEFAULT = "show_settings_default"
 CB_EDIT_DESCRIPTION = "edit_desc"
+CB_EDIT_AMOUNT = "edit_amt"             # edit_amt:<record_id> → ask for a new amount
+AWAITING_EDIT_AMOUNT = "edit_amount:"   # user_data["awaiting"] prefix, then the record id
 CB_TRIP_PICK_FOR_RECORD = "trip_for"   # trip_for:<record_id>  → show trip picker
 CB_TRIP_SET_ON_RECORD = "trip_set"     # trip_set:<record_id>:<trip_id|-> → assign
 CB_TRIP_START = "trip_start"           # ask for a new trip name
@@ -58,23 +60,27 @@ def saved_keyboard(
         can_add_quick: Offer "⚡ Quick button" (turn this expense into a preset).
                        Off for expenses that came from a quick button already.
     """
+    trip_button = InlineKeyboardButton(
+        "🧳 Change trip" if in_trip else "🧳 Trip",
+        callback_data=f"{CB_TRIP_PICK_FOR_RECORD}:{record_id}",
+    )
     rows = [
         [
             InlineKeyboardButton("↩ Undo", callback_data=f"{CB_UNDO}:{record_id}"),
-            InlineKeyboardButton("✎ Category", callback_data=f"{CB_EDIT_CATEGORY}:{record_id}"),
+            InlineKeyboardButton("💰 Amount", callback_data=f"{CB_EDIT_AMOUNT}:{record_id}"),
         ],
         [
+            InlineKeyboardButton("✎ Category", callback_data=f"{CB_EDIT_CATEGORY}:{record_id}"),
             InlineKeyboardButton("✏ Description", callback_data=f"{CB_EDIT_DESCRIPTION}:{record_id}"),
-            InlineKeyboardButton(
-                "🧳 Change trip" if in_trip else "🧳 Trip",
-                callback_data=f"{CB_TRIP_PICK_FOR_RECORD}:{record_id}",
-            ),
         ],
     ]
     if can_add_quick:
         rows.append([
-            InlineKeyboardButton("⚡ Quick button", callback_data=f"{CB_QUICK_ADD}:{record_id}")
+            trip_button,
+            InlineKeyboardButton("⚡ Quick button", callback_data=f"{CB_QUICK_ADD}:{record_id}"),
         ])
+    else:
+        rows.append([trip_button])
     return InlineKeyboardMarkup(rows)
 
 
@@ -153,6 +159,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         CB_SHOW_SETTINGS_BASE: _handle_show_settings_base,
         CB_SHOW_SETTINGS_DEFAULT: _handle_show_settings_default,
         CB_EDIT_DESCRIPTION: _handle_edit_description,
+        CB_EDIT_AMOUNT: _handle_edit_amount,
     }
 
     # Trip callbacks live in handlers/trips.py; imported lazily because that
@@ -516,6 +523,36 @@ async def _handle_edit_description(
     context.user_data["awaiting"] = f"edit_description:{record_id}"
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text("Send the new description for this expense:")
+
+
+async def _handle_edit_amount(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]
+) -> None:
+    """Ask for a new amount; the reply is handled by handlers/text.py."""
+    query = update.callback_query
+    record_id = parts[1] if len(parts) > 1 else ""
+
+    from services.user_registry import UserRegistry
+
+    registry: UserRegistry = context.bot_data["registry"]
+    user = await registry.get_user(update.effective_user.id)
+    if user is None:
+        await query.message.reply_text("You are not registered. Send /start to sign up.")
+        return
+
+    record = context.bot_data["sheets"].get_transaction(user.spreadsheet_id, record_id)
+    if record is None:
+        await query.message.reply_text("Could not find that expense. It may have been removed.")
+        return
+
+    context.user_data["awaiting"] = f"{AWAITING_EDIT_AMOUNT}{record_id}"
+    await query.message.reply_text(
+        f"Now: {record.amount_local:,.2f} {record.local_currency} — {record.description}\n"
+        f"Send the new amount, e.g. 150 (or 12 USD to change the currency):",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("✖ Cancel", callback_data=CB_QUICK_CANCEL)]]
+        ),
+    )
 
 
 # ── Formatting helpers ───────────────────────────────────────────────────

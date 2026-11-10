@@ -62,6 +62,13 @@ class FakeStorage:
     def get_transaction(self, user_id: str, expense_id: str) -> Optional[ExpenseRecord]:
         return self.records.get(expense_id)
 
+    def update_transaction(self, user_id: str, expense_id: str, updates: dict) -> Optional[ExpenseRecord]:
+        record = self.records.get(expense_id)
+        if record is None:
+            return None
+        self.records[expense_id] = record.model_copy(update=updates)
+        return self.records[expense_id]
+
     def get_transactions(self, user_id, since=None, until=None, limit=None, trip_id=None):
         return list(self.records.values())
 

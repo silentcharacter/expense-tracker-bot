@@ -24,6 +24,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from handlers.callbacks import (
+    AWAITING_EDIT_AMOUNT,
     CB_QUICK_ADD,
     CB_QUICK_CANCEL,
     CB_QUICK_KEYBOARD,
@@ -406,9 +407,11 @@ async def _cb_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE, parts
 
 
 async def _cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE, parts: list[str]) -> None:
-    """Drop a pending "how much?" prompt."""
+    """Drop a pending amount prompt (quick-expense amount or amount edit)."""
     query = update.callback_query
-    if (context.user_data.get("awaiting") or "").startswith(AWAITING_QUICK_AMOUNT):
+    if (context.user_data.get("awaiting") or "").startswith(
+        (AWAITING_QUICK_AMOUNT, AWAITING_EDIT_AMOUNT)
+    ):
         context.user_data.pop("awaiting", None)
     await query.edit_message_text("Cancelled.")
 

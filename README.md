@@ -133,7 +133,7 @@ TELEGRAM_WEBHOOK_SECRET: "<random_secret_for_webhook>"
 GOOGLE_API_KEY: "<your_gemini_api_key>"
 EXCHANGE_RATE_API_KEY: "<your_exchangerate_api_key>"
 STORAGE_BACKEND: "firestore"           # or "sheets"
-TIMEZONE: "Europe/Berlin"              # your local timezone
+TIMEZONE: "Europe/Berlin"              # default timezone; users can override via /settings timezone
 CRON_SECRET: "<random_secret_for_cron_auth>"
 SENTRY_DSN: ""                         # optional
 

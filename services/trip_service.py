@@ -6,6 +6,7 @@ from typing import Optional
 
 from models.expense import ExpenseRecord, User
 from models.trip import Trip
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,8 @@ def resolve_active_trip(storage, user: User, today: Optional[date] = None) -> Op
     trip_id = (user.active_trip_id or "").strip()
     if not trip_id:
         return None
+    # "Over" is judged against the user's own calendar day, not the server's.
+    today = today or timeutil.user_today(user)
 
     try:
         trip = storage.get_trip(user.spreadsheet_id, trip_id)
@@ -56,7 +59,8 @@ def trip_totals(
     Args:
         trip:    The trip being summarised.
         records: Expenses already filtered down to this trip.
-        today:   Override for "now" (tests).
+        today:   The user's current day (``timeutil.user_today(user)``); falls
+                 back to the deployment default zone when omitted.
 
     Returns:
         Dict with total/count/days/daily average and budget progress.

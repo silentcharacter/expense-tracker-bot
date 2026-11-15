@@ -11,6 +11,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from utils import timeutil
+
 
 class Trip(BaseModel):
     """A named date range that expenses can be attributed to."""
@@ -30,7 +32,13 @@ class Trip(BaseModel):
     budget: Optional[float] = Field(
         default=None, description="Optional trip budget in the user's base currency"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=timeutil.utc_now)
+
+    @field_validator("created_at")
+    @classmethod
+    def aware_created_at(cls, v: datetime) -> datetime:
+        """Aware UTC; naive legacy values are read as UTC."""
+        return timeutil.ensure_aware_utc(v)
 
     @field_validator("name")
     @classmethod
@@ -86,11 +94,11 @@ class Trip(BaseModel):
         """True once the trip's end date is in the past."""
         if self.end_date is None:
             return False
-        return self.end_date < (today or date.today())
+        return self.end_date < (today or timeutil.today())
 
     def day_count(self, today: Optional[date] = None) -> int:
         """Number of days elapsed so far (open trips count up to today)."""
-        today = today or date.today()
+        today = today or timeutil.today()
         last = self.end_date or today
         if last < self.start_date:
             return 0
@@ -131,9 +139,6 @@ class Trip(BaseModel):
         d = dict(data)
         if not d.get("end_date"):
             d["end_date"] = None
-        ts = d.get("created_at")
-        if ts is not None and hasattr(ts, "tzinfo") and ts.tzinfo is not None:
-            d["created_at"] = ts.replace(tzinfo=None)
         return cls(**d)
 
     def to_api_dict(self) -> dict:

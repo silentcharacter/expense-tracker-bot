@@ -69,7 +69,7 @@ class FakeStorage:
         self.records[expense_id] = record.model_copy(update=updates)
         return self.records[expense_id]
 
-    def get_transactions(self, user_id, since=None, until=None, limit=None, trip_id=None):
+    def get_transactions(self, user_id, since=None, until=None, limit=None, trip_id=None, tz=None):
         return list(self.records.values())
 
     def get_categories(self, user_id: str) -> list[UserCategory]:

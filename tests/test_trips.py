@@ -15,6 +15,7 @@ from models.category import UserCategory, UserSubcategory
 from models.expense import ExpenseRecord, ExpenseSource, User, UserRole, UserStatus
 from models.trip import Trip
 from services.trip_service import resolve_active_trip, trip_totals
+from utils import timeutil
 from tests.test_api import _call
 
 TG_ID = 42
@@ -40,15 +41,15 @@ class FakeStorage:
         self.recurring: list[dict] = []
 
     # transactions
-    def get_transactions(self, user_id, since=None, until=None, limit=None, trip_id=None):
+    def get_transactions(self, user_id, since=None, until=None, limit=None, trip_id=None, tz=None):
         out = list(self.records.values())
         if trip_id is not None:
             out = [r for r in out if r.trip_id == trip_id]
         if since or until:
             out = [
                 r for r in out
-                if not (since and r.timestamp.date() < since)
-                and not (until and r.timestamp.date() > until)
+                if not (since and r.local_date(tz) < since)
+                and not (until and r.local_date(tz) > until)
             ]
         out.sort(key=lambda r: r.timestamp, reverse=True)
         return out[:limit] if limit else out
@@ -97,14 +98,14 @@ class FakeStorage:
         del self.trips[trip_id]
         return True
 
-    def assign_transactions_to_trip(self, user_id, trip_id, since, until=None, overwrite=False):
+    def assign_transactions_to_trip(self, user_id, trip_id, since, until=None, overwrite=False, tz=None):
         count = 0
         for rid, r in list(self.records.items()):
             if r.recurring or r.trip_id == trip_id:
                 continue
             if r.trip_id and not overwrite:
                 continue
-            day = r.timestamp.date()
+            day = r.local_date(tz)
             if day < since or (until and day > until):
                 continue
             self.records[rid] = r.model_copy(update={"trip_id": trip_id})
@@ -536,8 +537,14 @@ async def test_expenses_can_be_filtered_by_trip_or_home() -> None:
     assert body["total"] == 2
 
 
-async def test_budgets_count_trip_spending_and_report_its_share() -> None:
+async def test_budgets_count_trip_spending_and_report_its_share(monkeypatch: pytest.MonkeyPatch) -> None:
     """Budgets cover every expense; the trip part is reported separately."""
+    # The fixtures live in September 2026; /api/budgets reads the current month.
+    from datetime import timezone
+
+    monkeypatch.setattr(
+        timeutil, "_utc_now", lambda: datetime(2026, 9, 15, 5, 0, tzinfo=timezone.utc)
+    )
     trip = _trip()
     categories = [
         UserCategory(
@@ -612,7 +619,7 @@ def test_start_trip_creates_and_activates() -> None:
     assert len(storage.trips) == 1
     trip = next(iter(storage.trips.values()))
     assert trip.name == "Georgia"
-    assert trip.start_date == date.today()
+    assert trip.start_date == timeutil.user_today(user)
     assert trip.is_open
     assert storage.active_trip[TG_ID] == trip.id
     assert user.active_trip_id == trip.id
@@ -630,7 +637,7 @@ def test_starting_a_second_trip_finishes_the_first() -> None:
 
     text, _ = _start_trip(storage, user, "Armenia")
 
-    assert storage.trips[first_id].end_date == date.today()
+    assert storage.trips[first_id].end_date == timeutil.user_today(user)
     assert user.active_trip_id != first_id
     assert "Finished" in text
 
@@ -644,7 +651,7 @@ def test_end_trip_reports_totals_and_stops_tagging() -> None:
 
     text, _ = _end_active_trip(storage, user)
 
-    assert storage.trips[trip.id].end_date == date.today()
+    assert storage.trips[trip.id].end_date == timeutil.user_today(user)
     assert user.active_trip_id == ""
     assert "30.00 USD" in text
 

@@ -5,7 +5,7 @@ MagicMock / AsyncMock so tests run offline and instantaneously.
 """
 
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobs.recurring_cron import _build_record, _process_user, run_recurring_cron
 from models.expense import ExpenseRecord, ExpenseSource, User, UserRole, UserStatus
+from utils import timeutil
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -161,7 +162,10 @@ async def test_build_record_sets_correct_timestamp():
     item = _make_template()
     record = await _build_record(_make_currency(), user, item, TODAY)
     assert record is not None
-    assert record.timestamp == datetime(TODAY.year, TODAY.month, TODAY.day, 0, 0, 0)
+    # Local midnight of the due day in the user's zone, stored as aware UTC.
+    assert record.timestamp.tzinfo is not None
+    assert record.local_date(user) == TODAY
+    assert timeutil.to_user_time(record.timestamp, user).time() == time(0, 0)
 
 
 # ── _process_user ─────────────────────────────────────────────────────────────

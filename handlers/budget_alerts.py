@@ -1,11 +1,11 @@
 """Budget threshold alert: notify when spending crosses 80% or 100% of category budget."""
 
 import logging
-from datetime import date
 
 from telegram import Bot
 
 from models.expense import ExpenseRecord, User
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,12 @@ async def check_and_send_budget_alert(
     if not user.budget_alerts or not record.amount_base:
         return
     try:
-        today = date.today()
+        today = timeutil.user_today(user)
         month_start = today.replace(day=1)
         # Trip expenses count towards category budgets like any other spending.
-        transactions = sheets.get_transactions(user.spreadsheet_id, since=month_start, until=today)
+        transactions = sheets.get_transactions(
+            user.spreadsheet_id, since=month_start, until=today, tz=user
+        )
         categories = sheets.get_categories(user.spreadsheet_id)
 
         cat_obj = next((c for c in categories if c.slug == record.category), None)

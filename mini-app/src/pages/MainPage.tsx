@@ -5,6 +5,7 @@ import { deleteExpense, updateExpense } from "../api/expenses";
 import type { UpdateExpenseRequest } from "../api/types";
 import { CurrencyProvider } from "../context/CurrencyContext";
 import { useUser } from "../context/UserContext";
+import { addMonths, daysInMonth as daysInMonthOf, monthStart, parseYmd } from "../utils/dates";
 import { useMainData } from "../hooks/useMainData";
 import { NewHeader } from "../components/layout/NewHeader";
 import { SubTabBar } from "../components/layout/SubTabBar";
@@ -76,7 +77,7 @@ function BudgetSkeleton() {
 }
 
 export function MainPage() {
-  const { user } = useUser();
+  const { user, today } = useUser();
   const [monthOffset, setMonthOffset] = useState(0);
   const {
     summary,
@@ -128,12 +129,12 @@ export function MainPage() {
     summary?.default_currency ?? user?.default_currency ?? baseCurrency;
   const rate = summary?.default_currency_rate ?? 1;
 
-  const now = new Date();
-  const viewedMonth = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-  const viewedYear = viewedMonth.getFullYear();
-  const viewedMonthIndex = viewedMonth.getMonth();
-  const daysInMonth = new Date(viewedYear, viewedMonthIndex + 1, 0).getDate();
-  const dayOfMonth = now.getDate();
+  // Month/day come from the user's timezone ("today" from context), not the device clock.
+  const viewedFirst = parseYmd(addMonths(monthStart(today), monthOffset));
+  const viewedYear = viewedFirst.year;
+  const viewedMonthIndex = viewedFirst.month - 1; // 0-based, as the tabs expect
+  const daysInMonth = daysInMonthOf(viewedYear, viewedFirst.month);
+  const dayOfMonth = parseYmd(today).day;
 
   const budgetTotal = (budgets?.budgets ?? []).reduce((s, b) => s + b.budget, 0);
   // Prefer the pace block's default-currency budget total: it is derived as

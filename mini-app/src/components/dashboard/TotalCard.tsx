@@ -9,6 +9,8 @@
 
 import type { PeriodComparison } from "../../api/types";
 import { useCurrencyOptional } from "../../context/CurrencyContext";
+import { useUser } from "../../context/UserContext";
+import { addMonths, formatYmd, monthStart } from "../../utils/dates";
 import { fmt, formatPercent } from "../../utils/format";
 
 interface TotalCardProps {
@@ -51,7 +53,11 @@ function periodLabel(period?: string, dateRange?: { start: string; end: string }
   return "Total · This week";
 }
 
-function previousPeriodName(period?: string, dateRange?: { start: string; end: string }): string {
+function previousPeriodName(
+  today: string,
+  period?: string,
+  dateRange?: { start: string; end: string },
+): string {
   if (dateRange && (!period || period === "month")) {
     const start = new Date(dateRange.start + "T12:00:00");
     const prev = new Date(start);
@@ -59,9 +65,7 @@ function previousPeriodName(period?: string, dateRange?: { start: string; end: s
     return prev.toLocaleDateString(undefined, { month: "long" });
   }
   if (!period || !dateRange) {
-    const now = new Date();
-    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return prev.toLocaleDateString(undefined, { month: "long" });
+    return formatYmd(addMonths(monthStart(today), -1), { month: "long" });
   }
   const start = new Date(dateRange.start + "T12:00:00");
   if (period === "today") return "yesterday";
@@ -88,6 +92,7 @@ export function TotalCard({
   excludedCount,
 }: TotalCardProps) {
   const currencyCtx = useCurrencyOptional();
+  const { today } = useUser();
 
   // Format an amount that has both base and default values (from the backend).
   const formatMoney = (amountBase: number, amountDefault?: number, decimals = 2): string => {
@@ -101,7 +106,7 @@ export function TotalCard({
   const comparisonText = comparison
     ? `${formatPercent(Math.abs(comparison.change_percent), false, 0)} ${
         comparison.direction === "up" ? "more" : "less"
-      } than ${previousPeriodName(period, dateRange)}`
+      } than ${previousPeriodName(today, period, dateRange)}`
     : null;
   const hasTotalBudget = budgetUsedPercent != null && budgetTotal != null && budgetTotal > 0;
   const hasDayToDayBudget =

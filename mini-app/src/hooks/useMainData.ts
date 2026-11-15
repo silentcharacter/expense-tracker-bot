@@ -16,6 +16,8 @@ import { fetchExpenses } from "../api/expenses";
 import { fetchRecurring } from "../api/recurring";
 import { fetchSummary } from "../api/summary";
 import { fetchTrips } from "../api/trips";
+import { useUser } from "../context/UserContext";
+import { addMonths, monthEnd, monthStart } from "../utils/dates";
 import type {
   BudgetsResponse,
   CategoriesResponse,
@@ -49,25 +51,19 @@ const EMPTY: MainData = {
   trips: null,
 };
 
-function monthBounds(offset: number): { since: string; until: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth() + offset;
-  const start = new Date(y, m, 1);
-  const end = new Date(y, m + 1, 0); // last day of target month
-  const iso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-      d.getDate(),
-    ).padStart(2, "0")}`;
-  return { since: iso(start), until: iso(end) };
+/** Month range for `offset` months from the user's current month (user "today"). */
+function monthBounds(offset: number, today: string): { since: string; until: string } {
+  const first = addMonths(monthStart(today), offset);
+  return { since: first, until: monthEnd(first) };
 }
 
-function cacheKey(offset: number): string {
-  return `main:${offset}`;
+function cacheKey(offset: number, tz: string, today: string): string {
+  // Keyed by timezone and user-day so a zone change never serves stale months.
+  return `main:${tz}:${today}:${offset}`;
 }
 
-async function fetchBundle(monthOffset: number): Promise<MainData> {
-  const { since, until } = monthBounds(monthOffset);
+async function fetchBundle(monthOffset: number, today: string): Promise<MainData> {
+  const { since, until } = monthBounds(monthOffset, today);
   // Sequential requests: Cloud Function concurrency=1; parallel bursts cause 503s.
   const summary = await fetchSummary("month", true, monthOffset);
   const budgets = await fetchBudgets(monthOffset);
@@ -81,6 +77,7 @@ async function fetchBundle(monthOffset: number): Promise<MainData> {
 }
 
 export function useMainData(monthOffset = 0): UseMainDataResult {
+  const { timezone, today, isLoading: userLoading } = useUser();
   const [data, setData] = useState<MainData>(EMPTY);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,15 +86,15 @@ export function useMainData(monthOffset = 0): UseMainDataResult {
     setIsLoading(true);
     setError(null);
     try {
-      const bundle = await fetchBundle(monthOffset);
+      const bundle = await fetchBundle(monthOffset, today);
       setData(bundle);
-      setCached(cacheKey(monthOffset), bundle);
+      setCached(cacheKey(monthOffset, timezone, today), bundle);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
       setIsLoading(false);
     }
-  }, [monthOffset]);
+  }, [monthOffset, timezone, today]);
 
   const refetch = useCallback(async () => {
     clearCache();
@@ -105,7 +102,10 @@ export function useMainData(monthOffset = 0): UseMainDataResult {
   }, [loadFresh]);
 
   useEffect(() => {
-    const cached = getCached<MainData>(cacheKey(monthOffset));
+    // Wait until settings have settled (success or failure) so the first
+    // fetch uses the user's timezone, not a brief device-zone fallback.
+    if (userLoading) return;
+    const cached = getCached<MainData>(cacheKey(monthOffset, timezone, today));
     if (cached) {
       setData(cached);
       setError(null);
@@ -114,7 +114,7 @@ export function useMainData(monthOffset = 0): UseMainDataResult {
     }
     setData(EMPTY);
     void loadFresh();
-  }, [monthOffset, loadFresh]);
+  }, [monthOffset, timezone, today, loadFresh, userLoading]);
 
   useEffect(() => {
     function onVisible() {

@@ -5,6 +5,8 @@
  */
 
 import { useCurrency } from "../../context/CurrencyContext";
+import { useUser } from "../../context/UserContext";
+import { addMonths, formatYmd, monthStart } from "../../utils/dates";
 import { useTelegram } from "../../hooks/useTelegram";
 import { getCurrencySymbol } from "../../utils/currency";
 
@@ -55,9 +57,8 @@ export function NewHeader({
   const { displayMode, baseCurrency, defaultCurrency, setMode } = useCurrency();
   const { hapticFeedback } = useTelegram();
 
-  const now = new Date();
-  const viewed = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-  const monthLabel = viewed.toLocaleDateString(undefined, {
+  const { today } = useUser();
+  const monthLabel = formatYmd(addMonths(monthStart(today), monthOffset), {
     month: "long",
     year: "numeric",
   });

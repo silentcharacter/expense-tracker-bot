@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import type { Expense, UpdateExpenseRequest } from "../../api/types";
 import { useCurrencyOptional } from "../../context/CurrencyContext";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../../utils/categories";
+import { useUser } from "../../context/UserContext";
+import { toLocalDateStr } from "../../utils/dates";
 import { formatAmount } from "../../utils/format";
 import { ConfirmDialog } from "../settings/ConfirmDialog";
 import { SwipeableRow } from "../shared/SwipeableRow";
@@ -24,9 +26,12 @@ interface TransactionListProps {
   tripNames?: Record<string, string>;
 }
 
-function formatShortDate(isoString: string): string {
-  const d = new Date(isoString);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+function formatShortDate(isoString: string, tz: string): string {
+  return new Date(isoString).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: tz,
+  });
 }
 
 function formatDayHeader(iso: string): string {
@@ -39,8 +44,9 @@ function filterName(filter: CategoryFilterSel): string {
   return getCategoryLabel(filter.category);
 }
 
-function ExpenseRowContent({ expense, currency, tripName, onTap }: {
+function ExpenseRowContent({ expense, currency, tripName, timezone, onTap }: {
   expense: Expense;
+  timezone: string;
   currency: ReturnType<typeof useCurrencyOptional>;
   tripName?: string;
   onTap?: () => void;
@@ -95,7 +101,7 @@ function ExpenseRowContent({ expense, currency, tripName, onTap }: {
           )}
         </p>
         <p className="text-xs" style={{ color: "var(--app-text-secondary)" }}>
-          {expense.subcategory || getCategoryLabel(expense.category)} · {formatShortDate(expense.timestamp)}
+          {expense.subcategory || getCategoryLabel(expense.category)} · {formatShortDate(expense.timestamp, timezone)}
         </p>
       </div>
 
@@ -130,6 +136,7 @@ export function TransactionList({
   tripNames,
 }: TransactionListProps) {
   const currency = useCurrencyOptional();
+  const { timezone } = useUser();
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const [leftSwipedId, setLeftSwipedId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -171,7 +178,7 @@ export function TransactionList({
   }
 
   const filtered = expenses.filter((e) => {
-    if (filterDay && e.timestamp.slice(0, 10) !== filterDay) return false;
+    if (filterDay && toLocalDateStr(e.timestamp, timezone) !== filterDay) return false;
     if (filterCategory) {
       if (e.category !== filterCategory.category) return false;
       if (filterCategory.subcategory && e.subcategory !== filterCategory.subcategory) return false;
@@ -247,6 +254,7 @@ export function TransactionList({
                 >
                   <ExpenseRowContent
                     expense={expense}
+                    timezone={timezone}
                     currency={currency}
                     tripName={expense.trip_id ? tripNames?.[expense.trip_id] : undefined}
                     onTap={() => handleRowTap(expense.id)}
@@ -263,6 +271,7 @@ export function TransactionList({
                 >
                   <ExpenseRowContent
                     expense={expense}
+                    timezone={timezone}
                     currency={currency}
                     tripName={expense.trip_id ? tripNames?.[expense.trip_id] : undefined}
                     onTap={() => handleRowTap(expense.id)}

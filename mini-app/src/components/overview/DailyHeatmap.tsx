@@ -10,7 +10,9 @@
 import { useMemo } from "react";
 import type { Expense } from "../../api/types";
 import { useCurrency } from "../../context/CurrencyContext";
+import { useUser } from "../../context/UserContext";
 import { useTelegram } from "../../hooks/useTelegram";
+import { daysInMonth as daysInMonthOf, makeYmd, partsInTz, weekdayOf } from "../../utils/dates";
 
 interface DailyHeatmapProps {
   expenses: Expense[];
@@ -34,22 +36,22 @@ interface DayStats {
 }
 
 function isoDate(y: number, m: number, d: number): string {
-  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return makeYmd(y, m + 1, d);
 }
 
-function computeDays(expenses: Expense[], y: number, m: number): DayStats[] {
-  const now = new Date();
-  const daysInMonth = new Date(y, m + 1, 0).getDate();
-  const isCurrentMonth = y === now.getFullYear() && m === now.getMonth();
-  const isPastMonth =
-    y < now.getFullYear() || (y === now.getFullYear() && m < now.getMonth());
-  const todayDay = isCurrentMonth ? now.getDate() : isPastMonth ? daysInMonth : 0;
+/** `m` is a 0-based month; `tz` is the user's zone, `today` their "YYYY-MM-DD" today. */
+function computeDays(expenses: Expense[], y: number, m: number, tz: string, today: string): DayStats[] {
+  const [ty, tm, td] = today.split("-").map(Number);
+  const daysInMonth = daysInMonthOf(y, m + 1);
+  const isCurrentMonth = y === ty && m + 1 === tm;
+  const isPastMonth = y < ty || (y === ty && m + 1 < tm);
+  const todayDay = isCurrentMonth ? td : isPastMonth ? daysInMonth : 0;
 
   const byDay = new Map<number, { total: number; totalDefault: number; recurring: number; count: number }>();
   for (const e of expenses) {
-    const d = new Date(e.timestamp);
-    if (d.getFullYear() !== y || d.getMonth() !== m) continue;
-    const day = d.getDate();
+    const p = partsInTz(e.timestamp, tz);
+    if (p.year !== y || p.month - 1 !== m) continue;
+    const day = p.day;
     const entry = byDay.get(day) ?? { total: 0, totalDefault: 0, recurring: 0, count: 0 };
     entry.total += e.amount_base;
     entry.totalDefault += e.amount_default;
@@ -121,9 +123,11 @@ export function DailyHeatmap({
   const { format } = useCurrency();
   const { hapticFeedback } = useTelegram();
 
+  const { timezone, today } = useUser();
+
   const days = useMemo(
-    () => computeDays(expenses, referenceYear, referenceMonth),
-    [expenses, referenceYear, referenceMonth],
+    () => computeDays(expenses, referenceYear, referenceMonth, timezone, today),
+    [expenses, referenceYear, referenceMonth, timezone, today],
   );
   const thresholds = useMemo(() => computeThresholds(days), [days]);
   const selected = selectedDay ? days.find((d) => d.iso === selectedDay) ?? null : null;
@@ -135,7 +139,7 @@ export function DailyHeatmap({
   }
 
   const DOW_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-  const offset = (new Date(referenceYear, referenceMonth, 1).getDay() + 6) % 7;
+  const offset = (weekdayOf(makeYmd(referenceYear, referenceMonth + 1, 1)) + 6) % 7;
 
   return (
     <div className="card">

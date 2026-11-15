@@ -11,12 +11,13 @@ same day is therefore a no-op.
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
 from models.expense import ExpenseRecord, ExpenseSource, User
 from services.currency import CurrencyService
 from services.storage import get_storage
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +32,14 @@ async def run_recurring_cron(
     Args:
         sheets:   Optional pre-built SheetsService (injected by tests).
         currency: Optional pre-built CurrencyService (injected by tests).
-        today:    Override the "today" date (injected by tests).
+        today:    Override the "today" date (injected by tests). When omitted,
+                  each user's own current day is used (bot setting ``timezone``).
 
     Returns:
         Summary dict: ``{"users": int, "inserted": int, "skipped": int, "errors": int}``.
     """
     sheets = sheets or get_storage()
     currency = currency or CurrencyService()
-    today = today or date.today()
 
     summary = {"users": 0, "inserted": 0, "skipped": 0, "errors": 0}
 
@@ -52,7 +53,8 @@ async def run_recurring_cron(
     for user in users:
         summary["users"] += 1
         try:
-            inserted, skipped, errors = await _process_user(sheets, currency, user, today)
+            user_today = today or timeutil.user_today(user)
+            inserted, skipped, errors = await _process_user(sheets, currency, user, user_today)
             summary["inserted"] += inserted
             summary["skipped"] += skipped
             summary["errors"] += errors
@@ -79,7 +81,7 @@ async def _process_user(
     # Pre-fetch this month's existing transactions for idempotency check.
     month_start = today.replace(day=1)
     existing = sheets.get_transactions(
-        user.spreadsheet_id, since=month_start, until=today
+        user.spreadsheet_id, since=month_start, until=today, tz=user
     )
     existing_template_ids = {
         r.recurring_template_id
@@ -170,7 +172,8 @@ async def _build_record(
             local_currency = base_currency
 
     return ExpenseRecord(
-        timestamp=datetime(today.year, today.month, today.day, 0, 0, 0),
+        # Local midnight of the due day in the user's zone, stored as aware UTC.
+        timestamp=timeutil.start_of_day(today, user),
         amount_local=amount_local,
         local_currency=local_currency,
         amount_base=amount_base,

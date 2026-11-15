@@ -392,15 +392,18 @@ async def test_get_transactions_called_with_current_month_range():
     sheets = _make_sheets([record], [_food_cat(budget=1000.0)])
 
     fixed_today = date(2026, 4, 15)
-    with patch("handlers.budget_alerts.date") as mock_date:
-        mock_date.today.return_value = fixed_today
-        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+    from datetime import datetime, timezone
+
+    # 17:30 UTC on Apr 14 is already 00:30 on Apr 15 in Asia/Bangkok (test default).
+    frozen = datetime(2026, 4, 14, 17, 30, tzinfo=timezone.utc)
+    with patch("utils.timeutil._utc_now", return_value=frozen):
         await check_and_send_budget_alert(bot, user, record, sheets)
 
     sheets.get_transactions.assert_called_once_with(
         SPREADSHEET_ID,
         since=date(2026, 4, 1),
         until=fixed_today,
+        tz=user,
     )
 
 

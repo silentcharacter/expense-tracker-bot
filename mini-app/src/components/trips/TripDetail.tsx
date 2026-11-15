@@ -11,6 +11,7 @@ import type {
   UpdateExpenseRequest,
 } from "../../api/types";
 import { useCurrency } from "../../context/CurrencyContext";
+import { useUser } from "../../context/UserContext";
 import { getCategoryColor, getCategoryEmoji, getCategoryLabel } from "../../utils/categories";
 import { TransactionList } from "../dashboard/TransactionList";
 import { ConfirmDialog } from "../settings/ConfirmDialog";
@@ -25,13 +26,6 @@ interface TripDetailProps {
   onChanged: () => Promise<void>;
   onDeleteExpense?: (id: string) => Promise<void>;
   onEditExpense?: (id: string, data: UpdateExpenseRequest) => Promise<void>;
-}
-
-function todayIso(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-    now.getDate(),
-  ).padStart(2, "0")}`;
 }
 
 function ActionButton({
@@ -71,6 +65,7 @@ export function TripDetail({
   onEditExpense,
 }: TripDetailProps) {
   const { format, formatLive } = useCurrency();
+  const { today } = useUser();
 
   const [current, setCurrent] = useState<TripEntry>(trip);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -123,7 +118,7 @@ export function TripDetail({
 
   const finishTrip = () =>
     run(async () => {
-      await updateTrip(current.id, { end_date: todayIso(), active: false });
+      await updateTrip(current.id, { end_date: today, active: false });
       return "Trip finished — new expenses are no longer tagged.";
     });
 

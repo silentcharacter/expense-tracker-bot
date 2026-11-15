@@ -29,4 +29,5 @@ sentry-sdk[gcp]>=2.0.0
 # Utilities
 python-dateutil>=2.9.0
 pytz>=2024.1
+tzdata>=2024.1  # IANA zones for zoneinfo (utils/timeutil.py) on images without system tzdata
 pyyaml>=6.0

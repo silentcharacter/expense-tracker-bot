@@ -79,15 +79,18 @@ def _make_record(**kwargs) -> ExpenseRecord:
     return ExpenseRecord(**defaults)
 
 
-def _frozen_date(year: int, month: int, day: int) -> type[date]:
-    """Build a date subclass with a deterministic today()."""
+def _frozen_date(year: int, month: int, day: int):
+    """Freeze the clock so the user's local "today" is the given date.
 
-    class FrozenDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return cls(year, month, day)
+    05:00 UTC is the same calendar day in every zone from UTC-5 to UTC+18,
+    including the test default (Asia/Bangkok, 12:00 local).
+    """
+    from datetime import timezone as _tz
 
-    return FrozenDate
+    return patch(
+        "utils.timeutil._utc_now",
+        return_value=datetime(year, month, day, 5, 0, tzinfo=_tz.utc),
+    )
 
 
 # ── Test helper ───────────────────────────────────────────────────────────────
@@ -248,7 +251,7 @@ async def test_summary_month_includes_spending_pace(mock_sheets, mock_registry, 
     ]
     mock_sheets.get_budgets.return_value = {"food": 600.0, "housing": 500.0}
 
-    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+    with _frozen_date(2026, 3, 16):
         body, status = await _call(
             "GET", "/api/summary", mock_sheets, mock_registry,
             args={"period": "month"}, mock_currency=mock_currency,
@@ -281,7 +284,7 @@ async def test_summary_spending_pace_excludes_today(mock_sheets, mock_registry, 
     mock_sheets.get_recurring.return_value = []
     mock_sheets.get_budgets.return_value = {"food": 1000.0}
 
-    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+    with _frozen_date(2026, 3, 16):
         body, status = await _call(
             "GET", "/api/summary", mock_sheets, mock_registry,
             args={"period": "month"}, mock_currency=mock_currency,
@@ -334,7 +337,7 @@ async def test_recurring_total_uses_historical_rate_for_materialised(
     ]
     mock_sheets.get_budgets.return_value = {"housing": 500.0}
 
-    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+    with _frozen_date(2026, 3, 16):
         body, status = await _call(
             "GET", "/api/summary", mock_sheets, mock_registry,
             args={"period": "month"}, mock_currency=mock_currency,
@@ -374,7 +377,7 @@ async def test_budget_total_reconciles_in_default_currency(
     ]
     mock_sheets.get_budgets.return_value = {"housing": 500.0}
 
-    with patch("api.routes.date", _frozen_date(2026, 3, 16)):
+    with _frozen_date(2026, 3, 16):
         body, status = await _call(
             "GET", "/api/summary", mock_sheets, mock_registry,
             args={"period": "month"}, mock_currency=mock_currency,
@@ -401,7 +404,7 @@ async def test_summary_spending_pace_omitted_on_first_day(mock_sheets, mock_regi
         _make_record(amount_base=100.0, category="food", timestamp=datetime(2026, 3, 1, 9, 0, 0)),
     ]
 
-    with patch("api.routes.date", _frozen_date(2026, 3, 1)):
+    with _frozen_date(2026, 3, 1):
         body, status = await _call(
             "GET", "/api/summary", mock_sheets, mock_registry,
             args={"period": "month"}, mock_currency=mock_currency,

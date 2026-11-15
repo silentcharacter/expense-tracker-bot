@@ -17,6 +17,7 @@ import requests.exceptions
 
 from models.expense import ExpenseRecord, User
 from models.category import UserCategory, UserSubcategory, default_user_categories
+from utils import timeutil
 
 # Module-level category cache: spreadsheet_id → (list[UserCategory], expiry_timestamp)
 _category_cache: dict[str, tuple[list[UserCategory], float]] = {}
@@ -272,6 +273,7 @@ class SheetsService:
         until: Optional[date] = None,
         limit: Optional[int] = None,
         trip_id: Optional[str] = None,
+        tz: "timeutil.TzLike" = None,
     ) -> list[ExpenseRecord]:
         """Fetch transactions optionally filtered by date range.
 
@@ -281,11 +283,13 @@ class SheetsService:
 
         Args:
             spreadsheet_id: User's Spreadsheet ID.
-            since:          Inclusive start date (UTC).
-            until:          Inclusive end date (UTC).
+            since:          Inclusive start date (calendar day in ``tz``).
+            until:          Inclusive end date (calendar day in ``tz``).
             limit:          Maximum number of rows to return (most recent first).
             trip_id:        None applies no trip filter; "" keeps only regular
                             (non-trip) expenses; any other value keeps that trip.
+            tz:             User (or zone) whose calendar defines the days;
+                            defaults to the TIMEZONE deployment zone.
 
         Returns:
             List of ExpenseRecord ordered by timestamp descending.
@@ -296,9 +300,10 @@ class SheetsService:
             all_records = [r for r in all_records if r.trip_id == trip_id]
 
         if since or until:
+            day_tz = timeutil.resolve_timezone(None) if tz is None else tz
             filtered: list[ExpenseRecord] = []
             for r in all_records:
-                d = r.timestamp.date()
+                d = r.local_date(day_tz)
                 if since and d < since:
                     continue
                 if until and d > until:
@@ -523,6 +528,7 @@ class SheetsService:
         budget_alerts: Optional[bool] = None,
         weekly_summary: Optional[bool] = None,
         insights: Optional[bool] = None,
+        timezone: Optional[str] = None,
     ) -> bool:
         """Update mutable settings for an existing user in the Registry.
 
@@ -555,6 +561,8 @@ class SheetsService:
             updates["weekly_summary"] = str(weekly_summary).upper()
         if insights is not None:
             updates["insights"] = str(insights).upper()
+        if timezone is not None:
+            updates["timezone"] = timezone
 
         for field_name, value in updates.items():
             col_idx = headers.index(field_name)  # 0-based
@@ -973,7 +981,7 @@ class SheetsService:
         raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
 
     def assign_transactions_to_trip(
-        self, spreadsheet_id: str, trip_id: str, since, until=None, overwrite: bool = False
+        self, spreadsheet_id: str, trip_id: str, since, until=None, overwrite: bool = False, tz=None
     ) -> int:
         raise NotImplementedError("Trips require STORAGE_BACKEND=firestore")
 

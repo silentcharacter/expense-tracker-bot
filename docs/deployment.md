@@ -214,6 +214,11 @@ gcloud scheduler jobs create http expense-bot-recurring \
 
 `0 9 * * *` — daily at 09:00 in the specified timezone.
 
+The scheduler time zone only decides *when* the job fires. Which templates are due is decided
+per user from their own calendar day (bot setting `timezone`, default `TIMEZONE`), so a user
+whose local day differs from the server's gets the templates for *their* day; the per-month
+idempotency check prevents duplicates.
+
 ### 4.3 Update the secret (if mismatched)
 
 If the job was created with the wrong secret, update it (always use single quotes):

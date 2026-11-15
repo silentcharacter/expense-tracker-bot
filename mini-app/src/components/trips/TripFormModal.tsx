@@ -1,6 +1,7 @@
 /** Create / edit a trip: name, emoji, dates, optional destination currency and budget. */
 
 import { useState } from "react";
+import { useUser } from "../../context/UserContext";
 import type { CreateTripRequest, TripEntry, UpdateTripRequest } from "../../api/types";
 
 interface TripFormModalProps {
@@ -13,19 +14,13 @@ interface TripFormModalProps {
 
 const EMOJI_OPTIONS = ["🧳", "✈️", "🏝️", "🏔️", "🚗", "⛺️", "🚆", "🛳️"];
 
-function todayIso(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-    now.getDate(),
-  ).padStart(2, "0")}`;
-}
-
 export function TripFormModal({ trip, onCreate, onUpdate, onClose }: TripFormModalProps) {
+  const { today } = useUser();
   const isEdit = trip !== undefined;
 
   const [name, setName] = useState(trip?.name ?? "");
   const [emoji, setEmoji] = useState(trip?.emoji ?? "🧳");
-  const [startDate, setStartDate] = useState(trip?.start_date ?? todayIso());
+  const [startDate, setStartDate] = useState(trip?.start_date ?? today);
   const [endDate, setEndDate] = useState(trip?.end_date ?? "");
   const [tripCurrency, setTripCurrency] = useState(trip?.trip_currency ?? "");
   const [budget, setBudget] = useState(trip?.budget != null ? String(trip.budget) : "");

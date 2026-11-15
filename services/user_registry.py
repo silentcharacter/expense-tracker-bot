@@ -2,7 +2,6 @@
 
 import logging
 import os
-from datetime import datetime
 from typing import Optional
 
 from google.oauth2.credentials import Credentials as OAuthCredentials
@@ -10,6 +9,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from models.expense import User, UserRole, UserStatus
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ class UserRegistry:
             spreadsheet_id=spreadsheet_id,
             base_currency=base_currency.upper(),
             default_currency=default_currency.upper(),
-            created_at=datetime.utcnow(),
+            created_at=timeutil.utc_now(),
             role=UserRole.user,
             status=UserStatus.active,
         )
@@ -193,6 +193,7 @@ class UserRegistry:
         budget_alerts: Optional[bool] = None,
         weekly_summary: Optional[bool] = None,
         insights: Optional[bool] = None,
+        timezone: Optional[str] = None,
     ) -> User:
         """Update mutable settings for a user.
 
@@ -206,12 +207,14 @@ class UserRegistry:
             budget_alerts:    Toggle budget-alert notifications (optional).
             weekly_summary:   Toggle weekly-summary notifications (optional).
             insights:         Toggle insights notifications (optional).
+            timezone:         IANA timezone name, e.g. "Europe/Kyiv" (optional);
+                              "" resets to the TIMEZONE default.
 
         Returns:
             Updated User object.
 
         Raises:
-            ValueError:        On invalid currency codes.
+            ValueError:        On invalid currency codes or timezone names.
             UserRegistryError: If the user is not found.
         """
         if base_currency is not None:
@@ -219,10 +222,18 @@ class UserRegistry:
         if default_currency is not None:
             self.validate_currency(default_currency, raise_on_invalid=True)
 
+        if timezone is not None:
+            timezone = timezone.strip()
+            if timezone and not timeutil.is_valid_timezone(timezone):
+                raise ValueError(
+                    f"Unknown timezone '{timezone}'. Use an IANA name like Europe/Kyiv or Asia/Bangkok."
+                )
+
         user = await self.get_user(telegram_id)
         if user is None:
             raise UserRegistryError(f"User {telegram_id} not found")
 
+        tz_kwargs = {"timezone": timezone} if timezone is not None else {}
         self._sheets.update_user_settings(
             telegram_id,
             base_currency=base_currency,
@@ -230,6 +241,7 @@ class UserRegistry:
             budget_alerts=budget_alerts,
             weekly_summary=weekly_summary,
             insights=insights,
+            **tz_kwargs,
         )
 
         model_updates: dict[str, object] = {}
@@ -243,6 +255,8 @@ class UserRegistry:
             model_updates["weekly_summary"] = weekly_summary
         if insights is not None:
             model_updates["insights"] = insights
+        if timezone is not None:
+            model_updates["timezone"] = timezone
 
         updated = user.model_copy(update=model_updates)
         self._cache[telegram_id] = updated

@@ -6,6 +6,9 @@ import { updateSettings, exportExpenses, clearAllExpenses } from "../api/setting
 import { SettingsRow } from "../components/settings/SettingsRow";
 import { ToggleRow } from "../components/settings/ToggleRow";
 import { CurrencyPickerModal } from "../components/settings/CurrencyPickerModal";
+import { TimezonePickerModal } from "../components/settings/TimezonePickerModal";
+import { monthStart } from "../utils/dates";
+import { timezoneLabel } from "../utils/timezones";
 import { ConfirmDialog } from "../components/settings/ConfirmDialog";
 import { QuickExpensesScreen } from "../components/settings/QuickExpensesScreen";
 import { SkeletonLine } from "../components/shared/Skeleton";
@@ -58,8 +61,8 @@ function DateRangePicker({
   onExport: (start: string, end: string) => void;
   onCancel: () => void;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const firstOfMonth = today.slice(0, 8) + "01";
+  const { today } = useUser();
+  const firstOfMonth = monthStart(today);
   const [start, setStart] = useState(firstOfMonth);
   const [end, setEnd] = useState(today);
 
@@ -161,7 +164,7 @@ type CurrencyField = "base_currency" | "default_currency";
 type Dialog = "clear" | "delete" | null;
 
 export function SettingsPage() {
-  const { user, isLoading, refreshUser } = useUser();
+  const { user, isLoading, refreshUser, timezone, timezoneIsDefault } = useUser();
 
   // Local optimistic copy of mutable settings while saves are in flight
   const [local, setLocal] = useState<Partial<UserSettings>>({});
@@ -174,6 +177,7 @@ export function SettingsPage() {
   const [clearLoading, setClearLoading] = useState(false);
   const [savingField, setSavingField] = useState<string | null>(null);
   const [showQuick, setShowQuick] = useState(false);
+  const [showTimezone, setShowTimezone] = useState(false);
 
   if (isLoading && !user) return <SettingsSkeleton />;
   if (!user) {
@@ -218,6 +222,16 @@ export function SettingsPage() {
     setCurrencyPicker(null);
     await saveField(field, { [field]: code } as Partial<UserSettings>);
   }
+
+  async function handleTimezoneSelect(tz: string) {
+    setShowTimezone(false);
+    // "" resets to the server default.
+    await saveField("timezone", { timezone: tz });
+  }
+
+  // Optimistic while saving: a local "" means Default, a local name means explicit.
+  const tzIsDefault = "timezone" in local ? !local.timezone : timezoneIsDefault;
+  const tzCurrent = "timezone" in local && local.timezone ? local.timezone : timezone;
 
   async function handleToggle(field: "budget_alerts" | "weekly_summary" | "insights", value: boolean) {
     await saveField(field, { [field]: value } as Partial<UserSettings>);
@@ -307,6 +321,33 @@ export function SettingsPage() {
             }
           />
         </div>
+      </div>
+
+      {/* ── Regional ───────────────────────────────────────────────────────── */}
+      <SectionHeader label="Regional" />
+      <div className="card">
+        <SettingsRow
+          icon="🕒"
+          label="Timezone"
+          subtitle={
+            tzIsDefault
+              ? `Default (${timezoneLabel(tzCurrent)})`
+              : timezoneLabel(tzCurrent)
+          }
+          onClick={() => setShowTimezone(true)}
+          right={
+            <span
+              className="text-xs font-bold px-2.5 py-1 rounded-lg"
+              style={{
+                background: "color-mix(in srgb, var(--app-accent) 20%, transparent)",
+                color: "var(--app-accent)",
+                opacity: savingField === "timezone" ? 0.6 : 1,
+              }}
+            >
+              {tzIsDefault ? "Default" : tzCurrent.split("/").pop()?.replace(/_/g, " ")}
+            </span>
+          }
+        />
       </div>
 
       {/* ── Bot ────────────────────────────────────────────────────────────── */}
@@ -403,6 +444,15 @@ export function SettingsPage() {
           current={settings[currencyPicker]}
           onSelect={(code) => handleCurrencySelect(currencyPicker, code)}
           onCancel={() => setCurrencyPicker(null)}
+        />
+      )}
+
+      {showTimezone && (
+        <TimezonePickerModal
+          current={tzCurrent}
+          isDefault={tzIsDefault}
+          onSelect={(tz) => void handleTimezoneSelect(tz)}
+          onCancel={() => setShowTimezone(false)}
         />
       )}
 

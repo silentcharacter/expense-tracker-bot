@@ -1,5 +1,7 @@
 /** Formatting helpers for amounts, dates, and percentages. */
 
+import { formatYmd, toLocalDateStr, todayInTz, yesterdayInTz } from "./dates";
+
 /**
  * Single amount-formatting helper. Every JSX currency render should go through
  * this function (or `CurrencyContext.format`) — never hardcode `$` or `฿`.
@@ -42,41 +44,34 @@ export function formatPercent(value: number, showSign = false, decimals = 1): st
   return `${sign}${value.toFixed(decimals)}%`;
 }
 
-export function formatDate(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleDateString(undefined, {
+/** Absolute date (e.g. "Jan 5, 2026") of an instant, in the user's timezone. */
+export function formatDate(isoString: string, tz: string): string {
+  return new Date(isoString).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: tz,
   });
 }
 
-export function formatDateRelative(isoString: string): string {
-  const date = new Date(isoString);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-  if (dateOnly.getTime() === today.getTime()) {
-    return "Today";
-  }
-  if (dateOnly.getTime() === yesterday.getTime()) {
-    return "Yesterday";
-  }
-
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+/**
+ * "Today" / "Yesterday" / weekday-date label, relative to the user's today
+ * (`todayYmd`, defaults to now in `tz`) rather than the device clock.
+ */
+export function formatDateRelative(isoString: string, tz: string, todayYmd?: string): string {
+  const day = toLocalDateStr(isoString, tz);
+  const today = todayYmd ?? todayInTz(tz);
+  if (day === today) return "Today";
+  if (day === yesterdayInTz(tz, today)) return "Yesterday";
+  return formatYmd(day, { weekday: "long", month: "long", day: "numeric" });
 }
 
-export function formatTime(isoString: string): string {
+/** Time of day of an instant in the user's timezone. */
+export function formatTime(isoString: string, tz: string): string {
   return new Date(isoString).toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: tz,
   });
 }
+

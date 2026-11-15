@@ -4,7 +4,7 @@ import asyncio
 import csv
 import io
 import logging
-from datetime import date, timedelta, datetime
+from datetime import timedelta, datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import Forbidden, TelegramError
@@ -12,6 +12,7 @@ from telegram.ext import ContextTypes
 
 from models.category import category_label
 from handlers.callbacks import currency_keyboard, CB_ONBOARD_BASE, CB_SHOW_SETTINGS_BASE, CB_SHOW_SETTINGS_DEFAULT
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +85,14 @@ async def email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # ── /settings ────────────────────────────────────────────────────────────────
 
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/settings [base|default <CURRENCY>] — view or update currency settings.
+    """/settings [base|default <CURRENCY> | timezone <Area/City>] — view or update settings.
 
     Examples:
-      /settings            → show current settings
-      /settings base EUR   → set base currency to EUR
-      /settings default THB → set default currency to THB
+      /settings                     → show current settings
+      /settings base EUR            → set base currency to EUR
+      /settings default THB         → set default currency to THB
+      /settings timezone Europe/Kyiv → set the timezone that defines "today"
+      /settings timezone default    → follow the bot default (TIMEZONE)
     """
     from services.user_registry import UserRegistry
 
@@ -122,7 +125,11 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             f"Current settings:\n"
             f"Base currency: *{user.base_currency}*\n"
-            f"Default currency: *{user.default_currency}*",
+            f"Default currency: *{user.default_currency}*\n"
+            # Backticks: zone names like America/New_York contain "_" (Markdown italics).
+            f"Timezone: `{timeutil.user_timezone_name(user)}`"
+            f"{'' if user.timezone else ' (default)'}\n"
+            f"Change it with /settings timezone Area/City",
             parse_mode="Markdown",
             reply_markup=keyboard,
         )
@@ -133,16 +140,35 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "Usage:\n"
             "  /settings base <CURRENCY>\n"
-            "  /settings default <CURRENCY>\n\n"
+            "  /settings default <CURRENCY>\n"
+            "  /settings timezone <Area/City>\n\n"
             "Example: /settings base USD"
         )
         return
 
     field = args[0].lower()
+
+    if field in ("timezone", "tz"):
+        tz_name = args[1].strip()
+        if tz_name.lower() in ("default", "reset", "-"):
+            tz_name = ""
+        try:
+            updated = await registry.update_settings(tg_user.id, timezone=tz_name)
+        except ValueError as exc:
+            await update.message.reply_text(str(exc))
+            return
+        today_local = timeutil.user_today(updated)
+        await update.message.reply_text(
+            f"Timezone set to {timeutil.user_timezone_name(updated)}"
+            f"{'' if updated.timezone else ' (default)'}.\n"
+            f"Today for you is {today_local.strftime('%a %d %b %Y')}."
+        )
+        return
+
     new_code = args[1].upper()
 
     if field not in ("base", "default"):
-        await update.message.reply_text("Field must be 'base' or 'default'.")
+        await update.message.reply_text("Field must be 'base', 'default' or 'timezone'.")
         return
 
     base = new_code if field == "base" else user.base_currency
@@ -188,7 +214,7 @@ async def last(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     lines = [f"Last {len(records)} transactions:"]
     for i, r in enumerate(records, 1):
-        ts = r.timestamp.strftime("%d %b %H:%M")
+        ts = timeutil.to_user_time(r.timestamp, user).strftime("%d %b %H:%M")
         lines.append(
             f"{i}. {ts} — {r.amount_local:,.2f} {r.local_currency} "
             f"[{category_label(r.category)}] {r.description}"
@@ -239,7 +265,7 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     args = context.args or []
-    today_date = date.today()
+    today_date = timeutil.user_today(user)
 
     if args:
         try:
@@ -255,7 +281,7 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         since = today_date.replace(day=1)
         until = today_date
 
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
+    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until, tz=user)
     if not records:
         await update.message.reply_text(
             f"No transactions between {since} and {until}."
@@ -269,7 +295,7 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                      "fx_rate", "category", "subcategory", "description", "source"])
     for r in records:
         writer.writerow([
-            r.timestamp.strftime("%Y-%m-%d %H:%M"),
+            timeutil.to_user_time(r.timestamp, user).strftime("%Y-%m-%d %H:%M"),
             r.amount_local,
             r.local_currency,
             r.amount_base,

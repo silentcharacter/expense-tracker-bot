@@ -1,13 +1,14 @@
 """Pydantic models for expenses, records, and users."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from models.quick_expense import QuickExpense
+from utils import timeutil
 
 
 class ExpenseSource(str, Enum):
@@ -76,7 +77,10 @@ class ExpenseRecord(BaseModel):
     """Full expense record as stored in the Transactions sheet."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(
+        default_factory=timeutil.utc_now,
+        description="Moment of the expense, tz-aware UTC (legacy naive values are read as UTC)",
+    )
     amount_local: float = Field(..., description="Amount in original currency")
     local_currency: str = Field(..., description="ISO 4217 original currency")
     amount_base: float = Field(..., description="Amount converted to user's base currency")
@@ -103,6 +107,16 @@ class ExpenseRecord(BaseModel):
             return v.strip().upper() == "TRUE"
         return bool(v)
 
+    @field_validator("timestamp")
+    @classmethod
+    def aware_timestamp(cls, v: datetime) -> datetime:
+        """Store and compare timestamps as aware UTC; naive legacy values are UTC."""
+        return timeutil.ensure_aware_utc(v)
+
+    def local_date(self, tz: "timeutil.TzLike" = None) -> date:
+        """Calendar day of this expense in the given (user's) timezone."""
+        return timeutil.local_date(self.timestamp, tz)
+
     def to_firestore_dict(self) -> dict:
         """Serialise record to a Firestore-compatible dict."""
         return {
@@ -126,11 +140,8 @@ class ExpenseRecord(BaseModel):
     @classmethod
     def from_firestore_dict(cls, data: dict) -> "ExpenseRecord":
         """Deserialise from a Firestore document dict."""
-        d = dict(data)
-        ts = d.get("timestamp")
-        if ts is not None and hasattr(ts, "tzinfo") and ts.tzinfo is not None:
-            d["timestamp"] = ts.replace(tzinfo=None)
-        return cls(**d)
+        # Firestore returns aware UTC datetimes; the validator keeps them aware.
+        return cls(**dict(data))
 
     def to_sheet_row(self) -> list:
         """Serialise record to a flat list for Google Sheets append."""
@@ -207,7 +218,7 @@ class User(BaseModel):
     role: UserRole = UserRole.user
     base_currency: str = Field(..., description="Base currency for analytics and budgets")
     default_currency: str = Field(..., description="Fallback currency when none is mentioned")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=timeutil.utc_now)
     status: UserStatus = UserStatus.active
     budget_alerts: bool = Field(default=True, description="Notify when budget reaches 80%")
     weekly_summary: bool = Field(default=True, description="Send weekly summary every Monday")
@@ -221,6 +232,24 @@ class User(BaseModel):
     quick_keyboard_hidden: bool = Field(
         default=False, description="User hid the quick-expense keyboard via /quick"
     )
+    timezone: str = Field(
+        default="",
+        description=(
+            "Bot setting: IANA timezone that defines the user's 'today' (e.g. 'Europe/Kyiv'). "
+            "Empty or invalid means the TIMEZONE default (Asia/Bangkok when unset)."
+        ),
+    )
+
+    @field_validator("created_at")
+    @classmethod
+    def aware_created_at(cls, v: datetime) -> datetime:
+        return timeutil.ensure_aware_utc(v)
+
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def clean_timezone(cls, v: object) -> str:
+        """Sheets may hand back None/numbers for empty cells; keep a plain string."""
+        return "" if v is None else str(v).strip()
 
     @field_validator("quick_expenses", mode="before")
     @classmethod
@@ -273,16 +302,13 @@ class User(BaseModel):
             "active_trip_id": self.active_trip_id,
             "quick_expenses": [q.to_dict() for q in self.quick_expenses],
             "quick_keyboard_hidden": self.quick_keyboard_hidden,
+            "timezone": self.timezone,
         }
 
     @classmethod
     def from_firestore_dict(cls, data: dict) -> "User":
         """Deserialise from a Firestore document dict."""
-        d = dict(data)
-        ts = d.get("created_at")
-        if ts is not None and hasattr(ts, "tzinfo") and ts.tzinfo is not None:
-            d["created_at"] = ts.replace(tzinfo=None)
-        return cls(**d)
+        return cls(**dict(data))
 
     def to_registry_row(self) -> list:
         """Serialise to a flat list for the Master Registry sheet."""
@@ -301,6 +327,7 @@ class User(BaseModel):
             str(self.weekly_summary).upper(),
             str(self.insights).upper(),
             self.active_trip_id,
+            self.timezone,
         ]
 
     @classmethod
@@ -321,6 +348,7 @@ class User(BaseModel):
             "weekly_summary",
             "insights",
             "active_trip_id",
+            "timezone",
         ]
 
     @classmethod
@@ -345,6 +373,7 @@ class UserSettings(BaseModel):
 
     base_currency: str
     default_currency: str
+    timezone: str = ""  # IANA name; empty → TIMEZONE default (see utils.timeutil)
 
     @field_validator("base_currency", "default_currency")
     @classmethod

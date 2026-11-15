@@ -59,7 +59,7 @@ _PUBLIC_COMMANDS = [
     BotCommand("export", "Export CSV"),
     BotCommand("trip", "Trip tracking on/off"),
     BotCommand("quick", "Quick expense buttons"),
-    BotCommand("settings", "Currency settings"),
+    BotCommand("settings", "Currency & timezone settings"),
     BotCommand("email", "Share spreadsheet"),
     BotCommand("feedback", "Send feedback"),
 ]

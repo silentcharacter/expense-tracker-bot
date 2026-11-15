@@ -14,6 +14,7 @@ from telegram.error import Forbidden, TelegramError
 from models.category import category_label
 from models.expense import ExpenseRecord, User
 from services.storage import get_storage
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,9 @@ _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
-def _week_dates(weeks_ago: int) -> tuple[date, date]:
-    today = date.today()
+def _week_dates(weeks_ago: int, today: Optional[date] = None) -> tuple[date, date]:
+    """Mon–Sun range ``weeks_ago`` weeks back from ``today`` (the user's local day)."""
+    today = today or timeutil.today()
     monday = today - timedelta(days=today.weekday()) - timedelta(weeks=weeks_ago)
     return monday, monday + timedelta(days=6)
 
@@ -67,7 +69,9 @@ def _build_message(
     budgets: dict[str, float],
     since: date,
     until: date,
+    today: Optional[date] = None,
 ) -> str:
+    today = today or timeutil.user_today(user)
     cur = user.base_currency
     total = sum(r.amount_base for r in week_records)
     prev_total = sum(r.amount_base for r in prev_records)
@@ -117,7 +121,6 @@ def _build_message(
     budget_total = sum(budgets.values())
     if budget_total > 0:
         month_spent = sum(r.amount_base for r in month_records)
-        today = date.today()
         days_remaining = _cal.monthrange(today.year, today.month)[1] - today.day
         pace_pct = month_spent / budget_total * 100
         status = "on track ✅" if pace_pct < 90 else "over budget ⚠️"
@@ -130,7 +133,7 @@ def _build_message(
 
     # Biggest single expense of the week
     biggest = max(week_records, key=lambda r: r.amount_base)
-    day_name = _DAYS[biggest.timestamp.weekday()]
+    day_name = _DAYS[biggest.local_date(user).weekday()]
     desc = (biggest.description or category_label(biggest.category)).strip()
     lines += [
         "",
@@ -160,9 +163,6 @@ async def run_weekly_summary(
         summary["errors"] += 1
         return summary
 
-    since, until = _week_dates(weeks_ago=1)
-    prev_since, prev_until = _week_dates(weeks_ago=2)
-
     async with (bot or Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])) as tg_bot:
         for user in users:
             if not user.weekly_summary:
@@ -170,8 +170,13 @@ async def run_weekly_summary(
                 continue
 
             try:
+                # Weeks and months follow each user's own calendar (bot setting
+                # ``timezone``), not the server clock.
+                today = timeutil.user_today(user)
+                since, until = _week_dates(weeks_ago=1, today=today)
+                prev_since, prev_until = _week_dates(weeks_ago=2, today=today)
                 week_records = sheets.get_transactions(
-                    user.spreadsheet_id, since=since, until=until
+                    user.spreadsheet_id, since=since, until=until, tz=user
                 )
 
                 if not week_records:
@@ -179,18 +184,17 @@ async def run_weekly_summary(
                     continue
 
                 prev_records = sheets.get_transactions(
-                    user.spreadsheet_id, since=prev_since, until=prev_until
+                    user.spreadsheet_id, since=prev_since, until=prev_until, tz=user
                 )
 
-                today = date.today()
                 month_records = sheets.get_transactions(
-                    user.spreadsheet_id, since=today.replace(day=1), until=today
+                    user.spreadsheet_id, since=today.replace(day=1), until=today, tz=user
                 )
 
                 budgets = sheets.get_budgets(user.spreadsheet_id)
 
                 msg = _build_message(
-                    user, week_records, prev_records, month_records, budgets, since, until
+                    user, week_records, prev_records, month_records, budgets, since, until, today
                 )
                 await tg_bot.send_message(
                     chat_id=user.telegram_id, text=msg, parse_mode="MarkdownV2"

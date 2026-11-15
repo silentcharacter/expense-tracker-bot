@@ -6,7 +6,6 @@ moment you need it you are usually standing in an airport, not browsing a form.
 """
 
 import logging
-from datetime import date
 from typing import Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -24,6 +23,7 @@ from handlers.callbacks import (
 from models.expense import ExpenseRecord, ExpenseSource, User
 from models.trip import Trip
 from services.trip_service import resolve_active_trip, trip_totals
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -98,12 +98,13 @@ async def trip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 def _start_trip(sheets, user: User, name: str) -> tuple[str, Optional[InlineKeyboardMarkup]]:
-    """Create a trip starting today and make it the active one."""
-    previous = resolve_active_trip(sheets, user)
+    """Create a trip starting today (in the user's timezone) and make it the active one."""
+    today = timeutil.user_today(user)
+    previous = resolve_active_trip(sheets, user, today)
     if previous is not None:
-        sheets.update_trip(user.spreadsheet_id, previous.id, {"end_date": date.today().isoformat()})
+        sheets.update_trip(user.spreadsheet_id, previous.id, {"end_date": today.isoformat()})
 
-    trip = Trip(name=name, start_date=date.today())
+    trip = Trip(name=name, start_date=today)
     sheets.add_trip(user.spreadsheet_id, trip)
     sheets.set_active_trip(user.telegram_id, trip.id)
     user.active_trip_id = trip.id
@@ -120,11 +121,11 @@ def _start_trip(sheets, user: User, name: str) -> tuple[str, Optional[InlineKeyb
 
 def _end_active_trip(sheets, user: User) -> tuple[str, Optional[InlineKeyboardMarkup]]:
     """Close the active trip and report its totals."""
-    trip = resolve_active_trip(sheets, user)
+    today = timeutil.user_today(user)
+    trip = resolve_active_trip(sheets, user, today)
     if trip is None:
         return "You have no active trip.", _status_keyboard(active=False)
 
-    today = date.today()
     sheets.update_trip(user.spreadsheet_id, trip.id, {"end_date": today.isoformat()})
     sheets.set_active_trip(user.telegram_id, "")
     user.active_trip_id = ""
@@ -165,7 +166,7 @@ def _trip_status(sheets, user: User) -> tuple[str, Optional[InlineKeyboardMarkup
         return "\n".join(lines), _status_keyboard(active=False, resumable=trips)
 
     records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip.id)
-    stats = trip_totals(trip, records)
+    stats = trip_totals(trip, records, timeutil.user_today(user))
 
     day_line = f"Day {stats['days']}"
     if stats["total_days"]:

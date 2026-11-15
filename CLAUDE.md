@@ -54,6 +54,8 @@ expense-bot/
 │   ├── category.py          #   Category/subcategory registry
 │   ├── trip.py              #   Trip (named date range tagged onto expenses)
 │   └── quick_expense.py     #   QuickExpense (one-tap preset shown as a chat button)
+├── utils/
+│   └── timeutil.py          #   Per-user timezone: user_today/user_now, get_user_timezone
 ├── mini-app/                # Telegram Mini App (React SPA)
 │   ├── src/
 │   │   ├── api/             #   API client (summary, expenses, budgets, settings)
@@ -71,6 +73,7 @@ expense-bot/
 │   ├── test_trips.py        #   Trip model, trip_service, /api/trips, /trip command
 │   ├── test_quick_expenses.py #  Quick expenses: model, bot flow, /api/quick-expenses
 │   ├── test_recurring_cron.py
+│   ├── test_timeutil.py     #   Per-user timezone, "just after local midnight" scenarios
 │   ├── test_firestore_integration.py  # requires Firestore emulator
 │   ├── test_currency_integration.py   # requires EXCHANGE_RATE_API_KEY env var
 │   ├── test_gemini_integration.py     # requires GOOGLE_API_KEY env var
@@ -108,6 +111,26 @@ tests/test_config.yaml is committed to the repo and contains all required keys
 - Docstrings: concise, in English
 - Error handling: try/except with logging, graceful degradation
 - Env vars: via os.environ, never hardcode values
+
+## Dates & Timezones
+- Never use bare `date.today()`, `datetime.now()` or `datetime.utcnow()`: Cloud Functions run
+  in UTC, so near midnight the server day differs from the user's. Use `utils/timeutil.py`.
+- The user's zone is a bot setting: `User.timezone` (IANA name), stored on the Firestore user
+  doc `users/{telegram_id}.timezone` (Sheets backend: `timezone` column of the Registry sheet).
+  Set via `/settings timezone Europe/Kyiv` or `PUT /api/settings {"timezone": ...}`;
+  `""` / `/settings timezone default` resets it.
+- Resolution (`timeutil.get_user_timezone(user)`): user setting → `TIMEZONE` env →
+  `Asia/Bangkok`. Invalid values fall through to the next level.
+- "Today", week/month boundaries, pace, budgets, exports, trips and both crons use
+  `timeutil.user_today(user)` / `user_now(user)`. Crons iterate users and use each user's day.
+  The zone-less `timeutil.today()` is only a fallback where no user exists.
+- Storage: datetimes are written tz-aware UTC (`timeutil.utc_now()`); legacy naive values are
+  read as UTC. The day of an expense is `record.local_date(user)`, never `timestamp.date()`.
+  Date-range reads pass the user: `storage.get_transactions(..., since, until, tz=user)`.
+  Manually dated / recurring expenses are stored as local midnight (`timeutil.start_of_day`).
+- The API serialises expense timestamps in the user's zone (ISO with offset), so the Mini App's
+  `timestamp.slice(0, 10)` is the user's local day.
+- Tests freeze the clock by patching `utils.timeutil._utc_now`.
 
 ## Currency Model
 - base_currency and default_currency are per-user settings

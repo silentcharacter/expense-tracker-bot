@@ -172,6 +172,12 @@ export interface UserSettings {
   weekly_summary: boolean;
   insights: boolean;
   active_trip_id?: string;
+  /** Effective IANA zone (user setting → server default). */
+  timezone?: string;
+  /** True when the user has no personal timezone set. */
+  timezone_is_default?: boolean;
+  /** "Today" as YYYY-MM-DD in the user's timezone. */
+  today?: string;
 }
 
 export interface UpdateSettingsRequest {
@@ -180,6 +186,8 @@ export interface UpdateSettingsRequest {
   budget_alerts?: boolean;
   weekly_summary?: boolean;
   insights?: boolean;
+  /** IANA name; "" resets to the default. */
+  timezone?: string;
 }
 
 export interface ExportParams {

@@ -3,7 +3,7 @@
 import logging
 import os
 import uuid as _uuid
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
 from google.cloud import firestore as _fs
@@ -12,6 +12,7 @@ from models.expense import ExpenseRecord, User
 from models.category import UserCategory, UserSubcategory, default_user_categories
 from models.quick_expense import QuickExpense
 from models.trip import Trip
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -131,11 +132,15 @@ class FirestoreService:
         until: Optional[date] = None,
         limit: Optional[int] = None,
         trip_id: Optional[str] = None,
+        tz: "timeutil.TzLike" = None,
     ) -> list[ExpenseRecord]:
         """Read transactions, optionally narrowed to a date range and/or a trip.
 
         ``trip_id=None`` applies no trip filter; ``trip_id=""`` keeps only
         regular (non-trip) expenses; any other value keeps that trip's expenses.
+        ``since``/``until`` are calendar days in ``tz`` — pass the user (or their
+        zone) so an expense at 00:30 local time lands on the local day, not the
+        UTC one. Defaults to the TIMEZONE deployment zone.
         """
         all_records = self._get_all_transactions(user_id)
 
@@ -143,9 +148,10 @@ class FirestoreService:
             all_records = [r for r in all_records if r.trip_id == trip_id]
 
         if since or until:
+            day_tz = timeutil.resolve_timezone(None) if tz is None else tz
             filtered = []
             for r in all_records:
-                d = r.timestamp.date()
+                d = r.local_date(day_tz)
                 if since and d < since:
                     continue
                 if until and d > until:
@@ -442,6 +448,7 @@ class FirestoreService:
         since: date,
         until: Optional[date] = None,
         overwrite: bool = False,
+        tz: "timeutil.TzLike" = None,
     ) -> int:
         """Back-fill ``trip_id`` on every expense inside a date range.
 
@@ -452,7 +459,7 @@ class FirestoreService:
         Returns:
             Number of transactions updated.
         """
-        records = self.get_transactions(user_id, since=since, until=until)
+        records = self.get_transactions(user_id, since=since, until=until, tz=tz)
         targets = [
             r for r in records
             if not r.recurring
@@ -556,7 +563,7 @@ class FirestoreService:
             "username": username,
             "display_name": display_name,
             "feedback": feedback,
-            "created_at": datetime.utcnow(),
+            "created_at": timeutil.utc_now(),
         })
         logger.info("Appended feedback from %s", telegram_id)
 
@@ -575,6 +582,7 @@ class FirestoreService:
         budget_alerts: Optional[bool] = None,
         weekly_summary: Optional[bool] = None,
         insights: Optional[bool] = None,
+        timezone: Optional[str] = None,
     ) -> bool:
         ref = self._db.collection("users").document(str(telegram_id))
         if not ref.get().exists:
@@ -590,6 +598,9 @@ class FirestoreService:
             updates["weekly_summary"] = weekly_summary
         if insights is not None:
             updates["insights"] = insights
+        if timezone is not None:
+            # Bot setting stored on users/{telegram_id}.timezone ("" = use TIMEZONE default).
+            updates["timezone"] = timezone
         if updates:
             ref.update(updates)
         return True

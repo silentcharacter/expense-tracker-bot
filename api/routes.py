@@ -39,6 +39,7 @@ from services.currency import CurrencyService
 from services.storage import get_storage
 from services.trip_service import resolve_active_trip, trip_totals
 from services.user_registry import UserRegistry
+from utils import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -198,15 +199,21 @@ async def _dispatch(request: flask.Request, user: User) -> tuple:
 # ── Period helpers ──────────────────────────────────────────────────────────
 
 
-def _period_dates(period: str, offset: int = 0) -> tuple[date, date]:
+def _period_dates(
+    period: str, offset: int = 0, tz: "timeutil.TzLike" = None
+) -> tuple[date, date]:
     """Return inclusive (since, until) dates for the named period.
+
+    "Today" is the current day in ``tz`` — pass the user so that just after
+    local midnight the new day (and month/week) is used even though the server
+    clock (UTC) is still on the previous one.
 
     offset=0 → current period (until capped at today).
     offset=-1 → one period back (full range), offset=-2 → two periods back, etc.
     """
     import calendar as _cal
 
-    today = date.today()
+    today = timeutil.user_today(tz)
 
     if offset == 0:
         if period == "today":
@@ -289,10 +296,13 @@ def _record_to_dict(
     r: ExpenseRecord,
     default_currency: str | None = None,
     base_to_default_rate: float | None = None,
+    tz: "timeutil.TzLike" = None,
 ) -> dict:
     d = {
         "id": r.id,
-        "timestamp": r.timestamp.isoformat(),
+        # ISO string in the user's zone (with offset): the Mini App takes the
+        # first 10 chars as the expense's day, so it must be the local day.
+        "timestamp": timeutil.to_user_time(r.timestamp, tz).isoformat(),
         "amount_local": r.amount_local,
         "local_currency": r.local_currency,
         "amount_base": r.amount_base,
@@ -333,7 +343,7 @@ async def _compute_spending_pace(
     """
     import calendar as _cal
 
-    today = date.today()
+    today = timeutil.user_today(user)
     days_in_month = _cal.monthrange(today.year, today.month)[1]
     completed_days = today.day - 1
     if completed_days == 0:
@@ -352,7 +362,7 @@ async def _compute_spending_pace(
         sum(
             r.amount_base
             for r in records
-            if not r.recurring and r.timestamp.date() == today
+            if not r.recurring and r.local_date(user) == today
         ),
         4,
     )
@@ -501,14 +511,14 @@ async def _api_summary(
             return jsonify({"error": "trips require the firestore backend"}), 501
         if trip is None:
             return jsonify({"error": "trip not found"}), 404
-        since, until = trip.start_date, trip.end_date or date.today()
+        since, until = trip.start_date, trip.end_date or timeutil.user_today(user)
         period = "trip"
         offset = 0
         # A trip has no natural previous period to compare against.
         compare = False
     else:
         try:
-            since, until = _period_dates(period, offset)
+            since, until = _period_dates(period, offset, user)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -517,6 +527,7 @@ async def _api_summary(
         since=since,
         until=until,
         trip_id=trip.id if trip else None,
+        tz=user,
     )
 
     # ── Fetch base→default rate up front so aggregations can use it ────────
@@ -600,7 +611,7 @@ async def _api_summary(
     daily_base: dict[str, float] = defaultdict(float)
     daily_default: dict[str, float] = defaultdict(float)
     for r in records:
-        day_key = r.timestamp.date().isoformat()
+        day_key = r.local_date(user).isoformat()
         daily_base[day_key] += r.amount_base
         daily_default[day_key] += _amount_default(
             r, default_currency, base_to_default_rate
@@ -615,19 +626,19 @@ async def _api_summary(
         for d in sorted(daily_base)
     ]
 
-    today = date.today()
+    today = timeutil.user_today(user)
     if period == "month" and offset == 0:
         completed_days = today.day - 1
         if completed_days > 0:
             today_discretionary_base = sum(
                 r.amount_base
                 for r in records
-                if not r.recurring and r.timestamp.date() == today
+                if not r.recurring and r.local_date(user) == today
             )
             today_discretionary_default = sum(
                 _amount_default(r, default_currency, base_to_default_rate)
                 for r in records
-                if not r.recurring and r.timestamp.date() == today
+                if not r.recurring and r.local_date(user) == today
             )
             completed_discretionary_base = max(
                 discretionary_base - today_discretionary_base,
@@ -700,7 +711,7 @@ async def _api_summary(
     if compare:
         prev_since, prev_until = _previous_period_dates(period, since, until)
         prev_records = sheets.get_transactions(
-            user.spreadsheet_id, since=prev_since, until=prev_until
+            user.spreadsheet_id, since=prev_since, until=prev_until, tz=user
         )
         prev_total = sum(r.amount_base for r in prev_records)
         if prev_total > 0:
@@ -728,7 +739,8 @@ async def _api_summary(
         # Same shape as the trip list: the Mini App formats these amounts in the
         # display currency, so the *_default figures must be there too.
         result["trip"] = _trip_entry(
-            trip, records, (user.active_trip_id or "").strip(), base_to_default_rate
+            trip, records, (user.active_trip_id or "").strip(), base_to_default_rate,
+            timeutil.user_today(user),
         )
 
     return jsonify(result), 200
@@ -769,7 +781,7 @@ async def _api_expenses_list(request: flask.Request, user: User) -> tuple:
 
     sheets = _get_sheets()
     records = sheets.get_transactions(
-        user.spreadsheet_id, since=since, until=until, trip_id=trip_scope
+        user.spreadsheet_id, since=since, until=until, trip_id=trip_scope, tz=user
     )
 
     if category_filter:
@@ -793,7 +805,7 @@ async def _api_expenses_list(request: flask.Request, user: User) -> tuple:
 
     return jsonify({
         "expenses": [
-            _record_to_dict(r, default_currency, base_to_default_rate) for r in page
+            _record_to_dict(r, default_currency, base_to_default_rate, user) for r in page
         ],
         "total": total,
         "limit": limit,
@@ -809,15 +821,13 @@ async def _api_expense_delete(expense_id: str, user: User) -> tuple:
     deleted = sheets.delete_transaction_by_id(user.spreadsheet_id, expense_id)
     if deleted is None:
         return jsonify({"error": "expense not found"}), 404
-    return jsonify({"deleted": True, "expense": _record_to_dict(deleted)}), 200
+    return jsonify({"deleted": True, "expense": _record_to_dict(deleted, tz=user)}), 200
 
 
 # ── PATCH /api/expenses/:id ─────────────────────────────────────────────────
 
 
 async def _api_expense_update(request: flask.Request, expense_id: str, user: User) -> tuple:
-    from datetime import datetime as _dt
-
     body = request.get_json(silent=True) or {}
 
     description = str(body.get("description", "")).strip()
@@ -869,7 +879,8 @@ async def _api_expense_update(request: flask.Request, expense_id: str, user: Use
         "fx_rate": fx_rate,
         "category": category,
         "subcategory": subcategory,
-        "timestamp": _dt.combine(expense_date, _dt.min.time()),
+        # Local midnight of the chosen day in the user's zone, stored as aware UTC.
+        "timestamp": timeutil.start_of_day(expense_date, user),
     }
 
     # trip_id is optional: omit the key to leave the current attribution alone,
@@ -893,7 +904,7 @@ async def _api_expense_update(request: flask.Request, expense_id: str, user: Use
         except Exception:
             base_to_default_rate = None
 
-    return jsonify(_record_to_dict(updated, default_currency, base_to_default_rate)), 200
+    return jsonify(_record_to_dict(updated, default_currency, base_to_default_rate, user)), 200
 
 
 # ── GET /api/budgets ────────────────────────────────────────────────────────
@@ -906,7 +917,7 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
         offset = 0
 
     try:
-        since, until = _period_dates("month", offset)
+        since, until = _period_dates("month", offset, user)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -914,7 +925,7 @@ async def _api_budgets_get(request: flask.Request, user: User) -> tuple:
     all_categories = sheets.get_categories(user.spreadsheet_id)
     # Budgets measure everything that left the account, trips included; the trip
     # share is reported separately so a category over budget can be explained.
-    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until)
+    records = sheets.get_transactions(user.spreadsheet_id, since=since, until=until, tz=user)
 
     # Base→default rate for default-currency spending totals.
     default_currency = user.default_currency
@@ -1054,6 +1065,11 @@ def _api_settings_get(user: User) -> tuple:
         "weekly_summary": user.weekly_summary,
         "insights": user.insights,
         "active_trip_id": user.active_trip_id,
+        # Effective IANA zone that defines the user's "today" (bot setting, or the
+        # TIMEZONE default when unset), plus whether it is the default.
+        "timezone": timeutil.user_timezone_name(user),
+        "timezone_is_default": not user.timezone,
+        "today": timeutil.user_today(user).isoformat(),
     }), 200
 
 
@@ -1068,6 +1084,7 @@ async def _api_settings_update(request: flask.Request, user: User) -> tuple:
     budget_alerts: Optional[bool] = None
     weekly_summary: Optional[bool] = None
     insights: Optional[bool] = None
+    tz_name: Optional[str] = None
 
     if "base_currency" in body:
         base = str(body["base_currency"]).upper()
@@ -1083,8 +1100,11 @@ async def _api_settings_update(request: flask.Request, user: User) -> tuple:
         weekly_summary = bool(body["weekly_summary"])
     if "insights" in body:
         insights = bool(body["insights"])
+    if "timezone" in body:
+        # "" / null resets to the TIMEZONE default; anything else must be an IANA name.
+        tz_name = str(body["timezone"] or "").strip()
 
-    if all(v is None for v in (base, default, budget_alerts, weekly_summary, insights)):
+    if all(v is None for v in (base, default, budget_alerts, weekly_summary, insights, tz_name)):
         return jsonify({"error": "no updatable fields provided"}), 400
 
     registry = _get_registry()
@@ -1096,6 +1116,7 @@ async def _api_settings_update(request: flask.Request, user: User) -> tuple:
             budget_alerts=budget_alerts,
             weekly_summary=weekly_summary,
             insights=insights,
+            **({"timezone": tz_name} if tz_name is not None else {}),
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -1121,9 +1142,9 @@ async def _api_export(request: flask.Request, user: User) -> tuple:
 
     Query params:
         start (YYYY-MM-DD): inclusive start date; defaults to first day of current month.
-        end   (YYYY-MM-DD): inclusive end date;   defaults to today.
+        end   (YYYY-MM-DD): inclusive end date;   defaults to today (user's timezone).
     """
-    today = date.today()
+    today = timeutil.user_today(user)
     start_str = request.args.get("start")
     end_str = request.args.get("end")
 
@@ -1148,7 +1169,7 @@ async def _api_export(request: flask.Request, user: User) -> tuple:
         since, until = trip.start_date, trip.end_date or today
 
     records = sheets.get_transactions(
-        user.spreadsheet_id, since=since, until=until, trip_id=trip.id if trip else None
+        user.spreadsheet_id, since=since, until=until, trip_id=trip.id if trip else None, tz=user
     )
 
     try:
@@ -1167,7 +1188,7 @@ async def _api_export(request: flask.Request, user: User) -> tuple:
     for r in records:
         writer.writerow([
             r.id,
-            r.timestamp.isoformat(),
+            timeutil.to_user_time(r.timestamp, user).isoformat(),
             r.amount_local,
             r.local_currency,
             r.amount_base,
@@ -1360,9 +1381,13 @@ def _trip_entry(
     records: list[ExpenseRecord],
     active_trip_id: str,
     base_to_default_rate: float | None,
+    today: Optional[date] = None,
 ) -> dict:
-    """Trip plus its totals, as the Mini App's trip list renders it."""
-    stats = trip_totals(trip, records)
+    """Trip plus its totals, as the Mini App's trip list renders it.
+
+    ``today`` is the user's current day (``timeutil.user_today(user)``).
+    """
+    stats = trip_totals(trip, records, today)
     rate = base_to_default_rate if base_to_default_rate is not None else 1.0
     return {
         **trip.to_api_dict(),
@@ -1402,7 +1427,7 @@ async def _api_trips_get(user: User) -> tuple:
 
     rate = await _base_to_default_rate(user)
     # resolve_active_trip also clears the pointer when the trip is gone or over.
-    active = resolve_active_trip(sheets, user)
+    active = resolve_active_trip(sheets, user, timeutil.user_today(user))
     active_id = active.id if active else ""
     return jsonify({
         "base_currency": user.base_currency,
@@ -1410,7 +1435,7 @@ async def _api_trips_get(user: User) -> tuple:
         "default_currency_rate": rate,
         "active_trip_id": active_id,
         "trips": [
-            _trip_entry(t, by_trip.get(t.id, []), active_id, rate) for t in trips
+            _trip_entry(t, by_trip.get(t.id, []), active_id, rate, timeutil.user_today(user)) for t in trips
         ],
     }), 200
 
@@ -1423,7 +1448,7 @@ async def _api_trip_create(request: flask.Request, user: User) -> tuple:
     if not name:
         return jsonify({"error": "name is required"}), 400
 
-    today = date.today()
+    today = timeutil.user_today(user)
     start, err = _parse_iso_date(body.get("start_date"), "start_date")
     if err:
         return jsonify({"error": err}), 400
@@ -1470,13 +1495,13 @@ async def _api_trip_create(request: flask.Request, user: User) -> tuple:
     assigned = 0
     if body.get("assign_existing"):
         assigned = sheets.assign_transactions_to_trip(
-            user.spreadsheet_id, trip.id, trip.start_date, trip.end_date
+            user.spreadsheet_id, trip.id, trip.start_date, trip.end_date, tz=user
         )
 
     records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip.id)
     rate = await _base_to_default_rate(user)
     return jsonify({
-        "trip": _trip_entry(trip, records, user.active_trip_id or "", rate),
+        "trip": _trip_entry(trip, records, user.active_trip_id or "", rate, timeutil.user_today(user)),
         "assigned": assigned,
     }), 201
 
@@ -1556,7 +1581,7 @@ async def _api_trip_update(request: flask.Request, user: User, trip_id: str) -> 
     updated = sheets.get_trip(user.spreadsheet_id, trip_id) or trip
     records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip_id)
     rate = await _base_to_default_rate(user)
-    return jsonify(_trip_entry(updated, records, user.active_trip_id or "", rate)), 200
+    return jsonify(_trip_entry(updated, records, user.active_trip_id or "", rate, timeutil.user_today(user))), 200
 
 
 async def _api_trip_delete(user: User, trip_id: str) -> tuple:
@@ -1608,13 +1633,14 @@ async def _api_trip_assign(request: flask.Request, user: User, trip_id: str) -> 
         since or trip.start_date,
         until or trip.end_date,
         overwrite=bool(body.get("overwrite")),
+        tz=user,
     )
 
     records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip_id)
     rate = await _base_to_default_rate(user)
     return jsonify({
         "assigned": assigned,
-        "trip": _trip_entry(trip, records, user.active_trip_id or "", rate),
+        "trip": _trip_entry(trip, records, user.active_trip_id or "", rate, timeutil.user_today(user)),
     }), 200
 
 
@@ -1770,7 +1796,6 @@ async def _api_recurring_log(user: User, entry_id: str) -> tuple:
 
     Returns 409 if the template was already logged this calendar month.
     """
-    from datetime import date as _date
     from jobs.recurring_cron import _build_record
 
     sheets = _get_sheets()
@@ -1781,9 +1806,11 @@ async def _api_recurring_log(user: User, entry_id: str) -> tuple:
     if item is None:
         return jsonify({"error": "entry not found"}), 404
 
-    today = _date.today()
+    today = timeutil.user_today(user)
     month_start = today.replace(day=1)
-    existing = sheets.get_transactions(user.spreadsheet_id, since=month_start, until=today)
+    existing = sheets.get_transactions(
+        user.spreadsheet_id, since=month_start, until=today, tz=user
+    )
     already = any(
         r.recurring and r.recurring_template_id == entry_id
         for r in existing

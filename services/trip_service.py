@@ -6,6 +6,7 @@ from typing import Optional
 
 from models.expense import ExpenseRecord, User
 from models.trip import Trip
+from services.user_registry import invalidate_user
 from utils import timeutil
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ def _clear_active_trip(storage, user: User) -> None:
     try:
         storage.set_active_trip(user.telegram_id, "")
         user.active_trip_id = ""
+        invalidate_user(user.telegram_id)
     except Exception as exc:
         logger.warning("Could not clear stale active trip for %s: %s", user.telegram_id, exc)
 

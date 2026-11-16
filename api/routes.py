@@ -38,7 +38,7 @@ from services.auth import validate_init_data
 from services.currency import CurrencyService
 from services.storage import get_storage
 from services.trip_service import resolve_active_trip, trip_totals
-from services.user_registry import UserRegistry
+from services.user_registry import UserRegistry, get_registry, invalidate_user
 from utils import timeutil
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,6 @@ logger = logging.getLogger(__name__)
 # ── Lazy service singletons ─────────────────────────────────────────────────
 # Re-using the same instances across Cloud Function warm invocations.
 
-_registry_singleton: Optional[UserRegistry] = None
 _currency_singleton: Optional[CurrencyService] = None
 
 
@@ -55,10 +54,7 @@ def _get_sheets():
 
 
 def _get_registry() -> UserRegistry:
-    global _registry_singleton
-    if _registry_singleton is None:
-        _registry_singleton = UserRegistry(sheets_service=get_storage())
-    return _registry_singleton
+    return get_registry(get_storage())
 
 
 def _get_currency() -> CurrencyService:
@@ -1491,6 +1487,7 @@ async def _api_trip_create(request: flask.Request, user: User) -> tuple:
     if activate:
         sheets.set_active_trip(user.telegram_id, trip.id)
         user.active_trip_id = trip.id
+        invalidate_user(user.telegram_id)
 
     assigned = 0
     if body.get("assign_existing"):
@@ -1574,9 +1571,11 @@ async def _api_trip_update(request: flask.Request, user: User, trip_id: str) -> 
         if body.get("active"):
             sheets.set_active_trip(user.telegram_id, trip_id)
             user.active_trip_id = trip_id
+            invalidate_user(user.telegram_id)
         elif (user.active_trip_id or "") == trip_id:
             sheets.set_active_trip(user.telegram_id, "")
             user.active_trip_id = ""
+            invalidate_user(user.telegram_id)
 
     updated = sheets.get_trip(user.spreadsheet_id, trip_id) or trip
     records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip_id)
@@ -1599,6 +1598,7 @@ async def _api_trip_delete(user: User, trip_id: str) -> tuple:
     if (user.active_trip_id or "") == trip_id:
         sheets.set_active_trip(user.telegram_id, "")
         user.active_trip_id = ""
+        invalidate_user(user.telegram_id)
 
     return jsonify({"deleted": True, "detached_expenses": detached}), 200
 

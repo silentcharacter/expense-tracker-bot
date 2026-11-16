@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from typing import Optional
 
 from google.oauth2.credentials import Credentials as OAuthCredentials
@@ -40,6 +41,16 @@ _ISO_4217_CODES: frozenset[str] = frozenset(
 )
 
 
+# How long a cached User is trusted before get_user re-reads storage. Bounds
+# staleness for changes made by another Cloud Function instance.
+CACHE_TTL_SECONDS = 45
+
+
+def _monotonic() -> float:
+    """Clock for cache expiry (patched in tests)."""
+    return time.monotonic()
+
+
 class UserRegistryError(Exception):
     """Raised on unrecoverable user registry errors."""
 
@@ -61,7 +72,7 @@ class UserRegistry:
         from services.storage import get_storage
         self._sheets = sheets_service or get_storage()
         self._drive = drive_service  # built lazily in Sheets mode only
-        self._cache: dict[int, User] = {}
+        self._cache: dict[int, tuple[User, float]] = {}  # id -> (user, expires_at)
 
     def _get_drive(self):
         """Return Drive client, building it on first call (Sheets mode only)."""
@@ -77,12 +88,23 @@ class UserRegistry:
         Returns:
             User if registered, None if not found.
         """
-        if telegram_id in self._cache:
-            return self._cache[telegram_id]
+        entry = self._cache.get(telegram_id)
+        if entry is not None and entry[1] > _monotonic():
+            return entry[0]
         user = self._sheets.find_user(telegram_id)
         if user:
-            self._cache[telegram_id] = user
+            self.cache_user(user)
+        else:
+            self._cache.pop(telegram_id, None)
         return user
+
+    def cache_user(self, user: User) -> None:
+        """Store ``user`` in the cache and reset its TTL."""
+        self._cache[user.telegram_id] = (user, _monotonic() + CACHE_TTL_SECONDS)
+
+    def invalidate_user(self, telegram_id: int) -> None:
+        """Drop the cached user so the next get_user re-reads storage."""
+        self._cache.pop(telegram_id, None)
 
     async def create_user(
         self,
@@ -140,7 +162,7 @@ class UserRegistry:
         self._sheets.register_user(user)
         self._sheets.ensure_transactions_header(spreadsheet_id)
         self._sheets.ensure_categories_sheet(spreadsheet_id)
-        self._cache[telegram_id] = user
+        self.cache_user(user)
 
         logger.info(
             "Created user %s (%s) with spreadsheet %s", telegram_id, display_name, spreadsheet_id
@@ -182,8 +204,7 @@ class UserRegistry:
             logger.info("Shared spreadsheet %s with %s", user.spreadsheet_id, email)
 
         self._sheets.update_user_email(telegram_id, email)
-        if telegram_id in self._cache:
-            self._cache[telegram_id] = self._cache[telegram_id].model_copy(update={"email": email})
+        self.cache_user(user.model_copy(update={"email": email}))
 
     async def update_settings(
         self,
@@ -259,7 +280,7 @@ class UserRegistry:
             model_updates["timezone"] = timezone
 
         updated = user.model_copy(update=model_updates)
-        self._cache[telegram_id] = updated
+        self.cache_user(updated)
         return updated
 
     async def refresh_user(self, telegram_id: int) -> Optional[User]:
@@ -270,7 +291,7 @@ class UserRegistry:
         """
         user = self._sheets.find_user(telegram_id)
         if user:
-            self._cache[telegram_id] = user
+            self.cache_user(user)
         else:
             self._cache.pop(telegram_id, None)
         return user
@@ -288,7 +309,7 @@ class UserRegistry:
         if user is None:
             raise UserRegistryError(f"User {telegram_id} not found")
         updated = user.model_copy(update={"quick_expenses": list(items)})
-        self._cache[telegram_id] = updated
+        self.cache_user(updated)
         return updated
 
     async def set_quick_keyboard_hidden(self, telegram_id: int, hidden: bool) -> User:
@@ -299,14 +320,14 @@ class UserRegistry:
         if user is None:
             raise UserRegistryError(f"User {telegram_id} not found")
         updated = user.model_copy(update={"quick_keyboard_hidden": hidden})
-        self._cache[telegram_id] = updated
+        self.cache_user(updated)
         return updated
 
     async def get_all_active_users(self) -> list[User]:
         """Return all active users, populating the cache along the way."""
         users = self._sheets.get_all_active_users()
         for user in users:
-            self._cache[user.telegram_id] = user
+            self.cache_user(user)
         return users
 
     # ── Currency validation ──────────────────────────────────────────────────
@@ -390,3 +411,36 @@ class UserRegistry:
             scopes=_DRIVE_SCOPES,
         )
         return build("drive", "v3", credentials=creds)
+
+
+# ── Process-wide singleton ───────────────────────────────────────────────────
+# The bot and the Mini App API run in the same process and must share one
+# cache, otherwise a change made through one stays invisible to the other.
+
+_registry: Optional[UserRegistry] = None
+
+
+def get_registry(sheets_service=None) -> UserRegistry:
+    """Return the process-wide UserRegistry, creating it on first use.
+
+    ``sheets_service`` is only used when the registry is first created.
+    """
+    global _registry
+    if _registry is None:
+        _registry = UserRegistry(sheets_service=sheets_service)
+    return _registry
+
+
+def reset_registry_for_tests() -> None:
+    """Drop the process singleton (test isolation only)."""
+    global _registry
+    _registry = None
+
+
+def invalidate_user(telegram_id: int) -> None:
+    """Invalidate a user in the singleton registry, if one exists.
+
+    Call after changing user fields (e.g. active_trip_id) directly in storage.
+    """
+    if _registry is not None:
+        _registry.invalidate_user(telegram_id)

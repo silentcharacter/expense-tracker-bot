@@ -23,6 +23,7 @@ from handlers.callbacks import (
 from models.expense import ExpenseRecord, ExpenseSource, User
 from models.trip import Trip
 from services.trip_service import resolve_active_trip, trip_totals
+from services.user_registry import invalidate_user
 from utils import timeutil
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,7 @@ def _start_trip(sheets, user: User, name: str) -> tuple[str, Optional[InlineKeyb
     sheets.add_trip(user.spreadsheet_id, trip)
     sheets.set_active_trip(user.telegram_id, trip.id)
     user.active_trip_id = trip.id
+    invalidate_user(user.telegram_id)
 
     lines = []
     if previous is not None:
@@ -129,6 +131,7 @@ def _end_active_trip(sheets, user: User) -> tuple[str, Optional[InlineKeyboardMa
     sheets.update_trip(user.spreadsheet_id, trip.id, {"end_date": today.isoformat()})
     sheets.set_active_trip(user.telegram_id, "")
     user.active_trip_id = ""
+    invalidate_user(user.telegram_id)
 
     records = sheets.get_transactions(user.spreadsheet_id, trip_id=trip.id)
     closed = trip.model_copy(update={"end_date": today})
@@ -357,6 +360,7 @@ async def _cb_resume(update: Update, context: ContextTypes.DEFAULT_TYPE, parts: 
             sheets.update_trip(user.spreadsheet_id, trip.id, {"end_date": ""})
         sheets.set_active_trip(user.telegram_id, trip.id)
         user.active_trip_id = trip.id
+        invalidate_user(user.telegram_id)
     except NotImplementedError:
         await query.edit_message_text(_UNSUPPORTED)
         return

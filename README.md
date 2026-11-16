@@ -129,7 +129,7 @@ Copy `.env.yaml` and fill in your values:
 
 ```yaml
 TELEGRAM_BOT_TOKEN: "<your_telegram_bot_token>"
-TELEGRAM_WEBHOOK_SECRET: "<random_secret_for_webhook>"
+TELEGRAM_WEBHOOK_SECRET: "<random_secret_for_webhook>"  # python3 -c "import secrets; print(secrets.token_urlsafe(32))" — if unset, webhook is unauthenticated
 GOOGLE_API_KEY: "<your_gemini_api_key>"
 EXCHANGE_RATE_API_KEY: "<your_exchangerate_api_key>"
 STORAGE_BACKEND: "firestore"           # or "sheets"

@@ -1,8 +1,8 @@
 # Setup webhook
-curl "https://api.telegram.org/bot$(grep TELEGRAM_BOT_TOKEN .env.yaml | cut -d'"' -f2)/setWebhook?url=https://asia-southeast1-expense-bot-489609.cloudfunctions.net/expense-bot"
+./deploy.sh   # deploys + sets webhook with secret_token; never put the token in a curl URL argument (see docs/deployment.md 1.2)
 
 # Удали webhook (иначе polling не работает)
-curl "https://api.telegram.org/bot$(grep TELEGRAM_BOT_TOKEN .env.yaml | cut -d'"' -f2)/deleteWebhook"
+# (run_local.py deletes the webhook itself)
 
 # Запусти бота локально
 python run_local.py

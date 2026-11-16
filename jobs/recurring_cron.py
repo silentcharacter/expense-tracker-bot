@@ -11,6 +11,7 @@ same day is therefore a no-op.
 """
 
 import logging
+from calendar import monthrange
 from datetime import date
 from typing import Optional
 
@@ -66,6 +67,25 @@ async def run_recurring_cron(
     return summary
 
 
+def is_recurring_due(day_of_month: int, today: date) -> bool:
+    """True if a template for ``day_of_month`` fires on ``today``.
+
+    A day missing from the month (29–31 in short months) fires on the
+    month's last day. Values outside 1..31 are never due.
+    """
+    if not 1 <= day_of_month <= 31:
+        return False
+    return min(day_of_month, monthrange(today.year, today.month)[1]) == today.day
+
+
+def _safe_int(value) -> int:
+    """Coerce a stored day value to int; 0 (never due) when unparseable."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 async def _process_user(
     sheets,
     currency: CurrencyService,
@@ -74,7 +94,7 @@ async def _process_user(
 ) -> tuple[int, int, int]:
     """Process one user. Returns (inserted_count, skipped_count, error_count)."""
     items = sheets.get_recurring(user.spreadsheet_id)
-    due = [it for it in items if int(it.get("day_of_month", 0) or 0) == today.day]
+    due = [it for it in items if is_recurring_due(_safe_int(it.get("day_of_month")), today)]
     if not due:
         return 0, 0, 0
 

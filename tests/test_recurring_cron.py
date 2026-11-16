@@ -13,7 +13,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jobs.recurring_cron import _build_record, _process_user, run_recurring_cron
+from jobs.recurring_cron import (
+    _build_record,
+    _process_user,
+    is_recurring_due,
+    run_recurring_cron,
+)
 from models.expense import ExpenseRecord, ExpenseSource, User, UserRole, UserStatus
 from utils import timeutil
 
@@ -302,7 +307,9 @@ async def test_run_recurring_cron_get_users_fails():
     sheets = MagicMock()
     sheets.get_all_active_users.side_effect = RuntimeError("Sheets down")
 
-    summary = await run_recurring_cron(sheets=sheets, currency=_make_currency(), today=TODAY)
+    summary = await run_recurring_cron(
+        sheets=sheets, currency=_make_currency(), today=TODAY
+    )
 
     assert summary["errors"] == 1
     assert summary["users"] == 0
@@ -327,7 +334,9 @@ async def test_run_recurring_cron_one_user_fails_others_continue():
     sheets.get_transactions.return_value = []
     sheets.append_transaction.return_value = None
 
-    summary = await run_recurring_cron(sheets=sheets, currency=_make_currency(), today=TODAY)
+    summary = await run_recurring_cron(
+        sheets=sheets, currency=_make_currency(), today=TODAY
+    )
 
     assert summary["users"] == 2
     assert summary["errors"] == 1
@@ -340,6 +349,81 @@ async def test_run_recurring_cron_no_users():
     sheets = MagicMock()
     sheets.get_all_active_users.return_value = []
 
-    summary = await run_recurring_cron(sheets=sheets, currency=_make_currency(), today=TODAY)
+    summary = await run_recurring_cron(
+        sheets=sheets, currency=_make_currency(), today=TODAY
+    )
 
     assert summary == {"users": 0, "inserted": 0, "skipped": 0, "errors": 0}
+
+
+# ── Month-end handling (days 29–31) ───────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "day,today,expected",
+    [
+        (31, date(2026, 2, 28), True),
+        (31, date(2026, 2, 27), False),
+        (31, date(2026, 3, 31), True),
+        (31, date(2026, 4, 30), True),
+        (31, date(2026, 4, 29), False),
+        (30, date(2026, 2, 28), True),
+        (30, date(2026, 4, 30), True),
+        (30, date(2026, 3, 30), True),
+        (30, date(2026, 3, 31), False),
+        (29, date(2026, 2, 28), True),
+        (29, date(2028, 2, 29), True),
+        (29, date(2028, 2, 28), False),
+        (29, date(2026, 3, 29), True),
+        (15, date(2026, 2, 15), True),
+        (15, date(2026, 2, 28), False),
+        (0, date(2026, 2, 28), False),
+        (32, date(2026, 3, 31), False),
+        (-1, date(2026, 3, 31), False),
+    ],
+)
+def test_is_recurring_due(day, today, expected):
+    assert is_recurring_due(day, today) is expected
+
+
+async def test_process_user_31st_template_fires_on_last_day_of_february():
+    sheets = _make_sheets([_make_template(id="t31", day_of_month=31)], [])
+    result = await _process_user(
+        sheets, _make_currency(), _make_user(), date(2026, 2, 28)
+    )
+    assert result == (1, 0, 0)
+
+
+async def test_process_user_31st_template_already_logged_is_skipped():
+    existing = ExpenseRecord(
+        amount_local=100.0,
+        local_currency="USD",
+        amount_base=100.0,
+        base_currency="USD",
+        fx_rate=1.0,
+        category="food",
+        description="Rent",
+        source=ExpenseSource.text,
+        recurring=True,
+        recurring_template_id="t31",
+    )
+    sheets = _make_sheets([_make_template(id="t31", day_of_month=31)], [existing])
+    inserted, skipped, _ = await _process_user(
+        sheets, _make_currency(), _make_user(), date(2026, 2, 28)
+    )
+    assert (inserted, skipped) == (0, 1)
+    sheets.append_transaction.assert_not_called()
+
+
+async def test_process_user_two_templates_both_fire_on_feb_28():
+    sheets = _make_sheets(
+        [
+            _make_template(id="a", day_of_month=28),
+            _make_template(id="b", day_of_month=31),
+        ],
+        [],
+    )
+    inserted, _, _ = await _process_user(
+        sheets, _make_currency(), _make_user(), date(2026, 2, 28)
+    )
+    assert inserted == 2

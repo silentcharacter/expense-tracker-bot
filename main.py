@@ -35,7 +35,7 @@ from handlers import commands, voice, text, callbacks, trips, quick
 from services.gemini import GeminiService
 from services.storage import get_storage
 from services.currency import CurrencyService
-from services.user_registry import UserRegistry
+from services.user_registry import get_registry
 
 _sentry_dsn = os.environ.get("SENTRY_DSN")
 if _sentry_dsn:
@@ -91,7 +91,7 @@ def _build_application() -> Application:
     app.bot_data["gemini"] = GeminiService()
     app.bot_data["sheets"] = storage
     app.bot_data["currency"] = CurrencyService()
-    app.bot_data["registry"] = UserRegistry(sheets_service=storage)
+    app.bot_data["registry"] = get_registry(storage)
     storage.ensure_registry_header()
 
     # ── Command handlers ────────────────────────────────────────────────────

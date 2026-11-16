@@ -11,6 +11,7 @@ Deploy command:
 """
 
 import asyncio
+import hmac
 import logging
 import os
 from typing import Optional
@@ -49,6 +50,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# httpx logs every request URL at INFO ("HTTP Request: POST https://api.telegram.org
+# /bot<TOKEN>/sendMessage ..."), which would write the bot token to Cloud Logging.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # ── Bot command menu ──────────────────────────────────────────────────────────
 
@@ -147,7 +153,9 @@ def _handle_cron_route(request, path: str):
     expected = os.environ.get("CRON_SECRET", "")
     if not expected:
         return _jsonify({"error": "cron disabled"}), 503
-    if request.headers.get("X-Cron-Secret", "") != expected:
+    if not hmac.compare_digest(
+        request.headers.get("X-Cron-Secret", "").encode(), expected.encode()
+    ):
         return _jsonify({"error": "forbidden"}), 403
 
     if path == "/cron/recurring":
@@ -192,6 +200,48 @@ def _handle_api_route(request):
     return body, status
 
 
+# ── Telegram webhook secret ───────────────────────────────────────────────────
+
+WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
+_warned_missing_webhook_secret = False
+
+
+def _webhook_secret_ok(request) -> bool:
+    """Check the Telegram ``secret_token`` header on webhook requests.
+
+    Telegram echoes the ``secret_token`` passed to ``setWebhook`` in the
+    ``X-Telegram-Bot-Api-Secret-Token`` header of every update. When the
+    ``TELEGRAM_WEBHOOK_SECRET`` env var is set, requests whose header is
+    missing or different are rejected (constant-time comparison).
+
+    Rollout safety: if ``TELEGRAM_WEBHOOK_SECRET`` is unset or empty, the
+    request is allowed and a warning is logged (once per instance), so this
+    code can be deployed before the secret exists without breaking the bot.
+    Once the secret is configured and setWebhook is re-run with it, forged
+    updates are rejected.
+    """
+    global _warned_missing_webhook_secret
+
+    expected = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+    if not expected:
+        if not _warned_missing_webhook_secret:
+            logger.warning(
+                "TELEGRAM_WEBHOOK_SECRET is not set — webhook requests are NOT "
+                "authenticated. Set it and re-run setWebhook with secret_token."
+            )
+            _warned_missing_webhook_secret = True
+        return True
+
+    incoming = request.headers.get(WEBHOOK_SECRET_HEADER, "")
+    if not incoming:
+        logger.warning("Webhook request rejected: missing secret token header.")
+        return False
+    if not hmac.compare_digest(incoming.encode(), expected.encode()):
+        logger.warning("Webhook request rejected: invalid secret token.")
+        return False
+    return True
+
+
 # ── Cloud Function entry point ───────────────────────────────────────────────
 
 @functions_framework.http
@@ -218,13 +268,9 @@ def webhook(request) -> tuple:
     if path.startswith("/cron/"):
         return _handle_cron_route(request, path)
 
-    # Optional: verify Telegram secret token header
-    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
-    if secret:
-        incoming = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-        if incoming != secret:
-            logger.warning("Invalid webhook secret token.")
-            return "Forbidden", 403
+    # Telegram webhook — verify the secret_token header set via setWebhook
+    if not _webhook_secret_ok(request):
+        return "Forbidden", 403
 
     payload = request.get_json(silent=True)
     if not payload:

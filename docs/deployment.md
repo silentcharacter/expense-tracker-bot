@@ -102,10 +102,57 @@ gcloud functions deploy expense-bot \
   --service-account=expense-bot-sa@expense-bot-489609.iam.gserviceaccount.com
 ```
 
-After deploy, set the webhook:
+Prefer `./deploy.sh`, which deploys the function **and** registers the webhook
+with `secret_token` without leaking the bot token (see below).
+
+### 1.1 Webhook secret (`TELEGRAM_WEBHOOK_SECRET`)
+
+`main.py` checks the `X-Telegram-Bot-Api-Secret-Token` header on Telegram webhook
+requests (constant-time compare) against `TELEGRAM_WEBHOOK_SECRET` and returns 403
+on a missing/wrong header. `/api/*` (Telegram initData auth) and `/cron/*`
+(`X-Cron-Secret`) are not affected.
+
+If the variable is **unset or empty**, requests are allowed and a warning is
+logged — this keeps deploys safe before the secret exists, but the webhook is
+then unauthenticated. Rollout:
+
+1. Generate a secret (allowed chars: `A-Z a-z 0-9 _ -`, 1–256):
+   `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
+2. Add it to `.env.yaml`: `TELEGRAM_WEBHOOK_SECRET: "<generated>"`
+3. Run `./deploy.sh` — it deploys the function with the new env and immediately
+   re-runs `setWebhook` with `secret_token`. Updates arriving in the few seconds
+   between the two steps get 403 and are retried by Telegram.
+4. Verify: `getWebhookInfo` shows no `last_error_message`, the bot answers, and a
+   POST to the function URL without the header returns 403.
+
+### 1.2 Setting the webhook manually (without leaking the token)
+
+The Telegram API requires the token in the URL path, so keep it out of argv,
+shell history and logs: feed curl a config on stdin, never use `set -x`, and
+don't print the request URL.
 
 ```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://expense-bot-bsjaw727mq-as.a.run.app"
+TOKEN="$(sed -n -E 's/^TELEGRAM_BOT_TOKEN:[[:space:]]*"?([^"]*)"?.*/\1/p' .env.yaml)"
+SECRET="$(sed -n -E 's/^TELEGRAM_WEBHOOK_SECRET:[[:space:]]*"?([^"]*)"?.*/\1/p' .env.yaml)"
+curl -sS --config - <<EOF
+url = "https://api.telegram.org/bot${TOKEN}/setWebhook"
+data-urlencode = "url=https://expense-bot-bsjaw727mq-as.a.run.app"
+data-urlencode = "secret_token=${SECRET}"
+EOF
+unset TOKEN SECRET
+```
+
+`gcloud functions deploy` prints the deployed function including its environment
+variables (bot token included) — pass `--format=none` or don't save its output.
+
+### 1.3 Firestore security rules
+
+`firestore.rules` denies all client access. The backend uses the server-side
+Firestore client with the service account (rules don't apply to it) and the Mini
+App only talks to `/api/*`, so nothing needs client access. Deploy rules with:
+
+```bash
+firebase deploy --only firestore:rules --project=expense-bot-489609
 ```
 
 ---
